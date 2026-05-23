@@ -1,0 +1,1043 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0a0e27">
+<title>メダカ出品アシスタント</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0a0e27;--bg-2:#111733;--panel:#161d3f;--line:#2a3361;
+  --ink:#f5f6ff;--ink-dim:#9aa3d4;
+  --accent:#ffe14d;--accent-2:#ff5e7a;--ok:#5af0b0;--warn:#ffa94d;
+  --shadow:0 20px 60px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{background:var(--bg);color:var(--ink);font-family:'Noto Sans JP',system-ui,sans-serif;min-height:100vh}
+body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent 40%),radial-gradient(circle at 100% 100%,rgba(255,94,122,.05),transparent 40%),var(--bg);padding-bottom:60px}
+.app{max-width:1400px;margin:0 auto;padding:18px 24px}
+
+/* Top bar */
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:8px 0 20px;border-bottom:1px solid var(--line);margin-bottom:24px;flex-wrap:wrap}
+.logo{display:flex;align-items:center;gap:10px}
+.logo-mark{width:36px;height:36px;border-radius:9px;background:var(--accent);display:grid;place-items:center;color:#000;font-weight:900;font-family:'JetBrains Mono',monospace;font-size:18px;box-shadow:0 0 0 4px rgba(255,225,77,.15)}
+.logo-text{font-weight:900;font-size:15px;letter-spacing:.02em}
+.logo-text small{display:block;font-weight:400;font-size:10px;color:var(--ink-dim);letter-spacing:.15em;text-transform:uppercase}
+
+/* Tabs */
+.tabs{display:flex;gap:4px;flex-wrap:wrap}
+.tab{background:var(--bg-2);border:1px solid var(--line);color:var(--ink-dim);padding:9px 16px;border-radius:9px;font-family:'Noto Sans JP',sans-serif;font-size:13px;font-weight:700;cursor:pointer;transition:.15s}
+.tab:hover{color:var(--ink)}
+.tab.active{background:var(--accent);color:#000;border-color:var(--accent)}
+.tab:active{transform:scale(.96)}
+
+/* Panel */
+.panel{display:block}
+.panel.hidden{display:none}
+.panel h2{font-size:18px;margin-bottom:14px}
+.panel h3{font-size:14px;color:var(--ink-dim);margin:20px 0 10px;letter-spacing:.05em;text-transform:uppercase;font-family:'JetBrains Mono',monospace}
+
+/* Empty state */
+.empty-state{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:60px 30px;text-align:center;box-shadow:var(--shadow)}
+.empty-state .icon{font-size:60px;margin-bottom:14px}
+.empty-state h2{font-size:18px;margin-bottom:8px}
+.empty-state p{color:var(--ink-dim);line-height:1.7;margin-bottom:20px;font-size:13px}
+.empty-state .hint{font-size:11px;color:var(--ink-dim);margin-top:10px;font-family:'JetBrains Mono',monospace}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 18px;border:none;border-radius:10px;font-family:inherit;font-weight:700;font-size:13px;cursor:pointer;transition:.15s}
+.btn:active{transform:scale(.97)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-primary{background:var(--accent);color:#000}
+.btn-ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.btn-ghost:hover{background:var(--bg-2)}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+
+/* Bar row (folder info) */
+.bar-row{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin-bottom:14px;flex-wrap:wrap}
+.bar-info{font-size:13px}
+.bar-info span:first-child{font-family:'JetBrains Mono',monospace;color:var(--accent)}
+.bar-actions{display:flex;gap:8px}
+
+/* Warning banner */
+.warn-banner{background:rgba(255,169,77,.1);border:1px solid var(--warn);border-radius:10px;padding:12px 14px;margin-bottom:14px;color:var(--warn);font-size:12px;line-height:1.6}
+.warn-banner small{display:block;margin-top:4px;color:var(--ink-dim);font-size:11px}
+
+/* Photo grid */
+.photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:24px}
+.photo-tile{background:var(--bg-2);border:2px solid var(--line);border-radius:10px;overflow:hidden;position:relative;transition:.15s;cursor:default}
+.photo-tile img{width:100%;aspect-ratio:1;object-fit:cover;display:block;background:#000}
+.photo-tile.is-label{border-color:var(--accent-2);box-shadow:0 0 0 1px var(--accent-2)}
+.tile-info{padding:6px 8px;font-size:10px;color:var(--ink-dim);display:flex;align-items:center;justify-content:space-between;gap:6px;background:var(--bg-2)}
+.tile-name{font-family:'JetBrains Mono',monospace;font-size:9px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tile-toggle{background:var(--line);color:var(--ink);border:none;padding:3px 7px;border-radius:5px;font-size:9px;cursor:pointer;font-weight:700;flex:none}
+.photo-tile.is-label .tile-toggle{background:var(--accent-2);color:#fff}
+
+/* Product cards */
+.product-list{display:flex;flex-direction:column;gap:12px;margin-bottom:24px}
+.product-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;box-shadow:var(--shadow)}
+.product-card.bad{border-color:var(--warn)}
+.pc-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;font-size:12px}
+.pc-num{font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--accent);background:rgba(255,225,77,.1);padding:3px 9px;border-radius:6px;font-size:11px}
+.pc-counts{color:var(--ink-dim);font-family:'JetBrains Mono',monospace;font-size:11px}
+.pc-body{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:start}
+@media (max-width:680px){.pc-body{grid-template-columns:1fr}}
+.pc-thumbs{display:flex;gap:6px;flex-wrap:wrap}
+.pc-thumbs img{width:64px;height:64px;border-radius:6px;object-fit:cover;border:1px solid var(--line)}
+.pc-thumbs img.thumb-label{border-color:var(--accent-2)}
+.pc-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px}
+.field{display:flex;flex-direction:column;gap:3px}
+.field label{font-size:10px;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.1em;font-family:'JetBrains Mono',monospace}
+.field input{background:var(--bg-2);border:1px solid var(--line);border-radius:8px;color:var(--ink);font-size:13px;padding:8px 10px;font-family:inherit}
+.field input:focus{outline:none;border-color:var(--accent)}
+.field input.ai-filled{border-color:var(--ok);background:rgba(90,240,176,.05)}
+
+/* Group actions */
+.group-actions{display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.group-actions .hint{font-size:11px;color:var(--ink-dim);font-family:'JetBrains Mono',monospace}
+
+/* Settings */
+.settings-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+.settings-card .field input{width:100%}
+.api-status{display:inline-block;font-size:9px;padding:2px 6px;border-radius:4px;font-family:'JetBrains Mono',monospace;font-weight:700;margin-left:6px;vertical-align:middle}
+.api-status.set{background:var(--ok);color:#000}
+.api-status.unset{background:var(--accent-2);color:#fff}
+
+/* Toast */
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--panel);border:1px solid var(--line);padding:12px 20px;border-radius:12px;font-size:13px;box-shadow:var(--shadow);z-index:100;opacity:0;pointer-events:none;transition:.3s}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(-10px)}
+.toast.ok{border-color:var(--ok);color:var(--ok)}
+.toast.err{border-color:var(--accent-2);color:var(--accent-2)}
+
+/* Placeholder for phase 2/3/4 */
+.placeholder{background:var(--panel);border:1px dashed var(--line);border-radius:12px;padding:60px 20px;text-align:center;color:var(--ink-dim);font-size:13px}
+
+/* ===== 編集タブ ===== */
+.edit-toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;flex-wrap:wrap;margin-bottom:8px}
+.edit-modes{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.edit-modes-label{font-size:10px;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.1em;font-family:'JetBrains Mono',monospace;margin-right:4px}
+.chip-toggle{display:inline-flex;align-items:center;gap:6px;background:var(--bg-2);border:1px solid var(--line);border-radius:999px;padding:6px 12px;cursor:pointer;font-size:12px;font-weight:700;transition:.15s;user-select:none}
+.chip-toggle input{appearance:none;width:14px;height:14px;border:1.5px solid var(--ink-dim);border-radius:4px;margin:0;display:grid;place-items:center;background:transparent;cursor:pointer}
+.chip-toggle input:checked{background:var(--accent);border-color:var(--accent)}
+.chip-toggle input:checked::after{content:'';width:6px;height:9px;border:solid #000;border-width:0 2px 2px 0;transform:translateY(-1px) rotate(45deg)}
+.chip-toggle:has(input:checked){background:rgba(255,225,77,.12);border-color:var(--accent);color:var(--accent)}
+.edit-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+.edit-progress{margin:10px 0 14px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px}
+.edit-progress-bar{height:6px;background:var(--bg-2);border-radius:99px;overflow:hidden;margin-bottom:6px}
+.edit-progress-fill{height:100%;background:var(--accent);width:0;transition:width .2s}
+.edit-progress-text{font-size:11px;color:var(--ink-dim);font-family:'JetBrains Mono',monospace}
+
+.edit-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;box-shadow:var(--shadow)}
+.edit-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+.edit-card-title{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:700}
+.edit-card-title .pc-num{font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--accent);background:rgba(255,225,77,.1);padding:3px 9px;border-radius:6px;font-size:11px}
+.edit-card-meta{color:var(--ink-dim);font-size:11px;font-family:'JetBrains Mono',monospace}
+.edit-card-actions{display:flex;gap:6px;flex-wrap:wrap}
+.btn-mini{padding:6px 10px;font-size:11px;border-radius:8px}
+
+.edit-specimens{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.spec-tile{background:var(--bg-2);border:1px solid var(--line);border-radius:10px;overflow:hidden;position:relative}
+.spec-tile-img{position:relative;aspect-ratio:1;background:#000;cursor:zoom-in}
+.spec-tile-img img{width:100%;height:100%;object-fit:cover;display:block}
+.spec-tile-badge{position:absolute;top:6px;left:6px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;font-family:'JetBrains Mono',monospace;backdrop-filter:blur(4px)}
+.spec-tile-badge.edited{background:var(--ok);color:#000}
+.spec-tile-foot{display:flex;gap:4px;padding:6px;align-items:center;justify-content:space-between}
+.spec-tile-name{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--ink-dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.spec-tile-toggle{background:var(--line);color:var(--ink);border:none;padding:3px 7px;border-radius:5px;font-size:9px;cursor:pointer;font-weight:700}
+.spec-tile-toggle.on{background:var(--ok);color:#000}
+.spec-tile-spinner{position:absolute;inset:0;background:rgba(0,0,0,.5);display:grid;place-items:center;color:#fff;font-size:11px;backdrop-filter:blur(2px)}
+.spec-tile-spinner::before{content:'';width:24px;height:24px;border:3px solid rgba(255,255,255,.3);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;margin-right:8px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ===== ライトボックス ===== */
+.lightbox{position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:1000;display:flex;align-items:center;justify-content:center}
+.lightbox.hidden{display:none !important}
+.lb-stage{max-width:96vw;max-height:80vh;overflow:auto;display:grid;place-items:center;cursor:grab}
+.lb-stage:active{cursor:grabbing}
+.lb-stage img{max-width:none;display:block;transform-origin:center center;transition:transform .15s}
+.lb-close{position:absolute;top:14px;right:18px;background:transparent;border:none;color:#fff;font-size:34px;line-height:1;cursor:pointer;width:44px;height:44px;border-radius:50%}
+.lb-close:hover{background:rgba(255,255,255,.1)}
+.lb-nav{position:absolute;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.08);border:none;color:#fff;font-size:40px;line-height:1;width:54px;height:80px;border-radius:8px;cursor:pointer}
+.lb-nav:hover{background:rgba(255,255,255,.2)}
+.lb-prev{left:14px}.lb-next{right:14px}
+.lb-caption{position:absolute;bottom:60px;left:50%;transform:translateX(-50%);color:#fff;font-size:12px;font-family:'JetBrains Mono',monospace;background:rgba(0,0,0,.6);padding:6px 14px;border-radius:99px}
+.lb-tools{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);display:flex;gap:6px;background:rgba(0,0,0,.6);border-radius:99px;padding:5px 8px}
+.lb-tool{background:transparent;border:none;color:#fff;font-size:18px;font-weight:700;width:36px;height:36px;border-radius:50%;cursor:pointer;font-family:'JetBrains Mono',monospace}
+.lb-tool:hover{background:rgba(255,255,255,.15)}
+.lb-tool.active{background:var(--accent);color:#000}
+
+.hidden{display:none !important}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="logo">
+      <div class="logo-mark">魚</div>
+      <div class="logo-text">メダカ出品アシスタント<small>MEDAKA LISTING v1.0</small></div>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="import" role="tab">① 取込</button>
+      <button class="tab" data-tab="edit" role="tab">② 編集</button>
+      <button class="tab" data-tab="listing" role="tab">③ 出品</button>
+      <button class="tab" data-tab="history" role="tab">履歴</button>
+      <button class="tab" data-tab="settings" role="tab">⚙ 設定</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- ===== 取込タブ ===== -->
+    <section id="panel-import" class="panel">
+      <div id="emptyImport" class="empty-state">
+        <div class="icon">📁</div>
+        <h2>写真フォルダを選択</h2>
+        <p>一眼レフで撮影したフォルダを選んでください。<br>「ラベル → メダカ3枚 → ラベル → メダカ3枚 …」の順で構成されている前提です。</p>
+        <button id="btnPickFolder" class="btn btn-primary">📂 フォルダを選ぶ</button>
+        <div class="hint">※ Chrome / Edge / Brave で動作（Safari不可）</div>
+      </div>
+
+      <div id="importLoaded" class="hidden">
+        <div class="bar-row">
+          <div class="bar-info"><span id="folderName"></span> / <span id="photoCount"></span>枚</div>
+          <div class="bar-actions">
+            <button id="btnReimport" class="btn btn-ghost">フォルダを変更</button>
+            <button id="btnClearImport" class="btn btn-ghost">クリア</button>
+          </div>
+        </div>
+        <div id="warningBanner" class="warn-banner hidden"></div>
+
+        <h3>商品グループ <span style="color:var(--ink-dim);font-family:inherit;text-transform:none;font-size:11px">（ラベル + 個体3枚 = 1商品）</span></h3>
+        <div class="group-actions">
+          <button id="btnOcrAll" class="btn btn-primary">🔍 OCR一括実行</button>
+          <span class="hint" id="ocrHint">ラベルから品種名・管理番号・数量を抽出します</span>
+        </div>
+        <div id="productList" class="product-list"></div>
+
+        <h3>写真一覧 <span style="color:var(--ink-dim);font-family:inherit;text-transform:none;font-size:11px">（ラベル/個体の判定が違う場合はサムネ下のボタンで切替）</span></h3>
+        <div id="photoGrid" class="photo-grid"></div>
+      </div>
+    </section>
+
+    <!-- ===== 編集タブ ===== -->
+    <section id="panel-edit" class="panel hidden">
+      <div id="editEmpty" class="empty-state">
+        <div class="icon">🎨</div>
+        <h2>取込タブで写真を読み込んでください</h2>
+        <p>① 取込タブでフォルダを選び、商品グループを作ってからこのタブを開きます。</p>
+        <button class="btn btn-primary" id="btnGotoImport">① 取込タブへ</button>
+      </div>
+
+      <div id="editLoaded" class="hidden">
+        <div class="edit-toolbar">
+          <div class="edit-modes">
+            <span class="edit-modes-label">加工モード</span>
+            <label class="chip-toggle"><input type="checkbox" id="modeCleanup" checked><span>🧹 ゴミ除去&明るさ補正</span></label>
+            <label class="chip-toggle"><input type="checkbox" id="modeBgBlack"><span>⬛ 背景を黒に</span></label>
+            <label class="chip-toggle"><input type="checkbox" id="modeEnhance"><span>✨ ラメ・ヒレ強調</span></label>
+          </div>
+          <div class="edit-actions">
+            <button id="btnEditRunAll" class="btn btn-primary">✨ AI加工 一括実行</button>
+            <button id="btnEditClearCache" class="btn btn-ghost" title="この取込フォルダの編集済みをすべて削除">🗑 編集結果をクリア</button>
+          </div>
+        </div>
+        <div id="editCostHint" class="hint" style="margin-top:6px"></div>
+        <div id="editProgress" class="edit-progress hidden">
+          <div class="edit-progress-bar"><div class="edit-progress-fill" id="editProgressFill"></div></div>
+          <div class="edit-progress-text" id="editProgressText"></div>
+        </div>
+
+        <div id="editProductList" class="product-list"></div>
+      </div>
+    </section>
+
+    <!-- ライトボックス(画像クリックで拡大) -->
+    <div id="lightbox" class="lightbox hidden" role="dialog" aria-modal="true">
+      <button class="lb-close" id="lbClose" aria-label="閉じる">×</button>
+      <button class="lb-nav lb-prev" id="lbPrev" aria-label="前">‹</button>
+      <button class="lb-nav lb-next" id="lbNext" aria-label="次">›</button>
+      <div class="lb-stage" id="lbStage">
+        <img id="lbImg" alt="">
+      </div>
+      <div class="lb-caption" id="lbCaption"></div>
+      <div class="lb-tools">
+        <button class="lb-tool" id="lbZoomOut" title="縮小">−</button>
+        <button class="lb-tool" id="lbZoomReset" title="原寸/フィット">⤢</button>
+        <button class="lb-tool" id="lbZoomIn" title="拡大">＋</button>
+        <button class="lb-tool" id="lbRotate" title="90°回転">⟳</button>
+        <button class="lb-tool" id="lbToggleSide" title="元/編集後を切替">A/B</button>
+      </div>
+    </div>
+
+    <!-- ===== 出品タブ ===== -->
+    <section id="panel-listing" class="panel hidden">
+      <div class="placeholder">Phase 3 で実装します<br><small>タイトル組立 / HTML説明文 / Auctown CSV+ZIP生成</small></div>
+    </section>
+
+    <!-- ===== 履歴タブ ===== -->
+    <section id="panel-history" class="panel hidden">
+      <div class="placeholder">Phase 4 で実装します<br><small>過去の出品記録 / 状態管理(出品中→発送済) / エクスポート</small></div>
+    </section>
+
+    <!-- ===== 設定タブ ===== -->
+    <section id="panel-settings" class="panel hidden">
+      <h2>設定</h2>
+      <div class="settings-card">
+        <div class="field">
+          <label>GAS Webhook URL <span id="apiStatus" class="api-status"></span></label>
+          <input type="text" id="apiUrl" placeholder="https://script.google.com/macros/s/.../exec">
+        </div>
+        <div style="font-size:11px;color:var(--ink-dim);margin-top:6px;line-height:1.6">
+          OCR（ラベル解析）と画像加工（Gemini）のキー保管庫として使います。GAS側でスクリプトプロパティに <code>CLAUDE_API_KEY</code> と <code>GEMINI_API_KEY</code> を設定済みである必要があります。
+        </div>
+        <div class="btn-row">
+          <button id="btnSaveApi" class="btn btn-ghost">保存</button>
+          <button id="btnClearApi" class="btn btn-ghost">クリア</button>
+          <button id="btnTestOcr" class="btn btn-ghost">疎通テスト</button>
+        </div>
+      </div>
+
+      <div class="settings-card">
+        <div style="font-size:12px;line-height:1.7;color:var(--ink-dim)">
+          <strong style="color:var(--ink)">バージョン情報</strong><br>
+          メダカ出品アシスタント v1.0 (Phase 1)<br>
+          フォルダ取込・ラベルOCR・商品グルーピング
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- ランク候補(input list) -->
+<datalist id="rankOpts">
+  <option value="極上"></option>
+  <option value="上物"></option>
+  <option value="若魚"></option>
+  <option value="無選別"></option>
+</datalist>
+
+<script>
+'use strict';
+
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+
+const API_URL_KEY = 'medaka_gas_url';
+
+// 状態
+let folderHandle = null;
+let photos = [];   // [{name, handle, blobUrl, isLabel}]
+let products = []; // [{labelIdx, specimenIdxs, variety, controlNo, quantityLabel}]
+
+// ===== Toast =====
+function toast(msg, type=''){
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + type;
+  clearTimeout(toast._t);
+  toast._t = setTimeout(()=>t.className='toast '+type, 2600);
+}
+
+// ===== Tabs =====
+$$('.tab').forEach(b => {
+  b.addEventListener('click', () => switchTab(b.dataset.tab));
+});
+function switchTab(name){
+  $$('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  $$('.panel').forEach(p => p.classList.toggle('hidden', p.id !== 'panel-'+name));
+  if(name === 'edit') renderEditPanel();
+}
+
+// ===== Folder pick =====
+$('#btnPickFolder').onclick = pickFolder;
+$('#btnReimport').onclick = pickFolder;
+$('#btnClearImport').onclick = clearImport;
+
+async function pickFolder(){
+  if(!window.showDirectoryPicker){
+    toast('お使いのブラウザはフォルダ選択未対応です（Chrome/Edge推奨）', 'err');
+    return;
+  }
+  try {
+    folderHandle = await window.showDirectoryPicker({ mode:'read' });
+  } catch(e){
+    if(e.name === 'AbortError') return;
+    toast('フォルダ選択失敗: ' + e.message, 'err'); return;
+  }
+  await loadPhotosFromFolder();
+}
+
+async function loadPhotosFromFolder(){
+  const entries = [];
+  for await (const entry of folderHandle.values()){
+    if(entry.kind !== 'file') continue;
+    if(!/\.(jpe?g|png)$/i.test(entry.name)) continue;
+    entries.push(entry);
+  }
+  entries.sort((a,b) => a.name.localeCompare(b.name, undefined, {numeric:true}));
+  // 既存のblobUrlを破棄
+  photos.forEach(p => p.blobUrl && URL.revokeObjectURL(p.blobUrl));
+  photos = entries.map((e, i) => ({
+    name: e.name, handle: e, blobUrl: null,
+    isLabel: i % 4 === 0  // 自動仮判定: 0,4,8,... を「ラベル」と推定
+  }));
+  $('#folderName').textContent = folderHandle.name;
+  $('#photoCount').textContent = photos.length;
+  $('#emptyImport').classList.add('hidden');
+  $('#importLoaded').classList.remove('hidden');
+
+  if(photos.length === 0){
+    toast('画像ファイルが見つかりません', 'err');
+    return;
+  }
+  toast(`${photos.length}枚を読込`, 'ok');
+  await renderPhotoGrid();
+  computeProductsAndRender();
+}
+
+function clearImport(){
+  folderHandle = null;
+  photos.forEach(p => p.blobUrl && URL.revokeObjectURL(p.blobUrl));
+  photos = [];
+  products = [];
+  $('#importLoaded').classList.add('hidden');
+  $('#emptyImport').classList.remove('hidden');
+}
+
+// ===== Photo grid =====
+async function renderPhotoGrid(){
+  const grid = $('#photoGrid');
+  grid.innerHTML = '';
+  for(let i = 0; i < photos.length; i++){
+    const p = photos[i];
+    if(!p.blobUrl){
+      try { p.blobUrl = URL.createObjectURL(await p.handle.getFile()); }
+      catch(e){ console.warn('blobUrl失敗', p.name, e); continue; }
+    }
+    const tile = document.createElement('div');
+    tile.className = 'photo-tile' + (p.isLabel ? ' is-label' : '');
+    tile.innerHTML = `
+      <img src="${p.blobUrl}" alt="${escapeHtml(p.name)}" loading="lazy">
+      <div class="tile-info">
+        <span class="tile-name" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>
+        <button class="tile-toggle" data-i="${i}">${p.isLabel ? '📋ラベル' : '🐟個体'}</button>
+      </div>
+    `;
+    grid.appendChild(tile);
+  }
+  grid.querySelectorAll('.tile-toggle').forEach(b => {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const i = +b.dataset.i;
+      photos[i].isLabel = !photos[i].isLabel;
+      b.textContent = photos[i].isLabel ? '📋ラベル' : '🐟個体';
+      b.closest('.photo-tile').classList.toggle('is-label', photos[i].isLabel);
+      computeProductsAndRender();
+    };
+  });
+}
+
+// ===== Grouping =====
+function newProduct(labelIdx){
+  return {
+    labelIdx, specimenIdxs: [],
+    variety:'', rank:'', quantityText:'', male:'', female:'', controlNo:'',
+    // どのフィールドを手動で編集したか(OCR再実行で上書きしない)
+    manualEdits: { variety:false, rank:false, quantityText:false, male:false, female:false, controlNo:false }
+  };
+}
+
+function computeProductsAndRender(){
+  const newProducts = [];
+  let curr = null;
+  for(let i = 0; i < photos.length; i++){
+    if(photos[i].isLabel){
+      if(curr) newProducts.push(curr);
+      curr = newProduct(i);
+    } else {
+      if(curr) curr.specimenIdxs.push(i);
+    }
+  }
+  if(curr) newProducts.push(curr);
+
+  // 既存のOCR結果と手動編集をlabelIdxで引き継ぐ
+  newProducts.forEach(np => {
+    const old = products.find(op => op.labelIdx === np.labelIdx);
+    if(old){
+      np.variety = old.variety;
+      np.rank = old.rank;
+      np.quantityText = old.quantityText;
+      np.male = old.male;
+      np.female = old.female;
+      np.controlNo = old.controlNo;
+      np.manualEdits = { ...old.manualEdits };
+    }
+  });
+  products = newProducts;
+  renderProductList();
+  renderWarnings();
+}
+
+function renderWarnings(){
+  const issues = [];
+  // 先頭にラベルがない（orphan specimens at start）
+  if(photos.length > 0 && !photos.some(p => p.isLabel)){
+    issues.push('ラベルが1枚もありません。サムネで「ラベル」を指定してください');
+  } else if(photos.length > 0 && !photos[0].isLabel && photos.findIndex(p=>p.isLabel) > 0){
+    issues.push(`先頭${photos.findIndex(p=>p.isLabel)}枚にラベルがありません（先頭はラベルから始めてください）`);
+  }
+  products.forEach((p, idx) => {
+    if(p.specimenIdxs.length !== 3){
+      issues.push(`商品 #${idx+1}: 個体${p.specimenIdxs.length}枚（期待は3枚）`);
+    }
+  });
+  const banner = $('#warningBanner');
+  if(issues.length === 0){
+    banner.classList.add('hidden');
+  } else {
+    banner.classList.remove('hidden');
+    banner.innerHTML = '⚠️ ' + issues.map(escapeHtml).join('<br>') + '<small>サムネ下の「ラベル / 個体」ボタンで切り替えてください</small>';
+  }
+}
+
+function renderProductList(){
+  const list = $('#productList');
+  if(products.length === 0){
+    list.innerHTML = '<div class="placeholder">ラベルがありません</div>';
+    return;
+  }
+  list.innerHTML = products.map((p, idx) => {
+    const bad = p.specimenIdxs.length !== 3 ? ' bad' : '';
+    const labelImg = photos[p.labelIdx]?.blobUrl || '';
+    const specImgs = p.specimenIdxs.map(i => `<img src="${photos[i].blobUrl}" alt="">`).join('');
+    // AI入力(緑枠) / 手動編集(通常) を区別
+    const cls = (field) => {
+      if(p.manualEdits[field]) return '';
+      if(p[field]) return ' ai-filled';
+      return '';
+    };
+    return `
+      <div class="product-card${bad}">
+        <div class="pc-header">
+          <span class="pc-num">商品 #${idx+1}</span>
+          <span class="pc-counts">ラベル 1 + 個体 ${p.specimenIdxs.length}</span>
+        </div>
+        <div class="pc-body">
+          <div class="pc-thumbs">
+            <img src="${labelImg}" class="thumb-label" alt="label" title="${escapeHtml(photos[p.labelIdx].name)}">
+            ${specImgs}
+          </div>
+          <div class="pc-fields">
+            <div class="field"><label>品種名</label><input class="pc-input${cls('variety')}" data-idx="${idx}" data-field="variety" value="${escapeAttr(p.variety)}" placeholder="例: 孔雀青"></div>
+            <div class="field"><label>ランク</label><input class="pc-input${cls('rank')}" data-idx="${idx}" data-field="rank" value="${escapeAttr(p.rank)}" placeholder="例: 上物 / 極上 / 若魚 / 無選別" list="rankOpts"></div>
+            <div class="field"><label>数量表記</label><input class="pc-input${cls('quantityText')}" data-idx="${idx}" data-field="quantityText" value="${escapeAttr(p.quantityText)}" placeholder="例: オス1メス2 / 2ペア / 5匹"></div>
+            <div class="field"><label>管理番号</label><input class="pc-input${cls('controlNo')}" data-idx="${idx}" data-field="controlNo" value="${escapeAttr(p.controlNo)}" placeholder="例: 0523A2"></div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  // 入力監視: 手動編集フラグを立てる(OCR再実行で上書きしない)
+  list.querySelectorAll('input.pc-input').forEach(el => {
+    el.oninput = () => {
+      const idx = +el.dataset.idx;
+      const field = el.dataset.field;
+      products[idx][field] = el.value;
+      products[idx].manualEdits[field] = true;
+      el.classList.remove('ai-filled');  // 手動編集中は緑枠を外す
+    };
+  });
+}
+
+// ===== OCR =====
+$('#btnOcrAll').onclick = async () => {
+  if(products.length === 0){ toast('商品グループがありません', 'err'); return; }
+  const gasUrl = (localStorage.getItem(API_URL_KEY) || '').trim();
+  if(!gasUrl.startsWith('https://script.google.com/')){
+    toast('設定タブでGAS URLを設定してください', 'err'); switchTab('settings'); return;
+  }
+  const btn = $('#btnOcrAll'); const orig = btn.textContent;
+  btn.disabled = true;
+  let ok = 0, fail = 0;
+  for(let i = 0; i < products.length; i++){
+    const p = products[i];
+    btn.textContent = `OCR中 (${i+1}/${products.length})...`;
+    try {
+      const file = await photos[p.labelIdx].handle.getFile();
+      const dataUrl = await fileToResizedDataUrl(file, 1024, 0.85);
+      const res = await fetch(gasUrl, {
+        method: 'POST',
+        body: JSON.stringify({ action:'label_ocr', labelPhoto: dataUrl })
+      });
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      const json = await res.json();
+      if(json && json.ok && json.result){
+        const r = json.result;
+        // 手動編集済みフィールドは上書きしない(間違った時の手入力を保護)
+        const setIf = (field, val) => {
+          if(!p.manualEdits[field] && val) p[field] = val;
+        };
+        setIf('variety',      r.variety);
+        setIf('rank',         r.rank);
+        setIf('quantityText', r.quantityText);
+        setIf('male',         r.male);
+        setIf('female',       r.female);
+        setIf('controlNo',    r.controlNo);
+        ok++;
+      } else {
+        fail++;
+        console.warn('OCR失敗', json);
+      }
+    } catch(e){
+      fail++;
+      console.warn(e);
+    }
+    renderProductList();
+  }
+  btn.textContent = orig;
+  btn.disabled = false;
+  toast(`OCR完了: 成功 ${ok} / 失敗 ${fail}`, fail ? 'err' : 'ok');
+};
+
+// ===== 画像リサイズ(OCR送信用に縮小) =====
+function fileToResizedDataUrl(file, maxDim, quality){
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let w = img.naturalWidth, h = img.naturalHeight;
+      if(w > maxDim || h > maxDim){
+        const r = Math.min(maxDim/w, maxDim/h);
+        w = Math.round(w*r); h = Math.round(h*r);
+      }
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(c.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('画像読込失敗')); };
+    img.src = url;
+  });
+}
+
+// ===== Helpers =====
+function escapeHtml(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function escapeAttr(s){ return escapeHtml(s); }
+
+// ===== 設定 =====
+function updateApiStatus(){
+  const url = $('#apiUrl').value.trim();
+  const b = $('#apiStatus');
+  if(url.startsWith('https://script.google.com/')){
+    b.textContent = '✓ 設定済'; b.className = 'api-status set';
+  } else {
+    b.textContent = '未設定'; b.className = 'api-status unset';
+  }
+}
+$('#apiUrl').addEventListener('input', updateApiStatus);
+$('#btnSaveApi').onclick = () => {
+  const url = $('#apiUrl').value.trim();
+  if(!url){ toast('URLを入力してください', 'err'); return; }
+  if(!url.startsWith('https://script.google.com/')){
+    if(!confirm('GASのURLではないようです。本当に保存しますか?')) return;
+  }
+  localStorage.setItem(API_URL_KEY, url);
+  toast('保存しました', 'ok');
+  updateApiStatus();
+};
+$('#btnClearApi').onclick = () => {
+  if(!confirm('GAS URLをクリアしますか?')) return;
+  localStorage.removeItem(API_URL_KEY);
+  $('#apiUrl').value = '';
+  toast('クリアしました');
+  updateApiStatus();
+};
+$('#btnTestOcr').onclick = async () => {
+  const url = $('#apiUrl').value.trim();
+  if(!url){ toast('URLを先に入力してください', 'err'); return; }
+  $('#btnTestOcr').disabled = true;
+  try {
+    const res = await fetch(url, { method:'POST', body: JSON.stringify({ action:'label_ocr', labelPhoto:'' }) });
+    const j = await res.json();
+    // 期待: {ok:false, error:'labelPhoto 未指定'} → エンドポイント正常
+    if(j && j.error && /labelPhoto/i.test(j.error)){
+      toast('✓ エンドポイント正常稼働中', 'ok');
+    } else if(j && j.ok){
+      toast('✓ OK', 'ok');
+    } else {
+      toast('応答: ' + JSON.stringify(j).substring(0,80), 'err');
+    }
+  } catch(e){
+    toast('接続エラー: ' + e.message, 'err');
+  }
+  $('#btnTestOcr').disabled = false;
+};
+
+function loadSettings(){
+  const saved = localStorage.getItem(API_URL_KEY);
+  if(saved) $('#apiUrl').value = saved;
+  updateApiStatus();
+}
+loadSettings();
+
+// ============================================================
+// ===== ②編集タブ: AI加工 + IndexedDB + ライトボックス =====
+// ============================================================
+
+// IndexedDB: 編集済み画像を blob で保管(セッション間も保持)
+const EDIT_DB = 'medaka-edit';
+const EDIT_STORE = 'edited';
+let editDbPromise = null;
+function openEditDb(){
+  if(editDbPromise) return editDbPromise;
+  editDbPromise = new Promise((resolve, reject) => {
+    const req = indexedDB.open(EDIT_DB, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if(!db.objectStoreNames.contains(EDIT_STORE)){
+        db.createObjectStore(EDIT_STORE);  // key: "<folderName>:<photoName>:<modeKey>"
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  return editDbPromise;
+}
+async function editDbPut(key, blob){
+  const db = await openEditDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(EDIT_STORE, 'readwrite');
+    tx.objectStore(EDIT_STORE).put(blob, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+async function editDbGet(key){
+  const db = await openEditDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(EDIT_STORE, 'readonly');
+    const req = tx.objectStore(EDIT_STORE).get(key);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function editDbDeleteByPrefix(prefix){
+  const db = await openEditDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(EDIT_STORE, 'readwrite');
+    const store = tx.objectStore(EDIT_STORE);
+    const req = store.openCursor();
+    let n = 0;
+    req.onsuccess = (e) => {
+      const cur = e.target.result;
+      if(!cur){ resolve(n); return; }
+      if(String(cur.key).startsWith(prefix)){ cur.delete(); n++; }
+      cur.continue();
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+// 編集状態(セッション内)
+//  editState[photoIdx] = { editedBlobUrl, editedKey, modes, showEdited }
+let editState = {};
+
+function getSelectedModes(){
+  const modes = [];
+  if($('#modeCleanup').checked) modes.push('cleanup');
+  if($('#modeBgBlack').checked) modes.push('background_black');
+  if($('#modeEnhance').checked) modes.push('enhance_scales');
+  return modes;
+}
+function modeKey(modes){ return modes.slice().sort().join('+') || 'cleanup'; }
+function modeLabelShort(modes){
+  const map = { cleanup:'🧹', background_black:'⬛', enhance_scales:'✨' };
+  return modes.map(m => map[m] || '?').join('');
+}
+
+function editCacheKey(photoName, modes){
+  const folder = (folderHandle && folderHandle.name) || 'noname';
+  return folder + ':' + photoName + ':' + modeKey(modes);
+}
+
+function updateCostHint(){
+  const modes = getSelectedModes();
+  let specCount = 0;
+  products.forEach(p => specCount += p.specimenIdxs.length);
+  const yen = Math.round(specCount * 6);
+  $('#editCostHint').textContent = specCount === 0
+    ? '加工対象の個体写真がありません'
+    : `加工対象: ${specCount}枚 × 1回 ≒ 約${yen}円(Gemini ~6円/枚) / モード: ${modes.length===0 ? 'なし(明るさのみ)' : modes.length+'種類'}`;
+}
+
+$('#btnGotoImport').onclick = () => switchTab('import');
+['#modeCleanup','#modeBgBlack','#modeEnhance'].forEach(s => {
+  document.querySelector(s).addEventListener('change', updateCostHint);
+});
+
+async function renderEditPanel(){
+  if(products.length === 0 || photos.length === 0){
+    $('#editEmpty').classList.remove('hidden');
+    $('#editLoaded').classList.add('hidden');
+    return;
+  }
+  $('#editEmpty').classList.add('hidden');
+  $('#editLoaded').classList.remove('hidden');
+  updateCostHint();
+  await renderEditProductList();
+}
+
+async function renderEditProductList(){
+  const list = $('#editProductList');
+  list.innerHTML = products.map((p, idx) => {
+    const labelImg = photos[p.labelIdx]?.blobUrl || '';
+    const title = [p.variety || '未設定', p.controlNo ? `(${p.controlNo})` : ''].join(' ').trim();
+    const specHtml = p.specimenIdxs.map(i => {
+      const ph = photos[i];
+      const st = editState[i];
+      const showEdited = st && st.showEdited && st.editedBlobUrl;
+      const src = showEdited ? st.editedBlobUrl : ph.blobUrl;
+      const badge = st && st.editedBlobUrl
+        ? `<span class="spec-tile-badge edited">${showEdited ? '加工後' : '元'}</span>`
+        : '';
+      return `
+        <div class="spec-tile" data-photo-idx="${i}">
+          <div class="spec-tile-img" data-action="zoom" data-photo-idx="${i}">
+            <img src="${src}" alt="${escapeHtml(ph.name)}">
+            ${badge}
+          </div>
+          <div class="spec-tile-foot">
+            <span class="spec-tile-name" title="${escapeHtml(ph.name)}">${escapeHtml(ph.name)}</span>
+            ${st && st.editedBlobUrl
+              ? `<button class="spec-tile-toggle ${showEdited?'on':''}" data-action="toggle" data-photo-idx="${i}">${showEdited?'加工後':'元'}</button>`
+              : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+    return `
+      <div class="edit-card" data-product-idx="${idx}">
+        <div class="edit-card-head">
+          <div class="edit-card-title">
+            <span class="pc-num">商品 #${idx+1}</span>
+            <span>${escapeHtml(title)}</span>
+          </div>
+          <div class="edit-card-actions">
+            <span class="edit-card-meta">個体 ${p.specimenIdxs.length}枚</span>
+            <button class="btn btn-ghost btn-mini" data-action="run-product" data-product-idx="${idx}">✨ この商品だけ加工</button>
+          </div>
+        </div>
+        <div class="edit-specimens">
+          ${specHtml}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // クリックハンドラ
+  list.querySelectorAll('[data-action="zoom"]').forEach(el => {
+    el.onclick = () => openLightbox(+el.dataset.photoIdx);
+  });
+  list.querySelectorAll('[data-action="toggle"]').forEach(el => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      const i = +el.dataset.photoIdx;
+      if(editState[i] && editState[i].editedBlobUrl){
+        editState[i].showEdited = !editState[i].showEdited;
+        renderEditProductList();
+      }
+    };
+  });
+  list.querySelectorAll('[data-action="run-product"]').forEach(el => {
+    el.onclick = () => runEditForProducts([+el.dataset.productIdx]);
+  });
+}
+
+// 一括加工
+$('#btnEditRunAll').onclick = () => {
+  const idxs = products.map((_, i) => i);
+  runEditForProducts(idxs);
+};
+
+$('#btnEditClearCache').onclick = async () => {
+  if(!confirm('この取込フォルダの編集済み画像をすべて削除しますか？')) return;
+  const folder = (folderHandle && folderHandle.name) || 'noname';
+  const n = await editDbDeleteByPrefix(folder + ':');
+  // メモリ上の blobUrl も破棄
+  Object.values(editState).forEach(s => s.editedBlobUrl && URL.revokeObjectURL(s.editedBlobUrl));
+  editState = {};
+  renderEditProductList();
+  toast(`${n}枚の編集結果を削除しました`, 'ok');
+};
+
+async function runEditForProducts(productIdxs){
+  const gasUrl = (localStorage.getItem(API_URL_KEY) || '').trim();
+  if(!gasUrl.startsWith('https://script.google.com/')){
+    toast('設定タブでGAS URLを設定してください', 'err'); switchTab('settings'); return;
+  }
+  const modes = getSelectedModes();
+  if(modes.length === 0){
+    if(!confirm('加工モードが1つも選ばれていません。明るさ補正のみで実行しますか？')) return;
+  }
+
+  // 対象個体写真を集める
+  const tasks = [];
+  productIdxs.forEach(pi => {
+    products[pi].specimenIdxs.forEach(photoIdx => {
+      tasks.push({ photoIdx, productIdx: pi });
+    });
+  });
+  if(tasks.length === 0){ toast('加工対象がありません', 'err'); return; }
+
+  const btn = $('#btnEditRunAll');
+  const origLabel = btn.textContent;
+  btn.disabled = true;
+  const prog = $('#editProgress');
+  const fill = $('#editProgressFill');
+  const text = $('#editProgressText');
+  prog.classList.remove('hidden');
+  fill.style.width = '0%';
+
+  let ok = 0, fail = 0, cached = 0;
+  for(let i = 0; i < tasks.length; i++){
+    const t = tasks[i];
+    const ph = photos[t.photoIdx];
+    text.textContent = `加工中 ${i+1}/${tasks.length}: ${ph.name}`;
+    fill.style.width = ((i)/tasks.length*100).toFixed(1) + '%';
+
+    const key = editCacheKey(ph.name, modes);
+    try {
+      // キャッシュ確認
+      let blob = await editDbGet(key);
+      if(blob){
+        cached++;
+      } else {
+        const file = await ph.handle.getFile();
+        const dataUrl = await fileToResizedDataUrl(file, 1280, 0.9);
+        const res = await fetch(gasUrl, {
+          method: 'POST',
+          body: JSON.stringify({ action:'edit_image', image: dataUrl, modes: modes })
+        });
+        if(!res.ok) throw new Error('HTTP '+res.status);
+        const json = await res.json();
+        if(!json || !json.ok || !json.image) throw new Error(json && json.error || 'API応答不正');
+        blob = await (await fetch(json.image)).blob();
+        await editDbPut(key, blob);
+        ok++;
+      }
+      // 表示用 blobUrl
+      if(editState[t.photoIdx] && editState[t.photoIdx].editedBlobUrl){
+        URL.revokeObjectURL(editState[t.photoIdx].editedBlobUrl);
+      }
+      editState[t.photoIdx] = {
+        editedBlobUrl: URL.createObjectURL(blob),
+        editedKey: key,
+        modes: modes.slice(),
+        showEdited: true
+      };
+    } catch(e){
+      fail++;
+      console.warn('edit fail', ph.name, e);
+    }
+    // 都度部分更新(重いので最後だけでも良いが体感重視)
+    if(i % 2 === 1 || i === tasks.length - 1) await renderEditProductList();
+  }
+
+  fill.style.width = '100%';
+  text.textContent = `完了: 新規${ok} / キャッシュ${cached} / 失敗${fail}`;
+  setTimeout(() => prog.classList.add('hidden'), 2500);
+  btn.disabled = false;
+  btn.textContent = origLabel;
+  await renderEditProductList();
+  toast(`AI加工完了: 新規${ok} / キャッシュ${cached} / 失敗${fail}`, fail ? 'err' : 'ok');
+}
+
+// ============================================================
+// ===== ライトボックス(写真クリックで拡大) =====
+// ============================================================
+
+let lbState = { photoIdxs: [], pos: 0, zoom: 1, rot: 0, showEdited: true };
+
+function getZoomablePhotoIdxs(){
+  // 編集タブで表示中の個体写真の photo idx 一覧(ラベル除外)
+  const idxs = [];
+  products.forEach(p => p.specimenIdxs.forEach(i => idxs.push(i)));
+  return idxs;
+}
+
+function openLightbox(photoIdx){
+  lbState.photoIdxs = getZoomablePhotoIdxs();
+  lbState.pos = lbState.photoIdxs.indexOf(photoIdx);
+  if(lbState.pos < 0) lbState.pos = 0;
+  lbState.zoom = 1;
+  lbState.rot = 0;
+  const st = editState[photoIdx];
+  lbState.showEdited = !!(st && st.editedBlobUrl);
+  $('#lightbox').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  renderLightbox();
+}
+function closeLightbox(){
+  $('#lightbox').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+function renderLightbox(){
+  const photoIdx = lbState.photoIdxs[lbState.pos];
+  const ph = photos[photoIdx];
+  const st = editState[photoIdx];
+  const showEdited = lbState.showEdited && st && st.editedBlobUrl;
+  $('#lbImg').src = showEdited ? st.editedBlobUrl : ph.blobUrl;
+  $('#lbImg').style.transform = `scale(${lbState.zoom}) rotate(${lbState.rot}deg)`;
+  $('#lbCaption').textContent = `${ph.name}  (${lbState.pos+1}/${lbState.photoIdxs.length})${showEdited ? '  ・ 加工後' : (st && st.editedBlobUrl ? '  ・ 元' : '')}`;
+  $('#lbToggleSide').classList.toggle('active', !!(st && st.editedBlobUrl));
+  $('#lbToggleSide').style.display = (st && st.editedBlobUrl) ? '' : 'none';
+}
+$('#lbClose').onclick = closeLightbox;
+$('#lightbox').addEventListener('click', (e) => { if(e.target.id === 'lightbox') closeLightbox(); });
+$('#lbPrev').onclick = () => { lbState.pos = (lbState.pos - 1 + lbState.photoIdxs.length) % lbState.photoIdxs.length; lbState.zoom = 1; lbState.rot = 0; renderLightbox(); };
+$('#lbNext').onclick = () => { lbState.pos = (lbState.pos + 1) % lbState.photoIdxs.length; lbState.zoom = 1; lbState.rot = 0; renderLightbox(); };
+$('#lbZoomIn').onclick = () => { lbState.zoom = Math.min(8, lbState.zoom * 1.4); renderLightbox(); };
+$('#lbZoomOut').onclick = () => { lbState.zoom = Math.max(0.2, lbState.zoom / 1.4); renderLightbox(); };
+$('#lbZoomReset').onclick = () => { lbState.zoom = 1; lbState.rot = 0; renderLightbox(); };
+$('#lbRotate').onclick = () => { lbState.rot = (lbState.rot + 90) % 360; renderLightbox(); };
+$('#lbToggleSide').onclick = () => { lbState.showEdited = !lbState.showEdited; renderLightbox(); };
+
+// キーボード
+document.addEventListener('keydown', (e) => {
+  if($('#lightbox').classList.contains('hidden')) return;
+  if(e.key === 'Escape') closeLightbox();
+  else if(e.key === 'ArrowLeft') $('#lbPrev').click();
+  else if(e.key === 'ArrowRight') $('#lbNext').click();
+  else if(e.key === '+' || e.key === '=') $('#lbZoomIn').click();
+  else if(e.key === '-') $('#lbZoomOut').click();
+  else if(e.key === '0') $('#lbZoomReset').click();
+  else if(e.key === 'r' || e.key === 'R') $('#lbRotate').click();
+  else if(e.key === 'a' || e.key === 'A') $('#lbToggleSide').click();
+});
+
+// マウスホイールでズーム
+$('#lbStage').addEventListener('wheel', (e) => {
+  e.preventDefault();
+  if(e.deltaY < 0) $('#lbZoomIn').click();
+  else $('#lbZoomOut').click();
+}, { passive: false });
+
+// ===== Service Worker =====
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('service-worker.js').catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
