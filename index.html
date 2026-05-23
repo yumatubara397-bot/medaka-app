@@ -171,6 +171,22 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .lb-tool{background:transparent;border:none;color:#fff;font-size:18px;font-weight:700;width:36px;height:36px;border-radius:50%;cursor:pointer;font-family:'JetBrains Mono',monospace}
 .lb-tool:hover{background:rgba(255,255,255,.15)}
 .lb-tool.active{background:var(--accent);color:#000}
+.lb-tool:disabled{opacity:.3;cursor:not-allowed}
+
+/* before/after 比較スライダー */
+.lb-compare{position:relative;display:inline-block;user-select:none;touch-action:none}
+.lb-compare.hidden{display:none !important}
+.lb-cmp-img{display:block;max-width:96vw;max-height:80vh;width:auto;height:auto}
+.lb-cmp-clip{position:absolute;top:0;left:0;width:50%;height:100%;overflow:hidden}
+.lb-cmp-clip .lb-cmp-img{position:absolute;top:0;left:0;width:100%;height:100%}
+.lb-cmp-handle{position:absolute;top:0;left:50%;width:3px;height:100%;background:#fff;transform:translateX(-50%);cursor:ew-resize;box-shadow:0 0 0 1px rgba(0,0,0,.3),0 0 16px rgba(255,255,255,.5)}
+.lb-cmp-grip{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:42px;height:42px;border-radius:50%;background:#fff;color:#000;font-weight:900;font-size:16px;display:grid;place-items:center;box-shadow:0 4px 14px rgba(0,0,0,.5);font-family:monospace}
+.lb-cmp-label{position:absolute;top:10px;background:rgba(0,0,0,.7);color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:99px;font-family:'JetBrains Mono',monospace;pointer-events:none}
+.lb-cmp-label-l{left:10px;color:var(--ink-dim)}
+.lb-cmp-label-r{right:10px;color:var(--accent)}
+
+/* サムネの加工前/後ラベルを常時表示(現状は加工後しか出ていなかった) */
+.spec-tile-badge.original{background:rgba(255,255,255,.85);color:#000}
 
 .hidden{display:none !important}
 </style>
@@ -262,7 +278,20 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
       <button class="lb-nav lb-prev" id="lbPrev" aria-label="前">‹</button>
       <button class="lb-nav lb-next" id="lbNext" aria-label="次">›</button>
       <div class="lb-stage" id="lbStage">
+        <!-- 単一画像表示モード -->
         <img id="lbImg" alt="">
+        <!-- before/after 比較スライダー モード -->
+        <div id="lbCompare" class="lb-compare hidden">
+          <img id="lbCmpBack" alt="加工前" class="lb-cmp-img">
+          <div class="lb-cmp-clip" id="lbCmpClip">
+            <img id="lbCmpFront" alt="加工後" class="lb-cmp-img">
+          </div>
+          <div class="lb-cmp-handle" id="lbCmpHandle">
+            <span class="lb-cmp-grip">⇔</span>
+          </div>
+          <div class="lb-cmp-label lb-cmp-label-l">加工前</div>
+          <div class="lb-cmp-label lb-cmp-label-r">加工後</div>
+        </div>
       </div>
       <div class="lb-caption" id="lbCaption"></div>
       <div class="lb-tools">
@@ -270,7 +299,9 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
         <button class="lb-tool" id="lbZoomReset" title="原寸/フィット">⤢</button>
         <button class="lb-tool" id="lbZoomIn" title="拡大">＋</button>
         <button class="lb-tool" id="lbRotate" title="90°回転">⟳</button>
-        <button class="lb-tool" id="lbToggleSide" title="元/編集後を切替">A/B</button>
+        <button class="lb-tool" id="lbCmpMode" title="比較スライダーを表示/非表示">⇔</button>
+        <button class="lb-tool" id="lbAutoPlay" title="加工前/後を自動で交互表示">▶</button>
+        <button class="lb-tool" id="lbToggleSide" title="元/加工後を切替">A/B</button>
       </div>
     </div>
 
@@ -805,11 +836,15 @@ async function renderEditProductList(){
     const specHtml = p.specimenIdxs.map(i => {
       const ph = photos[i];
       const st = editState[i];
-      const showEdited = st && st.showEdited && st.editedBlobUrl;
+      const hasEdited = !!(st && st.editedBlobUrl);
+      const showEdited = hasEdited && st.showEdited;
       const src = showEdited ? st.editedBlobUrl : ph.blobUrl;
-      const badge = st && st.editedBlobUrl
-        ? `<span class="spec-tile-badge edited">${showEdited ? '加工後' : '元'}</span>`
-        : '';
+      // 常にバッジを出す: 「加工前のみ / 加工後 / 元」をひと目で
+      const badge = !hasEdited
+        ? `<span class="spec-tile-badge original">加工前</span>`
+        : (showEdited
+            ? `<span class="spec-tile-badge edited">✨ 加工後</span>`
+            : `<span class="spec-tile-badge original">加工前</span>`);
       return `
         <div class="spec-tile" data-photo-idx="${i}">
           <div class="spec-tile-img" data-action="zoom" data-photo-idx="${i}">
@@ -818,8 +853,8 @@ async function renderEditProductList(){
           </div>
           <div class="spec-tile-foot">
             <span class="spec-tile-name" title="${escapeHtml(ph.name)}">${escapeHtml(ph.name)}</span>
-            ${st && st.editedBlobUrl
-              ? `<button class="spec-tile-toggle ${showEdited?'on':''}" data-action="toggle" data-photo-idx="${i}">${showEdited?'加工後':'元'}</button>`
+            ${hasEdited
+              ? `<button class="spec-tile-toggle ${showEdited?'on':''}" data-action="toggle" data-photo-idx="${i}" title="クリックで加工前/後を切替">${showEdited?'加工後':'加工前'}</button>`
               : ''}
           </div>
         </div>
@@ -971,10 +1006,16 @@ async function runEditForProducts(productIdxs){
 // ===== ライトボックス(写真クリックで拡大) =====
 // ============================================================
 
-let lbState = { photoIdxs: [], pos: 0, zoom: 1, rot: 0, showEdited: true };
+let lbState = {
+  photoIdxs: [], pos: 0, zoom: 1, rot: 0,
+  showEdited: true,    // A/B 単一表示時にどっちを出すか
+  compareMode: false,  // 比較スライダー表示中か
+  cmpPercent: 50,      // スライダーの左→右の割合(0..100)
+  autoPlay: false,     // 自動交互切替中か
+  autoTimer: null
+};
 
 function getZoomablePhotoIdxs(){
-  // 編集タブで表示中の個体写真の photo idx 一覧(ラベル除外)
   const idxs = [];
   products.forEach(p => p.specimenIdxs.forEach(i => idxs.push(i)));
   return idxs;
@@ -987,12 +1028,18 @@ function openLightbox(photoIdx){
   lbState.zoom = 1;
   lbState.rot = 0;
   const st = editState[photoIdx];
-  lbState.showEdited = !!(st && st.editedBlobUrl);
+  const hasEdited = !!(st && st.editedBlobUrl);
+  lbState.showEdited = hasEdited;
+  // 加工後があれば比較スライダーをデフォルトで開く(違いが分かりやすい)
+  lbState.compareMode = hasEdited;
+  lbState.cmpPercent = 50;
+  stopAutoPlay();
   $('#lightbox').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
   renderLightbox();
 }
 function closeLightbox(){
+  stopAutoPlay();
   $('#lightbox').classList.add('hidden');
   document.body.style.overflow = '';
 }
@@ -1000,22 +1047,111 @@ function renderLightbox(){
   const photoIdx = lbState.photoIdxs[lbState.pos];
   const ph = photos[photoIdx];
   const st = editState[photoIdx];
-  const showEdited = lbState.showEdited && st && st.editedBlobUrl;
-  $('#lbImg').src = showEdited ? st.editedBlobUrl : ph.blobUrl;
-  $('#lbImg').style.transform = `scale(${lbState.zoom}) rotate(${lbState.rot}deg)`;
-  $('#lbCaption').textContent = `${ph.name}  (${lbState.pos+1}/${lbState.photoIdxs.length})${showEdited ? '  ・ 加工後' : (st && st.editedBlobUrl ? '  ・ 元' : '')}`;
-  $('#lbToggleSide').classList.toggle('active', !!(st && st.editedBlobUrl));
-  $('#lbToggleSide').style.display = (st && st.editedBlobUrl) ? '' : 'none';
+  const hasEdited = !!(st && st.editedBlobUrl);
+  const showEdited = lbState.showEdited && hasEdited;
+
+  // 比較モードは加工後がないときは強制OFF
+  if(!hasEdited) lbState.compareMode = false;
+
+  const cmpEl = $('#lbCompare');
+  const imgEl = $('#lbImg');
+  if(lbState.compareMode){
+    cmpEl.classList.remove('hidden');
+    imgEl.style.display = 'none';
+    $('#lbCmpBack').src = ph.blobUrl;
+    $('#lbCmpFront').src = st.editedBlobUrl;
+    $('#lbCmpClip').style.width = lbState.cmpPercent + '%';
+    $('#lbCmpHandle').style.left = lbState.cmpPercent + '%';
+    cmpEl.style.transform = `scale(${lbState.zoom}) rotate(${lbState.rot}deg)`;
+  } else {
+    cmpEl.classList.add('hidden');
+    imgEl.style.display = '';
+    imgEl.src = showEdited ? st.editedBlobUrl : ph.blobUrl;
+    imgEl.style.transform = `scale(${lbState.zoom}) rotate(${lbState.rot}deg)`;
+  }
+
+  // キャプション
+  const tag = lbState.compareMode
+    ? '  ・ 比較スライダー'
+    : (hasEdited ? (showEdited ? '  ・ ✨ 加工後' : '  ・ 加工前') : '  ・ 加工前のみ');
+  $('#lbCaption').textContent = `${ph.name}  (${lbState.pos+1}/${lbState.photoIdxs.length})${tag}`;
+
+  // ボタン有効/無効
+  $('#lbCmpMode').classList.toggle('active', lbState.compareMode);
+  $('#lbCmpMode').disabled = !hasEdited;
+  $('#lbAutoPlay').classList.toggle('active', lbState.autoPlay);
+  $('#lbAutoPlay').disabled = !hasEdited || lbState.compareMode;
+  $('#lbAutoPlay').textContent = lbState.autoPlay ? '⏸' : '▶';
+  $('#lbToggleSide').classList.toggle('active', hasEdited);
+  $('#lbToggleSide').disabled = !hasEdited || lbState.compareMode;
 }
+
+function setCmpPercentFromEvent(e){
+  const cmpEl = $('#lbCompare');
+  const rect = cmpEl.getBoundingClientRect();
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const pct = Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
+  lbState.cmpPercent = pct;
+  $('#lbCmpClip').style.width = pct + '%';
+  $('#lbCmpHandle').style.left = pct + '%';
+}
+
+// スライダーのドラッグ(マウス + タッチ)
+(function bindCompareDrag(){
+  const handle = $('#lbCmpHandle');
+  const cmp = $('#lbCompare');
+  let dragging = false;
+  const start = (e) => { dragging = true; setCmpPercentFromEvent(e); e.preventDefault(); };
+  const move = (e) => { if(dragging) setCmpPercentFromEvent(e); };
+  const end = () => { dragging = false; };
+  handle.addEventListener('mousedown', start);
+  cmp.addEventListener('mousedown', (e) => { if(e.target !== handle && !handle.contains(e.target)){ /* クリック移動 */ setCmpPercentFromEvent(e); }});
+  document.addEventListener('mousemove', move);
+  document.addEventListener('mouseup', end);
+  handle.addEventListener('touchstart', start, { passive: false });
+  cmp.addEventListener('touchstart', (e) => { if(e.target !== handle && !handle.contains(e.target)){ setCmpPercentFromEvent(e); }}, { passive: false });
+  document.addEventListener('touchmove', (e) => { if(dragging){ move(e); e.preventDefault(); }}, { passive: false });
+  document.addEventListener('touchend', end);
+})();
+
+// 自動交互切替(0.7秒ごと)
+function startAutoPlay(){
+  if(lbState.autoTimer) return;
+  lbState.autoPlay = true;
+  lbState.compareMode = false;  // 単一表示モードで点滅
+  lbState.autoTimer = setInterval(() => {
+    lbState.showEdited = !lbState.showEdited;
+    renderLightbox();
+  }, 700);
+  renderLightbox();
+}
+function stopAutoPlay(){
+  if(lbState.autoTimer){ clearInterval(lbState.autoTimer); lbState.autoTimer = null; }
+  lbState.autoPlay = false;
+}
+
 $('#lbClose').onclick = closeLightbox;
 $('#lightbox').addEventListener('click', (e) => { if(e.target.id === 'lightbox') closeLightbox(); });
-$('#lbPrev').onclick = () => { lbState.pos = (lbState.pos - 1 + lbState.photoIdxs.length) % lbState.photoIdxs.length; lbState.zoom = 1; lbState.rot = 0; renderLightbox(); };
-$('#lbNext').onclick = () => { lbState.pos = (lbState.pos + 1) % lbState.photoIdxs.length; lbState.zoom = 1; lbState.rot = 0; renderLightbox(); };
+$('#lbPrev').onclick = () => { stopAutoPlay(); lbState.pos = (lbState.pos - 1 + lbState.photoIdxs.length) % lbState.photoIdxs.length; lbState.zoom = 1; lbState.rot = 0; const st = editState[lbState.photoIdxs[lbState.pos]]; lbState.compareMode = !!(st && st.editedBlobUrl); lbState.cmpPercent = 50; renderLightbox(); };
+$('#lbNext').onclick = () => { stopAutoPlay(); lbState.pos = (lbState.pos + 1) % lbState.photoIdxs.length; lbState.zoom = 1; lbState.rot = 0; const st = editState[lbState.photoIdxs[lbState.pos]]; lbState.compareMode = !!(st && st.editedBlobUrl); lbState.cmpPercent = 50; renderLightbox(); };
 $('#lbZoomIn').onclick = () => { lbState.zoom = Math.min(8, lbState.zoom * 1.4); renderLightbox(); };
 $('#lbZoomOut').onclick = () => { lbState.zoom = Math.max(0.2, lbState.zoom / 1.4); renderLightbox(); };
-$('#lbZoomReset').onclick = () => { lbState.zoom = 1; lbState.rot = 0; renderLightbox(); };
+$('#lbZoomReset').onclick = () => { lbState.zoom = 1; lbState.rot = 0; lbState.cmpPercent = 50; renderLightbox(); };
 $('#lbRotate').onclick = () => { lbState.rot = (lbState.rot + 90) % 360; renderLightbox(); };
-$('#lbToggleSide').onclick = () => { lbState.showEdited = !lbState.showEdited; renderLightbox(); };
+$('#lbToggleSide').onclick = () => { stopAutoPlay(); lbState.showEdited = !lbState.showEdited; renderLightbox(); };
+$('#lbCmpMode').onclick = () => {
+  const st = editState[lbState.photoIdxs[lbState.pos]];
+  if(!st || !st.editedBlobUrl){ toast('加工後の画像がありません', 'err'); return; }
+  stopAutoPlay();
+  lbState.compareMode = !lbState.compareMode;
+  renderLightbox();
+};
+$('#lbAutoPlay').onclick = () => {
+  const st = editState[lbState.photoIdxs[lbState.pos]];
+  if(!st || !st.editedBlobUrl){ toast('加工後の画像がありません', 'err'); return; }
+  if(lbState.autoPlay){ stopAutoPlay(); renderLightbox(); }
+  else { startAutoPlay(); }
+};
 
 // キーボード
 document.addEventListener('keydown', (e) => {
@@ -1028,6 +1164,8 @@ document.addEventListener('keydown', (e) => {
   else if(e.key === '0') $('#lbZoomReset').click();
   else if(e.key === 'r' || e.key === 'R') $('#lbRotate').click();
   else if(e.key === 'a' || e.key === 'A') $('#lbToggleSide').click();
+  else if(e.key === 'c' || e.key === 'C') $('#lbCmpMode').click();
+  else if(e.key === ' ') { e.preventDefault(); $('#lbAutoPlay').click(); }
 });
 
 // マウスホイールでズーム
