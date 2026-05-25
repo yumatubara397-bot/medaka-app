@@ -138,8 +138,15 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .edit-card-title{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:700}
 .edit-card-title .pc-num{font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--accent);background:rgba(255,225,77,.1);padding:3px 9px;border-radius:6px;font-size:11px}
 .edit-card-meta{color:var(--ink-dim);font-size:11px;font-family:'JetBrains Mono',monospace}
-.edit-card-actions{display:flex;gap:6px;flex-wrap:wrap}
+.edit-card-actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .btn-mini{padding:6px 10px;font-size:11px;border-radius:8px}
+
+/* 商品ごとの明るさ3段階セレクタ */
+.brightness-group{display:inline-flex;background:var(--bg-2);border:1px solid var(--line);border-radius:99px;padding:2px;gap:0}
+.brightness-group-label{font-size:10px;color:var(--ink-dim);font-family:'JetBrains Mono',monospace;margin-right:4px;align-self:center}
+.brightness-btn{background:transparent;border:none;color:var(--ink-dim);padding:5px 11px;font-size:12px;font-weight:700;cursor:pointer;border-radius:99px;font-family:inherit;transition:.12s}
+.brightness-btn:hover{color:var(--ink)}
+.brightness-btn.active{background:var(--accent);color:#000}
 
 .edit-specimens{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
 .spec-tile{background:var(--bg-2);border:1px solid var(--line);border-radius:10px;overflow:hidden;position:relative}
@@ -257,6 +264,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
             <label class="chip-toggle"><input type="checkbox" id="modeBgBlack"><span>⬛ 背景を黒に</span></label>
             <label class="chip-toggle"><input type="checkbox" id="modeEnhance"><span>✨ ラメ・ヒレ強調</span></label>
             <label class="chip-toggle"><input type="checkbox" id="modeSharpness"><span>🔍 シャープネス補正</span></label>
+            <label class="chip-toggle" title="Replicate Real-ESRGAN で解像度を2倍に(約0.4円/枚)"><input type="checkbox" id="modeUpscale"><span>📈 解像度UP (2x)</span></label>
             <label class="chip-toggle" title="Canvas で正方形にトリミング(コスト0・AI不使用)"><input type="checkbox" id="modeSquare"><span>📐 正方形クロップ</span></label>
           </div>
           <div class="edit-actions">
@@ -813,8 +821,8 @@ async function editDbDeleteByPrefix(prefix){
 //  editState[photoIdx] = { editedBlobUrl, editedKey, modes, showEdited }
 let editState = {};
 
-// AI に投げるモード(GAS edit_image)
-function getSelectedAiModes(){
+// AI に投げる Gemini モード
+function getSelectedGeminiModes(){
   const modes = [];
   if($('#modeCleanup').checked) modes.push('cleanup');
   if($('#modeBgBlack').checked) modes.push('background_black');
@@ -822,17 +830,21 @@ function getSelectedAiModes(){
   if($('#modeSharpness').checked) modes.push('sharpness');
   return modes;
 }
-// Canvas で完結する後処理(AI不要、コスト0)
-function getSelectedClientModes(){
-  const modes = [];
-  if($('#modeSquare').checked) modes.push('square_crop');
-  return modes;
-}
-// IndexedDB キャッシュキー用にすべてのモード
-function getAllSelectedModes(){
-  return getSelectedAiModes().concat(getSelectedClientModes());
-}
+function isUpscaleEnabled(){ return $('#modeUpscale').checked; }
+function isSquareCropEnabled(){ return $('#modeSquare').checked; }
+// 旧名互換(他箇所から呼ばれていれば壊さない)
+function getSelectedAiModes(){ return getSelectedGeminiModes().concat(isUpscaleEnabled() ? ['upscale'] : []); }
+function getSelectedClientModes(){ return isSquareCropEnabled() ? ['square_crop'] : []; }
+function getAllSelectedModes(){ return getSelectedAiModes().concat(getSelectedClientModes()); }
 function modeKey(modes){ return modes.slice().sort().join('+') || 'cleanup'; }
+// 商品ごとの明るさレベル状態(productIdx → 'low'|'medium'|'high')
+const productBrightness = {};
+function getProductBrightness(productIdx){ return productBrightness[productIdx] || 'medium'; }
+function setProductBrightness(productIdx, level){
+  productBrightness[productIdx] = level;
+  renderEditProductList();
+  updateCostHint();
+}
 
 function editCacheKey(photoName, modes){
   const folder = (folderHandle && folderHandle.name) || 'noname';
@@ -840,25 +852,26 @@ function editCacheKey(photoName, modes){
 }
 
 function updateCostHint(){
-  const aiModes = getSelectedAiModes();
-  const clientModes = getSelectedClientModes();
+  const geminiModes = getSelectedGeminiModes();
+  const upscale = isUpscaleEnabled();
+  const sqcrop = isSquareCropEnabled();
   let specCount = 0;
   products.forEach(p => specCount += p.specimenIdxs.length);
-  // AI を1つでも使うときだけ Gemini にリクエストが飛ぶ
-  const yen = aiModes.length > 0 ? Math.round(specCount * 6) : 0;
-  const aiPart = aiModes.length > 0
-    ? `AI ${aiModes.length}種類 (約${yen}円)`
-    : 'AIなし (¥0)';
-  const cliPart = clientModes.length > 0
-    ? ` + ブラウザ内処理 ${clientModes.length}種類`
-    : '';
+  const geminiYen = geminiModes.length > 0 ? Math.round(specCount * 6) : 0;
+  const upscaleYen = upscale ? Math.round(specCount * 0.4) : 0;
+  const totalYen = geminiYen + upscaleYen;
+  const parts = [];
+  if(geminiModes.length > 0) parts.push(`Gemini ${geminiModes.length}種類 (約${geminiYen}円)`);
+  if(upscale) parts.push(`📈 Real-ESRGAN (約${upscaleYen}円)`);
+  if(sqcrop) parts.push(`📐 正方形クロップ (¥0)`);
+  if(parts.length === 0) parts.push('モード未選択');
   $('#editCostHint').textContent = specCount === 0
     ? '加工対象の個体写真がありません'
-    : `加工対象: ${specCount}枚 / ${aiPart}${cliPart}`;
+    : `加工対象: ${specCount}枚 / ${parts.join(' + ')} = 約${totalYen}円`;
 }
 
 $('#btnGotoImport').onclick = () => switchTab('import');
-['#modeCleanup','#modeBgBlack','#modeEnhance','#modeSharpness','#modeSquare'].forEach(s => {
+['#modeCleanup','#modeBgBlack','#modeEnhance','#modeSharpness','#modeUpscale','#modeSquare'].forEach(s => {
   document.querySelector(s).addEventListener('change', updateCostHint);
 });
 
@@ -906,6 +919,8 @@ async function renderEditProductList(){
         </div>
       `;
     }).join('');
+    const brightness = getProductBrightness(idx);
+    const brBtn = (lvl, label) => `<button class="brightness-btn ${brightness===lvl?'active':''}" data-action="brightness" data-product-idx="${idx}" data-level="${lvl}">${label}</button>`;
     return `
       <div class="edit-card" data-product-idx="${idx}">
         <div class="edit-card-head">
@@ -915,6 +930,10 @@ async function renderEditProductList(){
           </div>
           <div class="edit-card-actions">
             <span class="edit-card-meta">個体 ${p.specimenIdxs.length}枚</span>
+            <div class="brightness-group" title="この商品の明るさレベル (Geminiプロンプトに反映)">
+              <span class="brightness-group-label">明るさ</span>
+              ${brBtn('low','🌑 弱')}${brBtn('medium','🌗 中')}${brBtn('high','🌕 強')}
+            </div>
             <button class="btn btn-ghost btn-mini" data-action="run-product" data-product-idx="${idx}">✨ この商品だけ加工</button>
           </div>
         </div>
@@ -942,6 +961,9 @@ async function renderEditProductList(){
   list.querySelectorAll('[data-action="run-product"]').forEach(el => {
     el.onclick = () => runEditForProducts([+el.dataset.productIdx]);
   });
+  list.querySelectorAll('[data-action="brightness"]').forEach(el => {
+    el.onclick = () => setProductBrightness(+el.dataset.productIdx, el.dataset.level);
+  });
 }
 
 // 一括加工
@@ -961,17 +983,27 @@ $('#btnEditClearCache').onclick = async () => {
   toast(`${n}枚の編集結果を削除しました`, 'ok');
 };
 
+// blob → dataURL 変換 (Upscale 入力用)
+function blobToDataUrl(blob){
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+}
+
 async function runEditForProducts(productIdxs){
   const gasUrl = (localStorage.getItem(API_URL_KEY) || '').trim();
-  const aiModes = getSelectedAiModes();
-  const clientModes = getSelectedClientModes();
-  const allModes = aiModes.concat(clientModes);
+  const geminiModes = getSelectedGeminiModes();
+  const upscale = isUpscaleEnabled();
+  const sqcrop = isSquareCropEnabled();
+  const needsGas = geminiModes.length > 0 || upscale;
 
-  if(allModes.length === 0){
+  if(geminiModes.length === 0 && !upscale && !sqcrop){
     toast('加工モードが1つも選ばれていません', 'err'); return;
   }
-  // AI を使う場合のみ GAS URL が必須
-  if(aiModes.length > 0 && !gasUrl.startsWith('https://script.google.com/')){
+  if(needsGas && !gasUrl.startsWith('https://script.google.com/')){
     toast('設定タブでGAS URLを設定してください', 'err'); switchTab('settings'); return;
   }
 
@@ -998,42 +1030,59 @@ async function runEditForProducts(productIdxs){
   for(let i = 0; i < tasks.length; i++){
     const t = tasks[i];
     const ph = photos[t.photoIdx];
+    const brightness = getProductBrightness(t.productIdx);
     text.textContent = `加工中 ${i+1}/${tasks.length}: ${ph.name}`;
     fill.style.width = ((i)/tasks.length*100).toFixed(1) + '%';
 
-    const key = editCacheKey(ph.name, allModes);
+    // キャッシュキーには brightness も含める(明るさ違いは別キャッシュ)
+    const allModes = geminiModes.concat(upscale?['upscale']:[], sqcrop?['square_crop']:[]);
+    const key = editCacheKey(ph.name, allModes.concat(['br:'+brightness]));
+
     try {
-      // キャッシュ確認(全モード組み合わせ単位)
       let blob = await editDbGet(key);
       if(blob){
         cached++;
       } else {
-        // ① AI 加工(あれば)
-        let intermediateBlob;
-        if(aiModes.length > 0){
+        // ① Gemini 加工(あれば)
+        let curBlob;
+        if(geminiModes.length > 0){
+          text.textContent = `🧹 Gemini加工 ${i+1}/${tasks.length}: ${ph.name}`;
           const file = await ph.handle.getFile();
           const dataUrl = await fileToResizedDataUrl(file, 1280, 0.9);
           const res = await fetch(gasUrl, {
             method: 'POST',
-            body: JSON.stringify({ action:'edit_image', image: dataUrl, modes: aiModes })
+            body: JSON.stringify({ action:'edit_image', image: dataUrl, modes: geminiModes, brightness: brightness })
           });
-          if(!res.ok) throw new Error('HTTP '+res.status);
+          if(!res.ok) throw new Error('Gemini HTTP '+res.status);
           const json = await res.json();
-          if(!json || !json.ok || !json.image) throw new Error(json && json.error || 'API応答不正');
-          intermediateBlob = await (await fetch(json.image)).blob();
+          if(!json || !json.ok || !json.image) throw new Error(json && json.error || 'Gemini API応答不正');
+          curBlob = await (await fetch(json.image)).blob();
         } else {
-          // AI不要(Canvas処理のみ)。元画像を blob 化
-          intermediateBlob = await ph.handle.getFile();
+          curBlob = await ph.handle.getFile();
         }
-        // ② Canvas 後処理(square_crop など)
-        if(clientModes.indexOf('square_crop') >= 0){
-          intermediateBlob = await squareCropBlob(intermediateBlob);
+
+        // ② Replicate Real-ESRGAN で解像度UP(あれば)
+        if(upscale){
+          text.textContent = `📈 解像度UP ${i+1}/${tasks.length}: ${ph.name}`;
+          const dataUrl = await blobToDataUrl(curBlob);
+          const res = await fetch(gasUrl, {
+            method: 'POST',
+            body: JSON.stringify({ action:'upscale_image', image: dataUrl, scale: 2 })
+          });
+          if(!res.ok) throw new Error('Upscale HTTP '+res.status);
+          const json = await res.json();
+          if(!json || !json.ok || !json.image) throw new Error(json && json.error || 'Upscale API応答不正');
+          curBlob = await (await fetch(json.image)).blob();
         }
-        blob = intermediateBlob;
+
+        // ③ Canvas 後処理(square_crop)
+        if(sqcrop){
+          curBlob = await squareCropBlob(curBlob);
+        }
+        blob = curBlob;
         await editDbPut(key, blob);
         ok++;
       }
-      // 表示用 blobUrl
       if(editState[t.photoIdx] && editState[t.photoIdx].editedBlobUrl){
         URL.revokeObjectURL(editState[t.photoIdx].editedBlobUrl);
       }
@@ -1041,6 +1090,7 @@ async function runEditForProducts(productIdxs){
         editedBlobUrl: URL.createObjectURL(blob),
         editedKey: key,
         modes: allModes.slice(),
+        brightness: brightness,
         showEdited: true
       };
     } catch(e){
