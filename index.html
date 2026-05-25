@@ -256,6 +256,8 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
             <label class="chip-toggle"><input type="checkbox" id="modeCleanup" checked><span>🧹 基本補正 (明るさ・色味・ノイズ・ゴミ)</span></label>
             <label class="chip-toggle"><input type="checkbox" id="modeBgBlack"><span>⬛ 背景を黒に</span></label>
             <label class="chip-toggle"><input type="checkbox" id="modeEnhance"><span>✨ ラメ・ヒレ強調</span></label>
+            <label class="chip-toggle"><input type="checkbox" id="modeSharpness"><span>🔍 シャープネス補正</span></label>
+            <label class="chip-toggle" title="Canvas で正方形にトリミング(コスト0・AI不使用)"><input type="checkbox" id="modeSquare"><span>📐 正方形クロップ</span></label>
           </div>
           <div class="edit-actions">
             <button id="btnEditRunAll" class="btn btn-primary">✨ AI加工 一括実行</button>
@@ -637,6 +639,34 @@ $('#btnOcrAll').onclick = async () => {
   toast(`OCR完了: 成功 ${ok} / 失敗 ${fail}`, fail ? 'err' : 'ok');
 };
 
+// ===== 正方形クロップ(中央配置 / コスト0 / ブラウザ内完結) =====
+// Blob を 1:1 にクロップ(短辺基準、中央切り出し)。最終サイズは min(1500, 短辺) にダウンサンプル。
+function squareCropBlob(blob){
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const size = Math.min(img.naturalWidth, img.naturalHeight);
+      const sx = (img.naturalWidth - size) / 2;
+      const sy = (img.naturalHeight - size) / 2;
+      // 出力サイズ上限(モール出品用にちょうど良い1500px)
+      const outSize = Math.min(1500, size);
+      const c = document.createElement('canvas');
+      c.width = outSize;
+      c.height = outSize;
+      const ctx = c.getContext('2d');
+      ctx.imageSmoothingQuality = 'high';
+      ctx.fillStyle = '#000';  // 念のため黒背景(透過になったとき用)
+      ctx.fillRect(0, 0, outSize, outSize);
+      ctx.drawImage(img, sx, sy, size, size, 0, 0, outSize, outSize);
+      c.toBlob((b) => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/jpeg', 0.92);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('画像読込失敗')); };
+    img.src = url;
+  });
+}
+
 // ===== 画像リサイズ(OCR送信用に縮小) =====
 function fileToResizedDataUrl(file, maxDim, quality){
   return new Promise((resolve, reject) => {
@@ -783,18 +813,26 @@ async function editDbDeleteByPrefix(prefix){
 //  editState[photoIdx] = { editedBlobUrl, editedKey, modes, showEdited }
 let editState = {};
 
-function getSelectedModes(){
+// AI に投げるモード(GAS edit_image)
+function getSelectedAiModes(){
   const modes = [];
   if($('#modeCleanup').checked) modes.push('cleanup');
   if($('#modeBgBlack').checked) modes.push('background_black');
   if($('#modeEnhance').checked) modes.push('enhance_scales');
+  if($('#modeSharpness').checked) modes.push('sharpness');
   return modes;
 }
-function modeKey(modes){ return modes.slice().sort().join('+') || 'cleanup'; }
-function modeLabelShort(modes){
-  const map = { cleanup:'🧹', background_black:'⬛', enhance_scales:'✨' };
-  return modes.map(m => map[m] || '?').join('');
+// Canvas で完結する後処理(AI不要、コスト0)
+function getSelectedClientModes(){
+  const modes = [];
+  if($('#modeSquare').checked) modes.push('square_crop');
+  return modes;
 }
+// IndexedDB キャッシュキー用にすべてのモード
+function getAllSelectedModes(){
+  return getSelectedAiModes().concat(getSelectedClientModes());
+}
+function modeKey(modes){ return modes.slice().sort().join('+') || 'cleanup'; }
 
 function editCacheKey(photoName, modes){
   const folder = (folderHandle && folderHandle.name) || 'noname';
@@ -802,17 +840,25 @@ function editCacheKey(photoName, modes){
 }
 
 function updateCostHint(){
-  const modes = getSelectedModes();
+  const aiModes = getSelectedAiModes();
+  const clientModes = getSelectedClientModes();
   let specCount = 0;
   products.forEach(p => specCount += p.specimenIdxs.length);
-  const yen = Math.round(specCount * 6);
+  // AI を1つでも使うときだけ Gemini にリクエストが飛ぶ
+  const yen = aiModes.length > 0 ? Math.round(specCount * 6) : 0;
+  const aiPart = aiModes.length > 0
+    ? `AI ${aiModes.length}種類 (約${yen}円)`
+    : 'AIなし (¥0)';
+  const cliPart = clientModes.length > 0
+    ? ` + ブラウザ内処理 ${clientModes.length}種類`
+    : '';
   $('#editCostHint').textContent = specCount === 0
     ? '加工対象の個体写真がありません'
-    : `加工対象: ${specCount}枚 × 1回 ≒ 約${yen}円(Gemini ~6円/枚) / モード: ${modes.length===0 ? 'なし(明るさのみ)' : modes.length+'種類'}`;
+    : `加工対象: ${specCount}枚 / ${aiPart}${cliPart}`;
 }
 
 $('#btnGotoImport').onclick = () => switchTab('import');
-['#modeCleanup','#modeBgBlack','#modeEnhance'].forEach(s => {
+['#modeCleanup','#modeBgBlack','#modeEnhance','#modeSharpness','#modeSquare'].forEach(s => {
   document.querySelector(s).addEventListener('change', updateCostHint);
 });
 
@@ -917,12 +963,16 @@ $('#btnEditClearCache').onclick = async () => {
 
 async function runEditForProducts(productIdxs){
   const gasUrl = (localStorage.getItem(API_URL_KEY) || '').trim();
-  if(!gasUrl.startsWith('https://script.google.com/')){
-    toast('設定タブでGAS URLを設定してください', 'err'); switchTab('settings'); return;
+  const aiModes = getSelectedAiModes();
+  const clientModes = getSelectedClientModes();
+  const allModes = aiModes.concat(clientModes);
+
+  if(allModes.length === 0){
+    toast('加工モードが1つも選ばれていません', 'err'); return;
   }
-  const modes = getSelectedModes();
-  if(modes.length === 0){
-    if(!confirm('加工モードが1つも選ばれていません。明るさ補正のみで実行しますか？')) return;
+  // AI を使う場合のみ GAS URL が必須
+  if(aiModes.length > 0 && !gasUrl.startsWith('https://script.google.com/')){
+    toast('設定タブでGAS URLを設定してください', 'err'); switchTab('settings'); return;
   }
 
   // 対象個体写真を集める
@@ -951,23 +1001,35 @@ async function runEditForProducts(productIdxs){
     text.textContent = `加工中 ${i+1}/${tasks.length}: ${ph.name}`;
     fill.style.width = ((i)/tasks.length*100).toFixed(1) + '%';
 
-    const key = editCacheKey(ph.name, modes);
+    const key = editCacheKey(ph.name, allModes);
     try {
-      // キャッシュ確認
+      // キャッシュ確認(全モード組み合わせ単位)
       let blob = await editDbGet(key);
       if(blob){
         cached++;
       } else {
-        const file = await ph.handle.getFile();
-        const dataUrl = await fileToResizedDataUrl(file, 1280, 0.9);
-        const res = await fetch(gasUrl, {
-          method: 'POST',
-          body: JSON.stringify({ action:'edit_image', image: dataUrl, modes: modes })
-        });
-        if(!res.ok) throw new Error('HTTP '+res.status);
-        const json = await res.json();
-        if(!json || !json.ok || !json.image) throw new Error(json && json.error || 'API応答不正');
-        blob = await (await fetch(json.image)).blob();
+        // ① AI 加工(あれば)
+        let intermediateBlob;
+        if(aiModes.length > 0){
+          const file = await ph.handle.getFile();
+          const dataUrl = await fileToResizedDataUrl(file, 1280, 0.9);
+          const res = await fetch(gasUrl, {
+            method: 'POST',
+            body: JSON.stringify({ action:'edit_image', image: dataUrl, modes: aiModes })
+          });
+          if(!res.ok) throw new Error('HTTP '+res.status);
+          const json = await res.json();
+          if(!json || !json.ok || !json.image) throw new Error(json && json.error || 'API応答不正');
+          intermediateBlob = await (await fetch(json.image)).blob();
+        } else {
+          // AI不要(Canvas処理のみ)。元画像を blob 化
+          intermediateBlob = await ph.handle.getFile();
+        }
+        // ② Canvas 後処理(square_crop など)
+        if(clientModes.indexOf('square_crop') >= 0){
+          intermediateBlob = await squareCropBlob(intermediateBlob);
+        }
+        blob = intermediateBlob;
         await editDbPut(key, blob);
         ok++;
       }
@@ -978,7 +1040,7 @@ async function runEditForProducts(productIdxs){
       editState[t.photoIdx] = {
         editedBlobUrl: URL.createObjectURL(blob),
         editedKey: key,
-        modes: modes.slice(),
+        modes: allModes.slice(),
         showEdited: true
       };
     } catch(e){
@@ -986,7 +1048,6 @@ async function runEditForProducts(productIdxs){
       lastError = String(e && e.message || e);
       console.warn('edit fail', ph.name, e);
     }
-    // 都度部分更新(重いので最後だけでも良いが体感重視)
     if(i % 2 === 1 || i === tasks.length - 1) await renderEditProductList();
   }
 
