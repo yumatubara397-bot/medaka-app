@@ -264,8 +264,9 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
             <label class="chip-toggle"><input type="checkbox" id="modeBgBlack"><span>⬛ 背景を黒に</span></label>
             <label class="chip-toggle"><input type="checkbox" id="modeEnhance"><span>✨ ラメ・ヒレ強調</span></label>
             <label class="chip-toggle"><input type="checkbox" id="modeSharpness"><span>🔍 シャープネス補正</span></label>
+            <label class="chip-toggle" title="AIが画像を回転・クロップしてメダカが画面いっぱいに見える構図に。正方形(1:1)で出力"><input type="checkbox" id="modeFrame"><span>🎯 メダカ最大表示 (AI構図)</span></label>
             <label class="chip-toggle" title="Replicate Real-ESRGAN で解像度を2倍に(約0.4円/枚)"><input type="checkbox" id="modeUpscale"><span>📈 解像度UP (2x)</span></label>
-            <label class="chip-toggle" title="Canvas で正方形にトリミング(コスト0・AI不使用)"><input type="checkbox" id="modeSquare"><span>📐 正方形クロップ</span></label>
+            <label class="chip-toggle" title="Canvas で正方形にトリミング(コスト0・AI不使用)"><input type="checkbox" id="modeSquare"><span>📐 正方形クロップ (Canvas)</span></label>
           </div>
           <div class="edit-actions">
             <button id="btnEditRunAll" class="btn btn-primary">✨ AI加工 一括実行</button>
@@ -828,6 +829,7 @@ function getSelectedGeminiModes(){
   if($('#modeBgBlack').checked) modes.push('background_black');
   if($('#modeEnhance').checked) modes.push('enhance_scales');
   if($('#modeSharpness').checked) modes.push('sharpness');
+  if($('#modeFrame').checked) modes.push('frame_optimize');
   return modes;
 }
 function isUpscaleEnabled(){ return $('#modeUpscale').checked; }
@@ -871,7 +873,7 @@ function updateCostHint(){
 }
 
 $('#btnGotoImport').onclick = () => switchTab('import');
-['#modeCleanup','#modeBgBlack','#modeEnhance','#modeSharpness','#modeUpscale','#modeSquare'].forEach(s => {
+['#modeCleanup','#modeBgBlack','#modeEnhance','#modeSharpness','#modeFrame','#modeUpscale','#modeSquare'].forEach(s => {
   document.querySelector(s).addEventListener('change', updateCostHint);
 });
 
@@ -1027,6 +1029,7 @@ async function runEditForProducts(productIdxs){
 
   let ok = 0, fail = 0, cached = 0;
   let lastError = '';
+  let upscaleSkippedCount = 0;
   for(let i = 0; i < tasks.length; i++){
     const t = tasks[i];
     const ph = photos[t.photoIdx];
@@ -1062,17 +1065,25 @@ async function runEditForProducts(productIdxs){
         }
 
         // ② Replicate Real-ESRGAN で解像度UP(あれば)
+        // 失敗してもGemini結果は活かす(全失敗扱いにしない)
         if(upscale){
-          text.textContent = `📈 解像度UP ${i+1}/${tasks.length}: ${ph.name}`;
-          const dataUrl = await blobToDataUrl(curBlob);
-          const res = await fetch(gasUrl, {
-            method: 'POST',
-            body: JSON.stringify({ action:'upscale_image', image: dataUrl, scale: 2 })
-          });
-          if(!res.ok) throw new Error('Upscale HTTP '+res.status);
-          const json = await res.json();
-          if(!json || !json.ok || !json.image) throw new Error(json && json.error || 'Upscale API応答不正');
-          curBlob = await (await fetch(json.image)).blob();
+          try {
+            text.textContent = `📈 解像度UP ${i+1}/${tasks.length}: ${ph.name}`;
+            const dataUrl = await blobToDataUrl(curBlob);
+            const res = await fetch(gasUrl, {
+              method: 'POST',
+              body: JSON.stringify({ action:'upscale_image', image: dataUrl, scale: 2 })
+            });
+            if(!res.ok) throw new Error('Upscale HTTP '+res.status);
+            const json = await res.json();
+            if(!json || !json.ok || !json.image) throw new Error(json && json.error || 'Upscale API応答不正');
+            curBlob = await (await fetch(json.image)).blob();
+          } catch(upErr){
+            // Upscale だけ失敗 → Gemini結果のまま続行
+            console.warn('upscale skipped:', upErr);
+            upscaleSkippedCount++;
+            lastError = '⚠️ 解像度UPはスキップ: ' + String(upErr && upErr.message || upErr);
+          }
         }
 
         // ③ Canvas 後処理(square_crop)
@@ -1102,15 +1113,16 @@ async function runEditForProducts(productIdxs){
   }
 
   fill.style.width = '100%';
-  text.textContent = fail
-    ? `完了: 新規${ok} / キャッシュ${cached} / 失敗${fail} — ${lastError}`
+  const skipTag = upscaleSkippedCount > 0 ? ` / 📈スキップ${upscaleSkippedCount}` : '';
+  text.textContent = (fail || upscaleSkippedCount)
+    ? `完了: 新規${ok} / キャッシュ${cached} / 失敗${fail}${skipTag} — ${lastError}`
     : `完了: 新規${ok} / キャッシュ${cached} / 失敗${fail}`;
-  setTimeout(() => prog.classList.add('hidden'), fail ? 8000 : 2500);
+  setTimeout(() => prog.classList.add('hidden'), (fail || upscaleSkippedCount) ? 8000 : 2500);
   btn.disabled = false;
   btn.textContent = origLabel;
   await renderEditProductList();
-  const summary = `AI加工完了: 新規${ok} / キャッシュ${cached} / 失敗${fail}`;
-  toast(fail ? `${summary} — ${lastError.substring(0,80)}` : summary, fail ? 'err' : 'ok');
+  const summary = `AI加工完了: 新規${ok} / キャッシュ${cached} / 失敗${fail}${skipTag}`;
+  toast((fail || upscaleSkippedCount) ? `${summary} — ${lastError.substring(0,80)}` : summary, fail ? 'err' : (upscaleSkippedCount ? 'warn' : 'ok'));
 }
 
 // ============================================================
