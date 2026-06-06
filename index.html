@@ -648,6 +648,50 @@ $('#btnOcrAll').onclick = async () => {
   toast(`OCR完了: 成功 ${ok} / 失敗 ${fail}`, fail ? 'err' : 'ok');
 };
 
+// ===== Canvas でガンマ補正による明るさ調整 =====
+// AI まかせだと写真ごとにバラつくため、最終的にCanvasで画一的な露出補正をかける。
+// 背景の純黒(R+G+B < 閾値) は保護して灰色化を防ぐ。
+function adjustBrightnessBlob(blob, level){
+  // level: 'low' | 'medium' | 'high'
+  // gamma: <1 で暗く、>1 で明るく
+  const gamma = level === 'high' ? 1.45 : (level === 'low' ? 0.95 : 1.15);
+  const blackThreshold = 35;  // この値以下のピクセルは「背景黒」とみなして保護
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth;
+      c.height = img.naturalHeight;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      const imgData = ctx.getImageData(0, 0, c.width, c.height);
+      const d = imgData.data;
+      // ルックアップテーブル(高速化)
+      const lut = new Uint8Array(256);
+      const invG = 1.0 / gamma;
+      for(let i = 0; i < 256; i++){
+        lut[i] = Math.min(255, Math.max(0, Math.round(Math.pow(i/255, invG) * 255)));
+      }
+      for(let i = 0; i < d.length; i += 4){
+        const r = d[i], g = d[i+1], b = d[i+2];
+        // 背景黒(暗い領域)はそのまま残す → 灰色化を防ぐ
+        if((r + g + b) < blackThreshold * 3){
+          continue;
+        }
+        d[i]   = lut[r];
+        d[i+1] = lut[g];
+        d[i+2] = lut[b];
+      }
+      ctx.putImageData(imgData, 0, 0);
+      c.toBlob((b) => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/jpeg', 0.92);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('画像読込失敗')); };
+    img.src = url;
+  });
+}
+
 // ===== 正方形クロップ(中央配置 / コスト0 / ブラウザ内完結) =====
 // Blob を 1:1 にクロップ(短辺基準、中央切り出し)。最終サイズは min(1500, 短辺) にダウンサンプル。
 function squareCropBlob(blob){
@@ -1062,6 +1106,15 @@ async function runEditForProducts(productIdxs){
           curBlob = await (await fetch(json.image)).blob();
         } else {
           curBlob = await ph.handle.getFile();
+        }
+
+        // ②' Canvas で明るさ最終補正(AIのバラつきを画一的に均す。背景黒は保護)
+        // brightness=medium でも軽くガンマを当てて、暗めGemini結果を底上げする
+        try {
+          text.textContent = `🌗 明るさ補正 ${i+1}/${tasks.length}: ${ph.name}`;
+          curBlob = await adjustBrightnessBlob(curBlob, brightness);
+        } catch(brErr){
+          console.warn('brightness adjust skipped:', brErr);
         }
 
         // ② Replicate Real-ESRGAN で解像度UP(あれば)
