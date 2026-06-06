@@ -150,14 +150,21 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 
 .edit-specimens{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
 .spec-tile{background:var(--bg-2);border:1px solid var(--line);border-radius:10px;overflow:hidden;position:relative}
+.spec-tile.has-edited{grid-column:span 2}  /* 加工後がある時は2列幅で並列表示 */
 .spec-tile-img{position:relative;aspect-ratio:1;background:#000;cursor:zoom-in}
 .spec-tile-img img{width:100%;height:100%;object-fit:cover;display:block}
-.spec-tile-badge{position:absolute;top:6px;left:6px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;font-family:'JetBrains Mono',monospace;backdrop-filter:blur(4px)}
+.spec-tile-pair{display:grid;grid-template-columns:1fr 1fr;gap:2px;background:var(--line);position:relative}
+.spec-tile-pair .spec-tile-img{aspect-ratio:1}
+.spec-tile-pair-divider{position:absolute;top:0;bottom:0;left:50%;width:2px;background:var(--bg-2);pointer-events:none;z-index:2}
+.spec-tile-badge{position:absolute;top:6px;left:6px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;font-family:'JetBrains Mono',monospace;backdrop-filter:blur(4px);z-index:1}
 .spec-tile-badge.edited{background:var(--ok);color:#000}
-.spec-tile-foot{display:flex;gap:4px;padding:6px;align-items:center;justify-content:space-between}
+.spec-tile-foot{display:flex;gap:6px;padding:6px;align-items:center;justify-content:space-between}
 .spec-tile-name{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--ink-dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .spec-tile-toggle{background:var(--line);color:var(--ink);border:none;padding:3px 7px;border-radius:5px;font-size:9px;cursor:pointer;font-weight:700}
 .spec-tile-toggle.on{background:var(--ok);color:#000}
+.spec-tile-save{background:var(--accent);color:#000;border:none;padding:4px 10px;border-radius:5px;font-size:10px;cursor:pointer;font-weight:700;display:inline-flex;align-items:center;gap:3px}
+.spec-tile-save:hover{filter:brightness(1.1)}
+.spec-tile-save:disabled{background:var(--line);color:var(--ink-dim);cursor:not-allowed}
 .spec-tile-spinner{position:absolute;inset:0;background:rgba(0,0,0,.5);display:grid;place-items:center;color:#fff;font-size:11px;backdrop-filter:blur(2px)}
 .spec-tile-spinner::before{content:'';width:24px;height:24px;border:3px solid rgba(255,255,255,.3);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;margin-right:8px}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -270,6 +277,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
           </div>
           <div class="edit-actions">
             <button id="btnEditRunAll" class="btn btn-primary">✨ AI加工 一括実行</button>
+            <button id="btnEditSaveAll" class="btn btn-ghost" title="現在の加工後画像を全部保存">💾 全部保存</button>
             <button id="btnEditClearCache" class="btn btn-ghost" title="この取込フォルダの編集済みをすべて削除">🗑 編集結果をクリア</button>
           </div>
         </div>
@@ -648,14 +656,19 @@ $('#btnOcrAll').onclick = async () => {
   toast(`OCR完了: 成功 ${ok} / 失敗 ${fail}`, fail ? 'err' : 'ok');
 };
 
-// ===== Canvas でガンマ補正による明るさ調整 =====
-// AI まかせだと写真ごとにバラつくため、最終的にCanvasで画一的な露出補正をかける。
-// 背景の純黒(R+G+B < 閾値) は保護して灰色化を防ぐ。
+// ===== Canvas で「適応的」明るさ補正 =====
+// 写真ごとに最適なガンマ値を自動算出。暗い写真は強く、明るい写真は控えめに補正される。
+// 1. 画像内のメダカ部分(非黒領域)の平均輝度を測定
+// 2. それを「目標輝度」に合わせるガンマ値を算出
+// 3. ガンマ補正を適用(背景黒は保護)
 function adjustBrightnessBlob(blob, level){
-  // level: 'low' | 'medium' | 'high'
-  // gamma: <1 で暗く、>1 で明るく
-  const gamma = level === 'high' ? 1.45 : (level === 'low' ? 0.95 : 1.15);
-  const blackThreshold = 35;  // この値以下のピクセルは「背景黒」とみなして保護
+  // 目標輝度: メダカ部分(非黒)がこの値前後に来るよう補正
+  //   弱(low)    = 控えめ、現状寄り
+  //   中(medium) = 商品写真として標準
+  //   強(high)   = しっかり見える明るさ
+  const targetLum = level === 'high' ? 175 : (level === 'low' ? 120 : 150);
+  const measureBlackBelow  = 25;  // 輝度測定で「背景黒」とみなす閾値
+  const protectBlackBelow  = 18;  // 補正時に保護する純黒の閾値(厳しめ)
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(blob);
@@ -668,23 +681,42 @@ function adjustBrightnessBlob(blob, level){
       ctx.drawImage(img, 0, 0);
       const imgData = ctx.getImageData(0, 0, c.width, c.height);
       const d = imgData.data;
-      // ルックアップテーブル(高速化)
+
+      // === ステップ1: メダカ部分(非黒)の平均輝度を測定 ===
+      let sumLum = 0, countLum = 0;
+      for(let i = 0; i < d.length; i += 4){
+        const lum = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
+        if(lum > measureBlackBelow){
+          sumLum += lum;
+          countLum++;
+        }
+      }
+      const avgLum = countLum > 0 ? sumLum / countLum : 128;
+
+      // === ステップ2: 目標輝度に合わせるガンマ値を算出 ===
+      // ガンマ = log(target/255) / log(avg/255) (両方とも 0 < x < 1 なので両 log < 0 → gamma > 0)
+      let gamma = 1.0;
+      if(avgLum > 5 && avgLum < 250){
+        gamma = Math.log(targetLum / 255) / Math.log(avgLum / 255);
+        // 過剰補正を防ぐクランプ
+        gamma = Math.max(0.5, Math.min(3.5, gamma));
+      }
+
+      // === ステップ3: LUT を作って適用(背景黒は保護) ===
       const lut = new Uint8Array(256);
       const invG = 1.0 / gamma;
       for(let i = 0; i < 256; i++){
         lut[i] = Math.min(255, Math.max(0, Math.round(Math.pow(i/255, invG) * 255)));
       }
       for(let i = 0; i < d.length; i += 4){
-        const r = d[i], g = d[i+1], b = d[i+2];
-        // 背景黒(暗い領域)はそのまま残す → 灰色化を防ぐ
-        if((r + g + b) < blackThreshold * 3){
-          continue;
-        }
-        d[i]   = lut[r];
-        d[i+1] = lut[g];
-        d[i+2] = lut[b];
+        const lum = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
+        if(lum < protectBlackBelow) continue;  // 純黒は保護
+        d[i]   = lut[d[i]];
+        d[i+1] = lut[d[i+1]];
+        d[i+2] = lut[d[i+2]];
       }
       ctx.putImageData(imgData, 0, 0);
+      // debug: console.log(`adj: avg=${avgLum.toFixed(0)} target=${targetLum} gamma=${gamma.toFixed(2)}`);
       c.toBlob((b) => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/jpeg', 0.92);
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('画像読込失敗')); };
@@ -942,25 +974,39 @@ async function renderEditProductList(){
       const ph = photos[i];
       const st = editState[i];
       const hasEdited = !!(st && st.editedBlobUrl);
-      const showEdited = hasEdited && st.showEdited;
-      const src = showEdited ? st.editedBlobUrl : ph.blobUrl;
-      // 常にバッジを出す: 「加工前のみ / 加工後 / 元」をひと目で
-      const badge = !hasEdited
-        ? `<span class="spec-tile-badge original">加工前</span>`
-        : (showEdited
-            ? `<span class="spec-tile-badge edited">✨ 加工後</span>`
-            : `<span class="spec-tile-badge original">加工前</span>`);
+
+      if(hasEdited){
+        // 加工後あり → 左:加工前 / 右:加工後 の並列表示
+        return `
+          <div class="spec-tile has-edited" data-photo-idx="${i}">
+            <div class="spec-tile-pair">
+              <div class="spec-tile-img" data-action="zoom" data-photo-idx="${i}" title="クリックで拡大">
+                <img src="${ph.blobUrl}" alt="${escapeHtml(ph.name)}">
+                <span class="spec-tile-badge original">加工前</span>
+              </div>
+              <div class="spec-tile-img" data-action="zoom" data-photo-idx="${i}" title="クリックで拡大">
+                <img src="${st.editedBlobUrl}" alt="${escapeHtml(ph.name)}">
+                <span class="spec-tile-badge edited">✨ 加工後</span>
+              </div>
+              <div class="spec-tile-pair-divider"></div>
+            </div>
+            <div class="spec-tile-foot">
+              <span class="spec-tile-name" title="${escapeHtml(ph.name)}">${escapeHtml(ph.name)}</span>
+              <button class="spec-tile-save" data-action="save" data-photo-idx="${i}" title="加工後をダウンロード">💾 保存</button>
+            </div>
+          </div>
+        `;
+      }
+      // 加工後なし → 単一表示
       return `
         <div class="spec-tile" data-photo-idx="${i}">
-          <div class="spec-tile-img" data-action="zoom" data-photo-idx="${i}">
-            <img src="${src}" alt="${escapeHtml(ph.name)}">
-            ${badge}
+          <div class="spec-tile-img" data-action="zoom" data-photo-idx="${i}" title="クリックで拡大">
+            <img src="${ph.blobUrl}" alt="${escapeHtml(ph.name)}">
+            <span class="spec-tile-badge original">加工前</span>
           </div>
           <div class="spec-tile-foot">
             <span class="spec-tile-name" title="${escapeHtml(ph.name)}">${escapeHtml(ph.name)}</span>
-            ${hasEdited
-              ? `<button class="spec-tile-toggle ${showEdited?'on':''}" data-action="toggle" data-photo-idx="${i}" title="クリックで加工前/後を切替">${showEdited?'加工後':'加工前'}</button>`
-              : ''}
+            <button class="spec-tile-save" data-action="save" data-photo-idx="${i}" disabled title="加工後がありません">💾 保存</button>
           </div>
         </div>
       `;
@@ -994,22 +1040,55 @@ async function renderEditProductList(){
   list.querySelectorAll('[data-action="zoom"]').forEach(el => {
     el.onclick = () => openLightbox(+el.dataset.photoIdx);
   });
-  list.querySelectorAll('[data-action="toggle"]').forEach(el => {
-    el.onclick = (e) => {
-      e.stopPropagation();
-      const i = +el.dataset.photoIdx;
-      if(editState[i] && editState[i].editedBlobUrl){
-        editState[i].showEdited = !editState[i].showEdited;
-        renderEditProductList();
-      }
-    };
-  });
   list.querySelectorAll('[data-action="run-product"]').forEach(el => {
     el.onclick = () => runEditForProducts([+el.dataset.productIdx]);
   });
   list.querySelectorAll('[data-action="brightness"]').forEach(el => {
     el.onclick = () => setProductBrightness(+el.dataset.productIdx, el.dataset.level);
   });
+  list.querySelectorAll('[data-action="save"]').forEach(el => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      downloadEditedPhoto(+el.dataset.photoIdx);
+    };
+  });
+}
+
+// 全加工後画像を順次ダウンロード保存
+$('#btnEditSaveAll').onclick = async () => {
+  const idxs = [];
+  products.forEach(p => p.specimenIdxs.forEach(i => {
+    const st = editState[i];
+    if(st && st.editedBlobUrl) idxs.push(i);
+  }));
+  if(idxs.length === 0){ toast('加工後画像がありません', 'err'); return; }
+  if(!confirm(`${idxs.length}枚の加工後画像を順次ダウンロードします。よろしいですか？`)) return;
+  for(const i of idxs){
+    await downloadEditedPhoto(i);
+    await new Promise(r => setTimeout(r, 250));  // ブラウザの連続DL警告を避ける間隔
+  }
+};
+
+// 加工後画像を 1枚ダウンロード保存
+async function downloadEditedPhoto(photoIdx){
+  const ph = photos[photoIdx];
+  const st = editState[photoIdx];
+  if(!st || !st.editedBlobUrl){ toast('加工後画像がありません', 'err'); return; }
+  try {
+    const blob = await (await fetch(st.editedBlobUrl)).blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const base = ph.name.replace(/\.[^.]+$/, '');
+    a.href = url;
+    a.download = `${base}_edited.jpg`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast(`💾 ${a.download} を保存しました`, 'ok');
+  } catch(e){
+    toast('保存失敗: ' + (e.message || e), 'err');
+  }
 }
 
 // 一括加工
