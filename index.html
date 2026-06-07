@@ -276,20 +276,20 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
       </div>
 
       <div id="editLoaded" class="hidden">
-        <!-- お手本スタイル取込セクション -->
+        <!-- お手本ペアを AI に記憶させるセクション -->
         <div class="ref-section" id="refSection">
           <div class="ref-head">
-            <div class="ref-title">📚 お手本スタイルを学習(任意)</div>
+            <div class="ref-title">📚 過去の編集前/後を AI に記憶させる</div>
             <div class="ref-actions">
-              <button id="btnPickRefFolder" class="btn btn-ghost btn-mini">📂 お手本フォルダを選ぶ</button>
-              <button id="btnClearRef" class="btn btn-ghost btn-mini hidden">クリア</button>
+              <button id="btnPickRefFolder" class="btn btn-ghost btn-mini">📂 過去フォルダを選ぶ</button>
+              <button id="btnClearRef" class="btn btn-ghost btn-mini hidden">記憶を消去</button>
             </div>
           </div>
           <div class="ref-hint">
             過去の写真フォルダ(<strong>「のコピー」が付いた編集後</strong> と <strong>付いていない編集前</strong> が混在しているフォルダ)を選ぶと、
-            ペアを自動検出して 明るさ・シャープネス・解像度 のパターンを学習します。<br>
-            例: <code>DSC_1716.JPG</code>(編集前) + <code>DSC_1716のコピー.JPG</code>(編集後) を 1ペアとして扱います。
-            学習後は「📚 お手本スタイル」モードで現在の取込写真にも同じスタイルが適用されます。
+            ペアを自動検出して AI が記憶します。<br>
+            例: <code>DSC_1716.JPG</code>(編集前) + <code>DSC_1716のコピー.JPG</code>(編集後) を 1ペアとして扱います。<br>
+            <strong>記憶後、AI加工 一括実行時には常にこのお手本ペアが参照され</strong>、新しい写真も同じ仕上がりに編集されます(モード切替不要)。
           </div>
           <div id="refStatus" class="ref-status hidden"></div>
         </div>
@@ -302,7 +302,6 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
             <label class="chip-toggle"><input type="checkbox" id="modeEnhance"><span>✨ ラメ・ヒレ強調</span></label>
             <label class="chip-toggle"><input type="checkbox" id="modeSharpness"><span>🔍 シャープネス補正</span></label>
             <label class="chip-toggle" title="AIが画像を回転・クロップしてメダカが画面いっぱいに見える構図に。正方形(1:1)で出力"><input type="checkbox" id="modeFrame"><span>🎯 メダカ最大表示 (AI構図)</span></label>
-            <label class="chip-toggle" title="お手本スタイル(明るさ・シャープネス・解像度)を学習して同じように加工。Canvas + Geminiの両方で反映"><input type="checkbox" id="modeRefStyle" disabled><span>📚 お手本スタイル</span></label>
             <label class="chip-toggle" title="Replicate Real-ESRGAN で解像度を2倍に(約0.4円/枚)"><input type="checkbox" id="modeUpscale"><span>📈 解像度UP (2x)</span></label>
             <label class="chip-toggle" title="Canvas で正方形にトリミング(コスト0・AI不使用)"><input type="checkbox" id="modeSquare"><span>📐 正方形クロップ (Canvas)</span></label>
           </div>
@@ -992,8 +991,6 @@ function clearRefStyle(){
   $('#refSection').classList.remove('has-ref');
   $('#refStatus').classList.add('hidden');
   $('#btnClearRef').classList.add('hidden');
-  $('#modeRefStyle').disabled = true;
-  $('#modeRefStyle').checked = false;
   updateCostHint();
 }
 
@@ -1094,23 +1091,21 @@ async function analyzeReferenceFolder(){
 
   $('#refSection').classList.add('has-ref');
   $('#btnClearRef').classList.remove('hidden');
-  $('#modeRefStyle').disabled = false;
-  $('#modeRefStyle').checked = true;
 
   const onlyMsg = (onlyBefore + onlyAfter > 0)
     ? `<div class="ref-stat-row"><span class="ref-stat-label">⚠️ 片方のみ(ペア外)</span><span class="ref-stat-value">編集前${onlyBefore} / 編集後${onlyAfter}</span></div>`
     : '';
   $('#refStatus').classList.add('ok');
   $('#refStatus').innerHTML = `
-    <div class="ref-stat-row"><span class="ref-stat-label">✅ 学習完了</span><span class="ref-stat-value">${stats.length}ペア</span></div>
+    <div class="ref-stat-row"><span class="ref-stat-label">✅ AI に記憶しました</span><span class="ref-stat-value">${stats.length}ペア</span></div>
+    <div class="ref-stat-row"><span class="ref-stat-label">→ 以降の「AI加工 一括実行」は常にこのお手本で行われます</span><span class="ref-stat-value"></span></div>
     ${onlyMsg}
-    <div class="ref-stat-row"><span class="ref-stat-label">目標輝度</span><span class="ref-stat-value">${refStyle.targetLum} / 255</span></div>
-    <div class="ref-stat-row"><span class="ref-stat-label">ガンマ補正値</span><span class="ref-stat-value">×${refStyle.gamma.toFixed(2)}</span></div>
-    <div class="ref-stat-row"><span class="ref-stat-label">シャープネス強度</span><span class="ref-stat-value">×${refStyle.sharpness.toFixed(2)}</span></div>
-    <div class="ref-stat-row"><span class="ref-stat-label">解像度比</span><span class="ref-stat-value">×${refStyle.sizeRatio.toFixed(2)}</span></div>
-    <div class="ref-stat-row"><span class="ref-stat-label">Gemini送信用サンプル</span><span class="ref-stat-value">${sampleDataUrls.length}ペア</span></div>
+    <div class="ref-stat-row"><span class="ref-stat-label">Gemini送信ペア</span><span class="ref-stat-value">${sampleDataUrls.length} / ${stats.length}</span></div>
+    <div class="ref-stat-row"><span class="ref-stat-label">参考: 目標輝度</span><span class="ref-stat-value">${refStyle.targetLum} / 255</span></div>
+    <div class="ref-stat-row"><span class="ref-stat-label">参考: ガンマ補正値</span><span class="ref-stat-value">×${refStyle.gamma.toFixed(2)}</span></div>
+    <div class="ref-stat-row"><span class="ref-stat-label">参考: シャープネス強度</span><span class="ref-stat-value">×${refStyle.sharpness.toFixed(2)}</span></div>
   `;
-  toast(`📚 ${stats.length}ペアからスタイル学習完了`, 'ok');
+  toast(`📚 ${stats.length}ペアをAIに記憶しました`, 'ok');
   updateCostHint();
 }
 
@@ -1266,7 +1261,8 @@ function getSelectedGeminiModes(){
 }
 function isUpscaleEnabled(){ return $('#modeUpscale').checked; }
 function isSquareCropEnabled(){ return $('#modeSquare').checked; }
-function isRefStyleEnabled(){ return $('#modeRefStyle').checked && refStyle != null; }
+// お手本が登録されていれば自動で使う(トグル不要)
+function isRefStyleEnabled(){ return refStyle != null; }
 // 旧名互換(他箇所から呼ばれていれば壊さない)
 function getSelectedAiModes(){ return getSelectedGeminiModes().concat(isUpscaleEnabled() ? ['upscale'] : []); }
 function getSelectedClientModes(){ return isSquareCropEnabled() ? ['square_crop'] : []; }
@@ -1296,8 +1292,12 @@ function updateCostHint(){
   const upscaleYen = upscale ? Math.round(specCount * 0.4) : 0;
   const totalYen = geminiYen + upscaleYen;
   const parts = [];
-  if(geminiModes.length > 0) parts.push(`Gemini ${geminiModes.length}種類 (約${geminiYen}円)`);
-  if(isRefStyleEnabled()) parts.push(`📚 お手本スタイル適用 (¥0+Gemini参照)`);
+  if(isRefStyleEnabled()){
+    parts.push(`📚 お手本ペア参照中`);
+    parts.push(`Gemini (約${specCount * 6}円) — お手本に近づける編集`);
+  } else if(geminiModes.length > 0){
+    parts.push(`Gemini ${geminiModes.length}種類 (約${geminiYen}円)`);
+  }
   if(upscale) parts.push(`📈 Real-ESRGAN (約${upscaleYen}円)`);
   if(sqcrop) parts.push(`📐 正方形クロップ (¥0)`);
   if(parts.length === 0) parts.push('モード未選択');
@@ -1308,7 +1308,8 @@ function updateCostHint(){
 
 $('#btnGotoImport').onclick = () => switchTab('import');
 ['#modeCleanup','#modeBgBlack','#modeEnhance','#modeSharpness','#modeFrame','#modeUpscale','#modeSquare'].forEach(s => {
-  document.querySelector(s).addEventListener('change', updateCostHint);
+  const el = document.querySelector(s);
+  if(el) el.addEventListener('change', updateCostHint);
 });
 
 async function renderEditPanel(){
