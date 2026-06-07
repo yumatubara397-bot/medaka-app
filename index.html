@@ -994,19 +994,24 @@ function clearRefStyle(){
   updateCostHint();
 }
 
-// 「コピー」サフィックスの正規表現(macOSのコピー / 英語copy / 連番 にも対応)
+// 「コピー」サフィックスの正規表現(macOSの〜のコピー / 〜 のコピー / 英語copy / 連番にも対応)
 const COPY_SUFFIX_PATTERNS = [
-  /のコピー(\s*\d*)?$/i,    // macOS 日本語: 〜のコピー / 〜のコピー2
-  /\s+copy(\s*\d*)?$/i,     // 英語: 〜 copy / 〜 copy 2
-  /-copy(\s*\d*)?$/i,       // ハイフン: 〜-copy
-  /_copy(\s*\d*)?$/i,       // アンダースコア: 〜_copy
-  /\(\s*コピー\s*\)$/i,     // 〜(コピー)
+  /\s*のコピー(\s*\d*)?$/i,     // macOS 日本語: 〜のコピー / 〜 のコピー / 〜のコピー2 (前のスペース許容)
+  /\s+copy(\s*\d*)?$/i,         // 英語: 〜 copy / 〜 copy 2
+  /-copy(\s*\d*)?$/i,           // ハイフン: 〜-copy
+  /_copy(\s*\d*)?$/i,           // アンダースコア: 〜_copy
+  /\s*\(\s*コピー\s*\)$/i,      // 〜(コピー)
+  /\s*-\s*Copy(\s*\(\d+\))?$/i, // Windows: 〜 - Copy / 〜 - Copy (2)
 ];
 function stripCopySuffix(stem){
   for(const re of COPY_SUFFIX_PATTERNS){
-    if(re.test(stem)) return { original: stem.replace(re, ''), isCopy: true };
+    if(re.test(stem)) return { original: stem.replace(re, '').trim(), isCopy: true };
   }
-  return { original: stem, isCopy: false };
+  return { original: stem.trim(), isCopy: false };
+}
+// key 正規化: ext を小文字化、stem の前後空白除去
+function pairKeyFor(stem, ext){
+  return stem.trim() + (ext || '').toLowerCase();
 }
 
 async function analyzeReferenceFolder(){
@@ -1021,14 +1026,14 @@ async function analyzeReferenceFolder(){
     toast('画像ファイルが見つかりません', 'err'); return;
   }
 
-  // key(コピーを除いた元名) → { before, after }
+  // key(コピー除去 + 拡張子小文字 + 前後trim) → { before, after }
   const map = new Map();
   for(const f of allFiles){
     const extMatch = f.name.match(/\.[^.]+$/);
     const ext = extMatch ? extMatch[0] : '';
     const stem = f.name.slice(0, f.name.length - ext.length);
     const { original, isCopy } = stripCopySuffix(stem);
-    const key = original + ext;
+    const key = pairKeyFor(original, ext);  // 正規化キー
     if(!map.has(key)) map.set(key, { before: null, after: null, key });
     const entry = map.get(key);
     if(isCopy) entry.after = f;
