@@ -276,24 +276,6 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
       </div>
 
       <div id="editLoaded" class="hidden">
-        <!-- お手本ペアを AI に記憶させるセクション -->
-        <div class="ref-section" id="refSection">
-          <div class="ref-head">
-            <div class="ref-title">📚 過去の編集前/後を AI に記憶させる</div>
-            <div class="ref-actions">
-              <button id="btnPickRefFolder" class="btn btn-ghost btn-mini">📂 過去フォルダを選ぶ</button>
-              <button id="btnClearRef" class="btn btn-ghost btn-mini hidden">記憶を消去</button>
-            </div>
-          </div>
-          <div class="ref-hint">
-            過去の写真フォルダ(<strong>「のコピー」が付いた編集後</strong> と <strong>付いていない編集前</strong> が混在しているフォルダ)を選ぶと、
-            ペアを自動検出して AI が記憶します。<br>
-            例: <code>DSC_1716.JPG</code>(編集前) + <code>DSC_1716のコピー.JPG</code>(編集後) を 1ペアとして扱います。<br>
-            <strong>記憶後、AI加工 一括実行時には常にこのお手本ペアが参照され</strong>、新しい写真も同じ仕上がりに編集されます(モード切替不要)。
-          </div>
-          <div id="refStatus" class="ref-status hidden"></div>
-        </div>
-
         <div class="edit-toolbar">
           <div class="edit-modes">
             <span class="edit-modes-label">加工モード</span>
@@ -686,19 +668,26 @@ $('#btnOcrAll').onclick = async () => {
   toast(`OCR完了: 成功 ${ok} / 失敗 ${fail}`, fail ? 'err' : 'ok');
 };
 
-// ===== Canvas で「適応的」明るさ補正 =====
-// 写真ごとに最適なガンマ値を自動算出。暗い写真は強く、明るい写真は控えめに補正される。
-// 1. 画像内のメダカ部分(非黒領域)の平均輝度を測定
-// 2. それを「目標輝度」に合わせるガンマ値を算出
-// 3. ガンマ補正を適用(背景黒は保護)
+// ===== Canvas で Photoshop Camera Raw 相当の現像処理 =====
+// 暗い水中写真を明るく綺麗にするための処理パイプライン:
+//   1. シャドウ持ち上げ (Shadows lift): 暗部のみ強くガンマ補正 → メダカ本体を明るく
+//   2. ハイライト保護 (Highlights protect): 明部の白飛びを防ぐ
+//   3. 黒レベル保持 (Blacks): 純黒の背景は維持
+//   4. 自然な彩度強化 (Vibrance): 鈍い色だけ彩度UP、すでに鮮やかな色はそのまま
+//   5. 明瞭度 (Clarity): 中域コントラスト強化(別関数のアンシャープマスクで対応)
 function adjustBrightnessBlob(blob, level){
-  // 目標輝度: メダカ部分(非黒)がこの値前後に来るよう補正
-  //   弱(low)    = 控えめ、現状寄り
-  //   中(medium) = 商品写真として標準
-  //   強(high)   = しっかり見える明るさ
-  const targetLum = level === 'high' ? 175 : (level === 'low' ? 120 : 150);
-  const measureBlackBelow  = 25;  // 輝度測定で「背景黒」とみなす閾値
-  const protectBlackBelow  = 18;  // 補正時に保護する純黒の閾値(厳しめ)
+  // Camera Raw のスライダー値に相当するプリセット
+  // shadows: シャドウ持ち上げ量(0-1.0) — 暗部を明るくする強さ
+  // highlightCompress: ハイライト圧縮(0-1.0) — 明部の白飛び防止
+  // vibrance: 自然な彩度UP量(0-1.0)
+  // blackProtect: この輝度以下は純黒として保護
+  const presets = {
+    low:    { shadows: 0.25, highlightCompress: 0.05, vibrance: 0.10, blackProtect: 14 },
+    medium: { shadows: 0.55, highlightCompress: 0.10, vibrance: 0.20, blackProtect: 14 },
+    high:   { shadows: 0.85, highlightCompress: 0.15, vibrance: 0.35, blackProtect: 14 },
+  };
+  const p = presets[level] || presets.medium;
+
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(blob);
@@ -712,109 +701,64 @@ function adjustBrightnessBlob(blob, level){
       const imgData = ctx.getImageData(0, 0, c.width, c.height);
       const d = imgData.data;
 
-      // === ステップ1: メダカ部分(非黒)の平均輝度を測定 ===
-      let sumLum = 0, countLum = 0;
+      // === LUT: 輝度値 0-255 → 補正後の値 ===
+      // シャドウ持ち上げ:
+      //   暗いピクセル(0-128) ほど強く持ち上げる
+      //   weight = (1 - in/128)^2 で 暗いほど1.0、明るいほど0.0
+      // ハイライト保護:
+      //   明るいピクセル(192-255) を軽くカーブで圧縮
+      const lut = new Uint8Array(256);
+      for(let i = 0; i < 256; i++){
+        const x = i / 255;
+        // シャドウリフト: 暗部のみ強く持ち上げる(滑らかな曲線)
+        const shadowWeight = Math.pow(Math.max(0, 1 - i/160), 1.8);   // i=0で1.0, i=160で0
+        const lifted = x + p.shadows * shadowWeight * (1 - x);         // 明るくする方向
+        // ハイライト圧縮: 明部のみ軽く抑える
+        const hiWeight = Math.pow(Math.max(0, (i - 180)/75), 2.0);     // i=180で0, i=255で1.0
+        const compressed = lifted - p.highlightCompress * hiWeight * (lifted - 0.95);
+        lut[i] = Math.min(255, Math.max(0, Math.round(compressed * 255)));
+      }
+
+      // === ピクセル走査: LUT適用 + 彩度強化(背景黒は保護) ===
+      const vibStrength = p.vibrance;
       for(let i = 0; i < d.length; i += 4){
-        const lum = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
-        if(lum > measureBlackBelow){
-          sumLum += lum;
-          countLum++;
+        const r = d[i], g = d[i+1], b = d[i+2];
+        const lum = 0.299*r + 0.587*g + 0.114*b;
+        if(lum < p.blackProtect){
+          // 純黒は触らない(背景の漆黒を保持)
+          continue;
         }
-      }
-      const avgLum = countLum > 0 ? sumLum / countLum : 128;
+        // 1. 輝度ベースのリフト(色相を保ったまま明るくする)
+        const newLum = lut[Math.round(lum)];
+        const ratio = lum > 1 ? newLum / lum : 1;
+        let nr = r * ratio, ng = g * ratio, nb = b * ratio;
 
-      // === ステップ2: 目標輝度に合わせるガンマ値を算出 ===
-      // ガンマ = log(target/255) / log(avg/255) (両方とも 0 < x < 1 なので両 log < 0 → gamma > 0)
-      let gamma = 1.0;
-      if(avgLum > 5 && avgLum < 250){
-        gamma = Math.log(targetLum / 255) / Math.log(avgLum / 255);
-        // 過剰補正を防ぐクランプ
-        gamma = Math.max(0.5, Math.min(3.5, gamma));
-      }
+        // 2. Vibrance: 鈍い色だけ彩度を上げる
+        if(vibStrength > 0){
+          const maxC = Math.max(nr, ng, nb);
+          const minC = Math.min(nr, ng, nb);
+          const sat = maxC > 1 ? (maxC - minC) / maxC : 0;       // 0-1: 現在の彩度
+          // vibrance係数: 彩度が低いほど効きが強い(自然な仕上がり)
+          const vibFactor = vibStrength * (1 - sat) * 1.5;
+          const avgC = (nr + ng + nb) / 3;
+          nr = avgC + (nr - avgC) * (1 + vibFactor);
+          ng = avgC + (ng - avgC) * (1 + vibFactor);
+          nb = avgC + (nb - avgC) * (1 + vibFactor);
+        }
 
-      // === ステップ3: LUT を作って適用(背景黒は保護) ===
-      const lut = new Uint8Array(256);
-      const invG = 1.0 / gamma;
-      for(let i = 0; i < 256; i++){
-        lut[i] = Math.min(255, Math.max(0, Math.round(Math.pow(i/255, invG) * 255)));
-      }
-      for(let i = 0; i < d.length; i += 4){
-        const lum = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
-        if(lum < protectBlackBelow) continue;  // 純黒は保護
-        d[i]   = lut[d[i]];
-        d[i+1] = lut[d[i+1]];
-        d[i+2] = lut[d[i+2]];
+        d[i]   = Math.min(255, Math.max(0, Math.round(nr)));
+        d[i+1] = Math.min(255, Math.max(0, Math.round(ng)));
+        d[i+2] = Math.min(255, Math.max(0, Math.round(nb)));
       }
       ctx.putImageData(imgData, 0, 0);
-      // debug: console.log(`adj: avg=${avgLum.toFixed(0)} target=${targetLum} gamma=${gamma.toFixed(2)}`);
-      c.toBlob((b) => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/jpeg', 0.92);
+      c.toBlob((b) => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/jpeg', 0.93);
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('画像読込失敗')); };
     img.src = url;
   });
 }
 
-// ===== お手本スタイルを Canvas で適用 =====
-// refStyle に基づいて、輝度ターゲット + アンシャープマスクを適用する。
-// 解像度UP は Replicate(別ステップ) に任せる(Canvas でのリサイズだけだとボケるため)。
-function applyRefStyleBlob(blob, style){
-  if(!style) return Promise.resolve(blob);
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(blob);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const c = document.createElement('canvas');
-      c.width = img.naturalWidth;
-      c.height = img.naturalHeight;
-      const ctx = c.getContext('2d');
-      ctx.drawImage(img, 0, 0);
-      const imgData = ctx.getImageData(0, 0, c.width, c.height);
-      const d = imgData.data;
-
-      // ステップ1: 現在の平均輝度を測定 → 目標輝度に合わせるガンマ算出
-      let sumLum = 0, cntLum = 0;
-      for(let i = 0; i < d.length; i += 4){
-        const lum = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
-        if(lum > 25){ sumLum += lum; cntLum++; }
-      }
-      const avgLum = cntLum > 0 ? sumLum/cntLum : 128;
-      const targetLum = style.targetLum || 150;
-      let gamma = 1.0;
-      if(avgLum > 5 && avgLum < 250){
-        gamma = Math.log(targetLum/255) / Math.log(avgLum/255);
-        gamma = Math.max(0.5, Math.min(3.0, gamma));
-      }
-      // ステップ2: LUT 作成 + ガンマ適用(背景黒は保護)
-      const lut = new Uint8Array(256);
-      const invG = 1.0 / gamma;
-      for(let i = 0; i < 256; i++){
-        lut[i] = Math.min(255, Math.max(0, Math.round(Math.pow(i/255, invG) * 255)));
-      }
-      for(let i = 0; i < d.length; i += 4){
-        const lum = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
-        if(lum < 18) continue;
-        d[i]   = lut[d[i]];
-        d[i+1] = lut[d[i+1]];
-        d[i+2] = lut[d[i+2]];
-      }
-      ctx.putImageData(imgData, 0, 0);
-
-      // ステップ3: シャープネス比に応じてアンシャープマスク
-      // sharpness > 1.2 ならお手本の方がシャープ → 強める
-      const sharpStrength = Math.max(0, (style.sharpness || 1.0) - 1.0);  // 0〜3 程度
-      if(sharpStrength > 0.05){
-        applyUnsharpMask(ctx, c, sharpStrength);
-      }
-
-      c.toBlob((b) => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/jpeg', 0.92);
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('画像読込失敗')); };
-    img.src = url;
-  });
-}
-
-// 簡易アンシャープマスク(3x3 ガウシアンブラー → 元との差分を加算)
+// 簡易アンシャープマスク(3x3 ガウシアンブラー → 元との差分を加算、現状未使用)
 function applyUnsharpMask(ctx, c, strength){
   const w = c.width, h = c.height;
   const orig = ctx.getImageData(0, 0, w, h);
@@ -963,294 +907,11 @@ function loadSettings(){
 loadSettings();
 
 // ============================================================
-// ===== 📚 お手本スタイル(リファレンス) =====
+// ===== 📚 お手本スタイル機能 — 廃止 =====
 // ============================================================
-// 別フォルダから「同名の編集後写真」を取り込み、ペアごとに測定:
-//   ・輝度比(編集後の平均輝度 / 元の平均輝度) → ガンマ算出
-//   ・シャープネス比(編集後 / 元 の Laplacian variance) → アンシャープマスク強度
-//   ・解像度比(編集後 / 元 の長辺ピクセル) → ESRGAN スケール
-// 全ペアの中央値を「スタイル」として保存し、新画像に適用する。
-let refFolderHandle = null;
-let refStyle = null;  // { gamma, sharpness, sizeRatio, pairs, sampleDataUrls[] }
+let refStyle = null;  // 互換のため変数は残すが常に null
+function isRefStyleEnabled(){ return false; }
 
-$('#btnPickRefFolder').onclick = pickRefFolder;
-$('#btnClearRef').onclick = clearRefStyle;
-
-async function pickRefFolder(){
-  if(!window.showDirectoryPicker){
-    toast('お使いのブラウザはフォルダ選択未対応です(Chrome/Edge推奨)', 'err'); return;
-  }
-  try { refFolderHandle = await window.showDirectoryPicker({ mode:'read' }); }
-  catch(e){ if(e.name === 'AbortError') return; toast('フォルダ選択失敗: '+e.message, 'err'); return; }
-  await analyzeReferenceFolder();
-}
-
-function clearRefStyle(){
-  refFolderHandle = null;
-  refStyle = null;
-  $('#refSection').classList.remove('has-ref');
-  $('#refStatus').classList.add('hidden');
-  $('#btnClearRef').classList.add('hidden');
-  updateCostHint();
-}
-
-// 「コピー」サフィックスの正規表現(macOSの〜のコピー / 〜 のコピー / 英語copy / 連番にも対応)
-const COPY_SUFFIX_PATTERNS = [
-  /\s*のコピー(\s*\d*)?$/i,     // macOS 日本語: 〜のコピー / 〜 のコピー / 〜のコピー2 (前のスペース許容)
-  /\s+copy(\s*\d*)?$/i,         // 英語: 〜 copy / 〜 copy 2
-  /-copy(\s*\d*)?$/i,           // ハイフン: 〜-copy
-  /_copy(\s*\d*)?$/i,           // アンダースコア: 〜_copy
-  /\s*\(\s*コピー\s*\)$/i,      // 〜(コピー)
-  /\s*-\s*Copy(\s*\(\d+\))?$/i, // Windows: 〜 - Copy / 〜 - Copy (2)
-];
-function stripCopySuffix(stem){
-  for(const re of COPY_SUFFIX_PATTERNS){
-    if(re.test(stem)) return { original: stem.replace(re, '').trim(), isCopy: true };
-  }
-  return { original: stem.trim(), isCopy: false };
-}
-// key 正規化: ext を小文字化、stem の前後空白除去
-function pairKeyFor(stem, ext){
-  return stem.trim() + (ext || '').toLowerCase();
-}
-
-async function analyzeReferenceFolder(){
-  // フォルダ内の画像をすべて読み込み、ファイル名からペアを自動検出
-  // 元: DSC_1716.JPG  / コピー: DSC_1716のコピー.JPG → ペア
-  const allFiles = [];
-  for await (const e of refFolderHandle.values()){
-    if(e.kind !== 'file' || !/\.(jpe?g|png)$/i.test(e.name)) continue;
-    allFiles.push(e);
-  }
-  if(allFiles.length === 0){
-    toast('画像ファイルが見つかりません', 'err'); return;
-  }
-
-  // key(コピー除去 + 拡張子小文字 + 前後trim) → { before, after }
-  const map = new Map();
-  for(const f of allFiles){
-    const extMatch = f.name.match(/\.[^.]+$/);
-    const ext = extMatch ? extMatch[0] : '';
-    const stem = f.name.slice(0, f.name.length - ext.length);
-    const { original, isCopy } = stripCopySuffix(stem);
-    const key = pairKeyFor(original, ext);  // 正規化キー
-    if(!map.has(key)) map.set(key, { before: null, after: null, key });
-    const entry = map.get(key);
-    if(isCopy) entry.after = f;
-    else entry.before = f;
-  }
-
-  const pairs = [];
-  let onlyBefore = 0, onlyAfter = 0;
-  for(const [k, e] of map){
-    if(e.before && e.after) pairs.push({ orig: { name: k, handle: e.before }, refHandle: e.after });
-    else if(e.before) onlyBefore++;
-    else if(e.after) onlyAfter++;
-  }
-  if(pairs.length === 0){
-    toast(`ペアが見つかりません。「のコピー」が付いた編集後ファイルと元のファイルを同じフォルダに置いてください(片方のみ: 編集前${onlyBefore} / 編集後${onlyAfter})`, 'err');
-    return;
-  }
-
-  $('#refStatus').classList.remove('hidden');
-  $('#refStatus').innerHTML = `<div>📚 ペア分析中... 0/${pairs.length}</div>`;
-
-  const stats = [];
-  const sampleDataUrls = [];   // Gemini に渡す代表ペア(最大2組)
-  for(let i = 0; i < pairs.length; i++){
-    const { orig, refHandle } = pairs[i];
-    $('#refStatus').innerHTML = `<div>📚 ペア分析中... ${i+1}/${pairs.length} — ${escapeHtml(orig.name)}</div>`;
-    try {
-      const origFile = await orig.handle.getFile();
-      const refFile = await refHandle.getFile();
-      const s = await measurePairStyle(origFile, refFile);
-      stats.push(s);
-      // 代表ペアの dataUrl を Gemini 用に縮小して保存(最大2組)
-      if(sampleDataUrls.length < 2){
-        const oDu = await fileToResizedDataUrl(origFile, 768, 0.85);
-        const rDu = await fileToResizedDataUrl(refFile, 768, 0.85);
-        sampleDataUrls.push({ before: oDu, after: rDu, name: orig.name });
-      }
-    } catch(e){ console.warn('pair measure failed:', orig.name, e); }
-  }
-
-  if(stats.length === 0){
-    $('#refStatus').innerHTML = `<div class="err">分析に失敗しました</div>`;
-    return;
-  }
-
-  // 中央値を採用(外れ値に強い)
-  const median = (arr) => {
-    const a = arr.slice().sort((x,y)=>x-y);
-    const n = a.length;
-    return n%2 ? a[(n-1)/2] : (a[n/2-1]+a[n/2])/2;
-  };
-  refStyle = {
-    pairs: stats.length,
-    targetLum: Math.round(median(stats.map(s => s.targetLum))),
-    gamma: median(stats.map(s => s.gamma)),
-    sharpness: median(stats.map(s => s.sharpRatio)),
-    sizeRatio: median(stats.map(s => s.sizeRatio)),
-    sampleDataUrls: sampleDataUrls
-  };
-
-  $('#refSection').classList.add('has-ref');
-  $('#btnClearRef').classList.remove('hidden');
-
-  const onlyMsg = (onlyBefore + onlyAfter > 0)
-    ? `<div class="ref-stat-row"><span class="ref-stat-label">⚠️ 片方のみ(ペア外)</span><span class="ref-stat-value">編集前${onlyBefore} / 編集後${onlyAfter}</span></div>`
-    : '';
-  $('#refStatus').classList.add('ok');
-  $('#refStatus').innerHTML = `
-    <div class="ref-stat-row"><span class="ref-stat-label">✅ AI に記憶しました</span><span class="ref-stat-value">${stats.length}ペア</span></div>
-    <div class="ref-stat-row"><span class="ref-stat-label">→ 以降の「AI加工 一括実行」は常にこのお手本で行われます</span><span class="ref-stat-value"></span></div>
-    ${onlyMsg}
-    <div class="ref-stat-row"><span class="ref-stat-label">Gemini送信ペア</span><span class="ref-stat-value">${sampleDataUrls.length} / ${stats.length}</span></div>
-    <div class="ref-stat-row"><span class="ref-stat-label">参考: 目標輝度</span><span class="ref-stat-value">${refStyle.targetLum} / 255</span></div>
-    <div class="ref-stat-row"><span class="ref-stat-label">参考: ガンマ補正値</span><span class="ref-stat-value">×${refStyle.gamma.toFixed(2)}</span></div>
-    <div class="ref-stat-row"><span class="ref-stat-label">参考: シャープネス強度</span><span class="ref-stat-value">×${refStyle.sharpness.toFixed(2)}</span></div>
-  `;
-  toast(`📚 ${stats.length}ペアをAIに記憶しました`, 'ok');
-  updateCostHint();
-}
-
-// 1ペアからスタイル指標を測定
-async function measurePairStyle(origFile, refFile){
-  const o = await loadImageToCanvas(origFile, 512);
-  const r = await loadImageToCanvas(refFile, 512);
-  const oLum = avgLuminance(o.ctx, o.canvas);
-  const rLum = avgLuminance(r.ctx, r.canvas);
-  const targetLum = rLum;
-  // ガンマ: 元の avg → 編集後の avg に合わせる
-  let gamma = 1.0;
-  if(oLum > 5 && oLum < 250 && rLum > 5 && rLum < 250){
-    gamma = Math.log(rLum/255) / Math.log(oLum/255);
-    gamma = Math.max(0.5, Math.min(3.0, gamma));
-  }
-  // シャープネス(Laplacian variance) 比
-  const oSharp = sharpnessLaplacianVar(o.ctx, o.canvas);
-  const rSharp = sharpnessLaplacianVar(r.ctx, r.canvas);
-  const sharpRatio = Math.max(0.5, Math.min(4.0, (oSharp > 1 ? rSharp/oSharp : 1)));
-  // 解像度比(短辺)
-  const origImg = await loadImage(origFile);
-  const refImg = await loadImage(refFile);
-  const oSize = Math.min(origImg.naturalWidth, origImg.naturalHeight);
-  const rSize = Math.min(refImg.naturalWidth, refImg.naturalHeight);
-  const sizeRatio = Math.max(0.5, Math.min(4.0, rSize/oSize));
-  return { targetLum, gamma, sharpRatio, sizeRatio };
-}
-
-function loadImage(file){
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => { resolve(img); /* URL は後で revoke */ };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('画像読込失敗')); };
-    img.src = url;
-  });
-}
-async function loadImageToCanvas(file, maxDim){
-  const img = await loadImage(file);
-  let w = img.naturalWidth, h = img.naturalHeight;
-  if(w > maxDim || h > maxDim){
-    const r = maxDim / Math.max(w,h);
-    w = Math.round(w*r); h = Math.round(h*r);
-  }
-  const c = document.createElement('canvas');
-  c.width = w; c.height = h;
-  const ctx = c.getContext('2d');
-  ctx.drawImage(img, 0, 0, w, h);
-  return { canvas: c, ctx };
-}
-function avgLuminance(ctx, c){
-  const d = ctx.getImageData(0,0,c.width,c.height).data;
-  let sum = 0, cnt = 0;
-  for(let i = 0; i < d.length; i += 4){
-    const lum = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
-    if(lum > 18){ sum += lum; cnt++; }
-  }
-  return cnt > 0 ? sum/cnt : 128;
-}
-// Laplacian variance(シャープネス指標 — 値が大きいほどシャープ)
-function sharpnessLaplacianVar(ctx, c){
-  const w = c.width, h = c.height;
-  const d = ctx.getImageData(0,0,w,h).data;
-  const gray = new Float32Array(w*h);
-  for(let i = 0, j = 0; i < d.length; i += 4, j++){
-    gray[j] = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
-  }
-  // 3x3 ラプラシアン
-  let sum = 0, sum2 = 0, n = 0;
-  for(let y = 1; y < h-1; y++){
-    for(let x = 1; x < w-1; x++){
-      const i = y*w + x;
-      const v = -gray[i-w] - gray[i-1] + 4*gray[i] - gray[i+1] - gray[i+w];
-      sum += v; sum2 += v*v; n++;
-    }
-  }
-  const mean = sum/n;
-  return (sum2/n) - mean*mean;  // variance
-}
-
-// ============================================================
-// ===== ②編集タブ: AI加工 + IndexedDB + ライトボックス =====
-// ============================================================
-
-// IndexedDB: 編集済み画像を blob で保管(セッション間も保持)
-const EDIT_DB = 'medaka-edit';
-const EDIT_STORE = 'edited';
-let editDbPromise = null;
-function openEditDb(){
-  if(editDbPromise) return editDbPromise;
-  editDbPromise = new Promise((resolve, reject) => {
-    const req = indexedDB.open(EDIT_DB, 1);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if(!db.objectStoreNames.contains(EDIT_STORE)){
-        db.createObjectStore(EDIT_STORE);  // key: "<folderName>:<photoName>:<modeKey>"
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-  return editDbPromise;
-}
-async function editDbPut(key, blob){
-  const db = await openEditDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(EDIT_STORE, 'readwrite');
-    tx.objectStore(EDIT_STORE).put(blob, key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-async function editDbGet(key){
-  const db = await openEditDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(EDIT_STORE, 'readonly');
-    const req = tx.objectStore(EDIT_STORE).get(key);
-    req.onsuccess = () => resolve(req.result || null);
-    req.onerror = () => reject(req.error);
-  });
-}
-async function editDbDeleteByPrefix(prefix){
-  const db = await openEditDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(EDIT_STORE, 'readwrite');
-    const store = tx.objectStore(EDIT_STORE);
-    const req = store.openCursor();
-    let n = 0;
-    req.onsuccess = (e) => {
-      const cur = e.target.result;
-      if(!cur){ resolve(n); return; }
-      if(String(cur.key).startsWith(prefix)){ cur.delete(); n++; }
-      cur.continue();
-    };
-    req.onerror = () => reject(req.error);
-  });
-}
-
-// 編集状態(セッション内)
 //  editState[photoIdx] = { editedBlobUrl, editedKey, modes, showEdited }
 let editState = {};
 
@@ -1266,8 +927,7 @@ function getSelectedGeminiModes(){
 }
 function isUpscaleEnabled(){ return $('#modeUpscale').checked; }
 function isSquareCropEnabled(){ return $('#modeSquare').checked; }
-// お手本が登録されていれば自動で使う(トグル不要)
-function isRefStyleEnabled(){ return refStyle != null; }
+// 旧 isRefStyleEnabled は上の方で false 固定(廃止)
 // 旧名互換(他箇所から呼ばれていれば壊さない)
 function getSelectedAiModes(){ return getSelectedGeminiModes().concat(isUpscaleEnabled() ? ['upscale'] : []); }
 function getSelectedClientModes(){ return isSquareCropEnabled() ? ['square_crop'] : []; }
