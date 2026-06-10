@@ -915,6 +915,60 @@ function isRefStyleEnabled(){ return false; }
 //  editState[photoIdx] = { editedBlobUrl, editedKey, modes, showEdited }
 let editState = {};
 
+// ===== IndexedDB: 編集済み画像を blob で保管(セッション間も保持) =====
+const EDIT_DB = 'medaka-edit';
+const EDIT_STORE = 'edited';
+let editDbPromise = null;
+function openEditDb(){
+  if(editDbPromise) return editDbPromise;
+  editDbPromise = new Promise((resolve, reject) => {
+    const req = indexedDB.open(EDIT_DB, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if(!db.objectStoreNames.contains(EDIT_STORE)){
+        db.createObjectStore(EDIT_STORE);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  return editDbPromise;
+}
+async function editDbPut(key, blob){
+  const db = await openEditDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(EDIT_STORE, 'readwrite');
+    tx.objectStore(EDIT_STORE).put(blob, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+async function editDbGet(key){
+  const db = await openEditDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(EDIT_STORE, 'readonly');
+    const req = tx.objectStore(EDIT_STORE).get(key);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function editDbDeleteByPrefix(prefix){
+  const db = await openEditDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(EDIT_STORE, 'readwrite');
+    const store = tx.objectStore(EDIT_STORE);
+    const req = store.openCursor();
+    let n = 0;
+    req.onsuccess = (e) => {
+      const cur = e.target.result;
+      if(!cur){ resolve(n); return; }
+      if(String(cur.key).startsWith(prefix)){ cur.delete(); n++; }
+      cur.continue();
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
 // AI に投げる Gemini モード
 function getSelectedGeminiModes(){
   const modes = [];
