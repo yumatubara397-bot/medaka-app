@@ -117,6 +117,30 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 /* Placeholder for phase 2/3/4 */
 .placeholder{background:var(--panel);border:1px dashed var(--line);border-radius:12px;padding:60px 20px;text-align:center;color:var(--ink-dim);font-size:13px}
 
+/* ===== モーダル(1ペア追加) ===== */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px)}
+.modal.hidden{display:none !important}
+.modal-content{background:var(--panel);border:1px solid var(--line);border-radius:14px;max-width:720px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 30px 80px rgba(0,0,0,.6)}
+.modal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--line)}
+.modal-head h3{font-size:15px;margin:0}
+.modal-close{background:transparent;border:none;color:var(--ink-dim);font-size:24px;line-height:1;width:32px;height:32px;border-radius:50%;cursor:pointer;display:grid;place-items:center}
+.modal-close:hover{background:var(--bg-2);color:var(--ink)}
+.modal-body{padding:18px 20px}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--line);align-items:center}
+.modal-hint{font-size:11px;color:var(--ink-dim);margin-top:12px;text-align:center;line-height:1.6}
+.modal-hint.ok{color:var(--ok)}
+
+.pair-input-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:600px){.pair-input-row{grid-template-columns:1fr}}
+.pair-input-col{display:flex;flex-direction:column;gap:6px}
+.pair-input-label{font-size:11px;color:var(--ink-dim);font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:.05em}
+.pair-drop{display:grid;place-items:center;aspect-ratio:1;background:var(--bg-2);border:2px dashed var(--line);border-radius:10px;cursor:pointer;transition:.15s;overflow:hidden;position:relative}
+.pair-drop:hover{border-color:var(--accent);background:rgba(255,225,77,.05)}
+.pair-drop.has-image{border-style:solid;border-color:var(--ok);padding:0}
+.pair-drop-placeholder{color:var(--ink-dim);font-size:13px;font-weight:700;text-align:center;padding:20px}
+.pair-preview{width:100%;height:100%;object-fit:cover;display:block}
+.pair-preview.hidden{display:none}
+
 /* ===== マイスタイル(学習ペア) ===== */
 .mystyle-section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:10px}
 .mystyle-section.has-data{border-color:var(--ok)}
@@ -292,7 +316,8 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
           <div class="mystyle-head">
             <div class="mystyle-title">📚 マイスタイル <span id="mystyleCount" class="mystyle-count">0ペア</span></div>
             <div class="mystyle-actions">
-              <button id="btnMystyleBulkImport" class="btn btn-ghost btn-mini" title="過去フォルダ(「のコピー」付き編集後と元の混在)を一括取込">📂 過去フォルダから一括取込</button>
+              <button id="btnMystyleAddPair" class="btn btn-ghost btn-mini" title="1ペアずつ手動で追加">📷 1ペア追加</button>
+              <button id="btnMystyleBulkImport" class="btn btn-ghost btn-mini" title="過去フォルダ(「のコピー」付き編集後と元の混在)を一括取込">📂 フォルダ一括取込</button>
               <label class="chip-toggle mystyle-toggle" title="OFFにすると今回はマイスタイルを参照せずに加工"><input type="checkbox" id="mystyleEnabled" checked><span>参照ON</span></label>
               <button id="btnMystyleClear" class="btn btn-ghost btn-mini" title="マイスタイルを全リセット">🗑 学習リセット</button>
             </div>
@@ -326,6 +351,42 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
         <div id="editProductList" class="product-list"></div>
       </div>
     </section>
+
+    <!-- マイスタイル: 1ペア追加モーダル -->
+    <div id="addPairModal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-content">
+        <div class="modal-head">
+          <h3>📷 マイスタイル: 1ペア追加</h3>
+          <button id="btnAddPairClose" class="modal-close" aria-label="閉じる">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="pair-input-row">
+            <div class="pair-input-col">
+              <div class="pair-input-label">変更前(元画像)</div>
+              <label class="pair-drop" for="addPairBefore">
+                <img id="addPairBeforePreview" class="pair-preview hidden">
+                <span class="pair-drop-placeholder" id="addPairBeforePlaceholder">📷 クリックで選択</span>
+              </label>
+              <input type="file" id="addPairBefore" accept="image/*" hidden>
+            </div>
+            <div class="pair-input-col">
+              <div class="pair-input-label">変更後(加工後)</div>
+              <label class="pair-drop" for="addPairAfter">
+                <img id="addPairAfterPreview" class="pair-preview hidden">
+                <span class="pair-drop-placeholder" id="addPairAfterPlaceholder">✨ クリックで選択</span>
+              </label>
+              <input type="file" id="addPairAfter" accept="image/*" hidden>
+            </div>
+          </div>
+          <div class="modal-hint" id="addPairHint">両方の画像を選んで「📚 追加」をクリック</div>
+        </div>
+        <div class="modal-actions">
+          <button id="btnAddPairConfirm" class="btn btn-primary" disabled>📚 追加</button>
+          <button id="btnAddPairReset" class="btn btn-ghost btn-mini" title="現在の選択をクリア">クリア</button>
+          <button id="btnAddPairCloseFooter" class="btn btn-ghost">閉じる</button>
+        </div>
+      </div>
+    </div>
 
     <!-- ライトボックス(画像クリックで拡大) -->
     <div id="lightbox" class="lightbox hidden" role="dialog" aria-modal="true">
@@ -1140,6 +1201,90 @@ async function refreshMystyleUi(){
     hintEl.textContent = `📚 ${n}ペア学習済 — 十分なサンプル量です。AI が好みのスタイルをしっかり把握します`;
   }
 }
+// ===== マイスタイル: 1ペア追加モーダル =====
+let addPairState = { beforeFile: null, afterFile: null };
+
+function openAddPairModal(){
+  resetAddPairForm();
+  $('#addPairModal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+function closeAddPairModal(){
+  $('#addPairModal').classList.add('hidden');
+  document.body.style.overflow = '';
+  resetAddPairForm();
+}
+function resetAddPairForm(){
+  addPairState = { beforeFile: null, afterFile: null };
+  $('#addPairBefore').value = '';
+  $('#addPairAfter').value = '';
+  ['Before','After'].forEach(side => {
+    const img = $('#addPair'+side+'Preview');
+    const ph = $('#addPair'+side+'Placeholder');
+    const drop = ph.parentElement;
+    img.classList.add('hidden');
+    img.src = '';
+    ph.classList.remove('hidden');
+    drop.classList.remove('has-image');
+  });
+  refreshAddPairUi();
+}
+function refreshAddPairUi(){
+  const ready = addPairState.beforeFile && addPairState.afterFile;
+  $('#btnAddPairConfirm').disabled = !ready;
+  const hint = $('#addPairHint');
+  if(ready){
+    hint.textContent = '✅ 両方選択済み — 「📚 追加」をクリック';
+    hint.classList.add('ok');
+  } else if(addPairState.beforeFile || addPairState.afterFile){
+    hint.textContent = 'もう片方の画像を選んでください';
+    hint.classList.remove('ok');
+  } else {
+    hint.textContent = '両方の画像を選んで「📚 追加」をクリック';
+    hint.classList.remove('ok');
+  }
+}
+function onPairFileChange(side, file){
+  if(!file) return;
+  addPairState[side+'File'] = file;
+  const url = URL.createObjectURL(file);
+  const cap = side.charAt(0).toUpperCase() + side.slice(1);
+  const img = $('#addPair'+cap+'Preview');
+  const ph = $('#addPair'+cap+'Placeholder');
+  const drop = ph.parentElement;
+  img.src = url;
+  img.classList.remove('hidden');
+  ph.classList.add('hidden');
+  drop.classList.add('has-image');
+  refreshAddPairUi();
+}
+
+$('#btnMystyleAddPair').onclick = openAddPairModal;
+$('#btnAddPairClose').onclick = closeAddPairModal;
+$('#btnAddPairCloseFooter').onclick = closeAddPairModal;
+$('#btnAddPairReset').onclick = resetAddPairForm;
+$('#addPairModal').addEventListener('click', (e) => { if(e.target.id === 'addPairModal') closeAddPairModal(); });
+$('#addPairBefore').addEventListener('change', (e) => onPairFileChange('before', e.target.files[0]));
+$('#addPairAfter').addEventListener('change',  (e) => onPairFileChange('after',  e.target.files[0]));
+$('#btnAddPairConfirm').onclick = async () => {
+  if(!addPairState.beforeFile || !addPairState.afterFile){ toast('両方の画像を選んでください', 'err'); return; }
+  const btn = $('#btnAddPairConfirm');
+  btn.disabled = true;
+  btn.textContent = '追加中...';
+  try {
+    await favAdd(addPairState.beforeFile, addPairState.afterFile, addPairState.beforeFile.name);
+    await refreshMystyleUi();
+    const n = await favCount();
+    toast(`📚 ペア追加(累計 ${n}ペア)`, 'ok');
+    resetAddPairForm();   // 続けて次のペアが追加できるよう自動クリア
+    btn.textContent = '📚 追加';
+  } catch(e){
+    toast('追加失敗: ' + (e.message || e), 'err');
+    btn.disabled = false;
+    btn.textContent = '📚 追加';
+  }
+};
+
 $('#btnMystyleClear').onclick = async () => {
   const n = await favCount();
   if(n === 0){ toast('マイスタイルはまだ空です', 'err'); return; }
