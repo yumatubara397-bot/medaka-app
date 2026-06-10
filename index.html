@@ -292,6 +292,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
           <div class="mystyle-head">
             <div class="mystyle-title">📚 マイスタイル <span id="mystyleCount" class="mystyle-count">0ペア</span></div>
             <div class="mystyle-actions">
+              <button id="btnMystyleBulkImport" class="btn btn-ghost btn-mini" title="過去フォルダ(「のコピー」付き編集後と元の混在)を一括取込">📂 過去フォルダから一括取込</button>
               <label class="chip-toggle mystyle-toggle" title="OFFにすると今回はマイスタイルを参照せずに加工"><input type="checkbox" id="mystyleEnabled" checked><span>参照ON</span></label>
               <button id="btnMystyleClear" class="btn btn-ghost btn-mini" title="マイスタイルを全リセット">🗑 学習リセット</button>
             </div>
@@ -1146,6 +1147,89 @@ $('#btnMystyleClear').onclick = async () => {
   await favClear();
   await refreshMystyleUi();
   toast('🗑 マイスタイルをリセットしました', 'ok');
+};
+
+// ===== 過去フォルダから一括取込(「のコピー」サフィックスでペア検出) =====
+const COPY_SUFFIX_PATTERNS = [
+  /\s*のコピー(\s*\d*)?$/i,         // macOS: 〜のコピー / 〜のコピー2
+  /\s+copy(\s*\d*)?$/i,             // 英: 〜 copy / 〜 copy 2
+  /-copy(\s*\d*)?$/i,               // 〜-copy
+  /_copy(\s*\d*)?$/i,               // 〜_copy
+  /\s*\(\s*コピー\s*\)$/i,          // 〜(コピー)
+  /\s*-\s*Copy(\s*\(\d+\))?$/i,     // Windows: 〜 - Copy / 〜 - Copy (2)
+];
+function stripCopySuffix(stem){
+  for(const re of COPY_SUFFIX_PATTERNS){
+    if(re.test(stem)) return { original: stem.replace(re, '').trim(), isCopy: true };
+  }
+  return { original: stem.trim(), isCopy: false };
+}
+function pairKeyFor(stem, ext){
+  return stem.trim() + (ext || '').toLowerCase();
+}
+
+$('#btnMystyleBulkImport').onclick = async () => {
+  if(!window.showDirectoryPicker){
+    toast('お使いのブラウザはフォルダ選択未対応です(Chrome/Edge推奨)', 'err'); return;
+  }
+  let folderHandle;
+  try { folderHandle = await window.showDirectoryPicker({ mode:'read' }); }
+  catch(e){ if(e.name === 'AbortError') return; toast('フォルダ選択失敗: '+e.message, 'err'); return; }
+
+  // フォルダ内の画像を全部走査
+  const allFiles = [];
+  for await (const e of folderHandle.values()){
+    if(e.kind !== 'file' || !/\.(jpe?g|png)$/i.test(e.name)) continue;
+    allFiles.push(e);
+  }
+  if(allFiles.length === 0){ toast('画像ファイルが見つかりません', 'err'); return; }
+
+  // ペアマッチング: key(コピー除去後 + 拡張子小文字) → { before, after }
+  const map = new Map();
+  for(const f of allFiles){
+    const extMatch = f.name.match(/\.[^.]+$/);
+    const ext = extMatch ? extMatch[0] : '';
+    const stem = f.name.slice(0, f.name.length - ext.length);
+    const { original, isCopy } = stripCopySuffix(stem);
+    const key = pairKeyFor(original, ext);
+    if(!map.has(key)) map.set(key, { before: null, after: null });
+    const entry = map.get(key);
+    if(isCopy) entry.after = f;
+    else entry.before = f;
+  }
+  const pairs = [];
+  let onlyBefore = 0, onlyAfter = 0;
+  for(const [k, e] of map){
+    if(e.before && e.after) pairs.push(e);
+    else if(e.before) onlyBefore++;
+    else if(e.after) onlyAfter++;
+  }
+  if(pairs.length === 0){
+    toast(`ペアが見つかりません(編集前${onlyBefore} / 編集後${onlyAfter})。「のコピー」付き編集後と元のファイルを同じフォルダに置いてください`, 'err');
+    return;
+  }
+
+  // 確認ダイアログ
+  if(!confirm(`${pairs.length}ペア を マイスタイルに追加しますか?\n(片方のみ: 編集前${onlyBefore} / 編集後${onlyAfter} は無視)`)) return;
+
+  // 進捗表示
+  const btn = $('#btnMystyleBulkImport');
+  const origText = btn.textContent;
+  btn.disabled = true;
+  let ok = 0, fail = 0;
+  for(let i = 0; i < pairs.length; i++){
+    btn.textContent = `取込中 ${i+1}/${pairs.length}...`;
+    try {
+      const beforeBlob = await pairs[i].before.getFile();
+      const afterBlob  = await pairs[i].after.getFile();
+      await favAdd(beforeBlob, afterBlob, pairs[i].before.name);
+      ok++;
+    } catch(e){ fail++; console.warn('bulk fav add failed:', e); }
+  }
+  btn.disabled = false;
+  btn.textContent = origText;
+  await refreshMystyleUi();
+  toast(`📚 ${ok}ペアを取込しました${fail > 0 ? ` (失敗${fail})` : ''}`, fail > 0 ? 'warn' : 'ok');
 };
 
 ['#modeCleanup','#modeBgBlack','#modeEnhance','#modeSharpness','#modeFrame','#modeUpscale','#modeSquare'].forEach(s => {
