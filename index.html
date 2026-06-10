@@ -117,6 +117,17 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 /* Placeholder for phase 2/3/4 */
 .placeholder{background:var(--panel);border:1px dashed var(--line);border-radius:12px;padding:60px 20px;text-align:center;color:var(--ink-dim);font-size:13px}
 
+/* ===== マイスタイル(学習ペア) ===== */
+.mystyle-section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:10px}
+.mystyle-section.has-data{border-color:var(--ok)}
+.mystyle-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.mystyle-title{font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px}
+.mystyle-count{background:var(--bg-2);color:var(--ink-dim);font-size:10px;padding:2px 8px;border-radius:99px;font-family:'JetBrains Mono',monospace;font-weight:700}
+.mystyle-section.has-data .mystyle-count{background:var(--ok);color:#000}
+.mystyle-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.mystyle-toggle{padding:5px 12px;font-size:11px}
+.mystyle-hint{font-size:11px;color:var(--ink-dim);line-height:1.6;margin-top:6px}
+
 /* ===== 編集タブ ===== */
 .ref-section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px}
 .ref-section.has-ref{border-color:var(--accent)}
@@ -276,6 +287,18 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
       </div>
 
       <div id="editLoaded" class="hidden">
+        <!-- マイスタイル: 💾保存で自動学習されたペアを Gemini に同送 -->
+        <div class="mystyle-section" id="mystyleSection">
+          <div class="mystyle-head">
+            <div class="mystyle-title">📚 マイスタイル <span id="mystyleCount" class="mystyle-count">0ペア</span></div>
+            <div class="mystyle-actions">
+              <label class="chip-toggle mystyle-toggle" title="OFFにすると今回はマイスタイルを参照せずに加工"><input type="checkbox" id="mystyleEnabled" checked><span>参照ON</span></label>
+              <button id="btnMystyleClear" class="btn btn-ghost btn-mini" title="マイスタイルを全リセット">🗑 学習リセット</button>
+            </div>
+          </div>
+          <div class="mystyle-hint" id="mystyleHint">💾保存するたびにペア(元+加工後)を AI に記憶。次回からの加工がその好みに近づきます</div>
+        </div>
+
         <div class="edit-toolbar">
           <div class="edit-modes">
             <span class="edit-modes-label">加工モード</span>
@@ -915,24 +938,95 @@ function isRefStyleEnabled(){ return false; }
 //  editState[photoIdx] = { editedBlobUrl, editedKey, modes, showEdited }
 let editState = {};
 
-// ===== IndexedDB: 編集済み画像を blob で保管(セッション間も保持) =====
+// ===== IndexedDB: 編集済み画像 + マイスタイル(お気に入りペア)を保管 =====
 const EDIT_DB = 'medaka-edit';
 const EDIT_STORE = 'edited';
+const FAV_STORE = 'favorites';  // マイスタイル: {beforeBlob, afterBlob, timestamp, photoName}
 let editDbPromise = null;
 function openEditDb(){
   if(editDbPromise) return editDbPromise;
   editDbPromise = new Promise((resolve, reject) => {
-    const req = indexedDB.open(EDIT_DB, 1);
-    req.onupgradeneeded = () => {
+    // v2: favorites ストア追加
+    const req = indexedDB.open(EDIT_DB, 2);
+    req.onupgradeneeded = (e) => {
       const db = req.result;
       if(!db.objectStoreNames.contains(EDIT_STORE)){
         db.createObjectStore(EDIT_STORE);
+      }
+      if(!db.objectStoreNames.contains(FAV_STORE)){
+        db.createObjectStore(FAV_STORE, { autoIncrement: true });
       }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
   return editDbPromise;
+}
+
+// ===== マイスタイル(favorites) ヘルパー =====
+async function favAdd(beforeBlob, afterBlob, photoName){
+  const db = await openEditDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(FAV_STORE, 'readwrite');
+    const record = {
+      beforeBlob: beforeBlob,
+      afterBlob: afterBlob,
+      photoName: photoName,
+      timestamp: Date.now()
+    };
+    tx.objectStore(FAV_STORE).add(record);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+async function favList(){
+  const db = await openEditDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(FAV_STORE, 'readonly');
+    const req = tx.objectStore(FAV_STORE).getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function favCount(){
+  const db = await openEditDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(FAV_STORE, 'readonly');
+    const req = tx.objectStore(FAV_STORE).count();
+    req.onsuccess = () => resolve(req.result || 0);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function favClear(){
+  const db = await openEditDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(FAV_STORE, 'readwrite');
+    tx.objectStore(FAV_STORE).clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+// Gemini送信用にランダム N件取得 → dataUrl 変換
+async function favSampleAsDataUrls(maxCount){
+  const all = await favList();
+  if(all.length === 0) return [];
+  // 最新優先 + ランダム要素を入れる(直近10件からランダム N)
+  const pool = all.slice(-Math.min(all.length, 10));
+  // シャッフル(Fisher-Yates の簡易版)
+  for(let i = pool.length - 1; i > 0; i--){
+    const j = Math.floor((i + 1) * (((Date.now() >> i) & 0xff) / 256));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  const chosen = pool.slice(0, Math.min(maxCount, pool.length));
+  const out = [];
+  for(const rec of chosen){
+    try {
+      const before = await blobToDataUrl(rec.beforeBlob);
+      const after = await blobToDataUrl(rec.afterBlob);
+      out.push({ before, after, name: rec.photoName || 'favorite' });
+    } catch(e){ console.warn('fav sample conv failed', e); }
+  }
+  return out;
 }
 async function editDbPut(key, blob){
   const db = await openEditDb();
@@ -1026,6 +1120,34 @@ function updateCostHint(){
 }
 
 $('#btnGotoImport').onclick = () => switchTab('import');
+
+// ===== マイスタイル UI 操作 =====
+async function refreshMystyleUi(){
+  const n = await favCount();
+  const countEl = $('#mystyleCount');
+  const section = $('#mystyleSection');
+  countEl.textContent = `${n}ペア`;
+  section.classList.toggle('has-data', n > 0);
+  const hintEl = $('#mystyleHint');
+  if(n === 0){
+    hintEl.textContent = '💾保存するたびにペア(元+加工後)を AI に記憶。次回からの加工がその好みに近づきます';
+  } else if(n < 5){
+    hintEl.textContent = `📚 ${n}ペア学習済 — もっと💾保存するとさらに好みに近づきます(目安: 5ペア以上で効果UP)`;
+  } else if(n < 20){
+    hintEl.textContent = `📚 ${n}ペア学習済 — 加工時にランダム2ペアを Gemini に同送して好みを反映中`;
+  } else {
+    hintEl.textContent = `📚 ${n}ペア学習済 — 十分なサンプル量です。AI が好みのスタイルをしっかり把握します`;
+  }
+}
+$('#btnMystyleClear').onclick = async () => {
+  const n = await favCount();
+  if(n === 0){ toast('マイスタイルはまだ空です', 'err'); return; }
+  if(!confirm(`マイスタイル ${n}ペアをすべて削除しますか?\n(この操作は取り消せません)`)) return;
+  await favClear();
+  await refreshMystyleUi();
+  toast('🗑 マイスタイルをリセットしました', 'ok');
+};
+
 ['#modeCleanup','#modeBgBlack','#modeEnhance','#modeSharpness','#modeFrame','#modeUpscale','#modeSquare'].forEach(s => {
   const el = document.querySelector(s);
   if(el) el.addEventListener('change', updateCostHint);
@@ -1040,6 +1162,7 @@ async function renderEditPanel(){
   $('#editEmpty').classList.add('hidden');
   $('#editLoaded').classList.remove('hidden');
   updateCostHint();
+  await refreshMystyleUi();
   await renderEditProductList();
 }
 
@@ -1147,12 +1270,13 @@ $('#btnEditSaveAll').onclick = async () => {
   }
 };
 
-// 加工後画像を 1枚ダウンロード保存
+// 加工後画像を 1枚ダウンロード保存 + マイスタイルにも自動学習登録
 async function downloadEditedPhoto(photoIdx){
   const ph = photos[photoIdx];
   const st = editState[photoIdx];
   if(!st || !st.editedBlobUrl){ toast('加工後画像がありません', 'err'); return; }
   try {
+    // ダウンロード
     const blob = await (await fetch(st.editedBlobUrl)).blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1163,7 +1287,17 @@ async function downloadEditedPhoto(photoIdx){
     a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    toast(`💾 ${a.download} を保存しました`, 'ok');
+
+    // マイスタイル自動学習: 元画像と加工後をペアで保存
+    try {
+      const beforeBlob = await ph.handle.getFile();
+      await favAdd(beforeBlob, blob, ph.name);
+      await refreshMystyleUi();
+      toast(`💾 保存 + 📚 マイスタイル学習`, 'ok');
+    } catch(favErr){
+      console.warn('mystyle add failed:', favErr);
+      toast(`💾 ${a.download} を保存しました`, 'ok');
+    }
   } catch(e){
     toast('保存失敗: ' + (e.message || e), 'err');
   }
@@ -1204,6 +1338,14 @@ async function runEditForProducts(productIdxs){
   const useRefStyle = isRefStyleEnabled();
   const needsGas = geminiModes.length > 0 || upscale;
 
+  // マイスタイル: ON かつ ペアあり なら、Gemini に同送する参照ペアを準備
+  const mystyleOn = $('#mystyleEnabled') && $('#mystyleEnabled').checked;
+  let mystyleSamples = [];
+  if(mystyleOn && geminiModes.length > 0){
+    try { mystyleSamples = await favSampleAsDataUrls(2); }
+    catch(e){ console.warn('mystyle sample fetch failed', e); }
+  }
+
   if(geminiModes.length === 0 && !upscale && !sqcrop && !useRefStyle){
     toast('加工モードが1つも選ばれていません', 'err'); return;
   }
@@ -1241,7 +1383,9 @@ async function runEditForProducts(productIdxs){
 
     // キャッシュキーには brightness と refStyle 有無も含める
     const allModes = geminiModes.concat(upscale?['upscale']:[], sqcrop?['square_crop']:[], useRefStyle?['ref']:[]);
-    const key = editCacheKey(ph.name, allModes.concat(['br:'+brightness]));
+    // マイスタイルのペア数もキーに含める(学習が増えたら再加工される)
+    const mysTag = mystyleSamples.length > 0 ? ['mys:'+mystyleSamples.length] : [];
+    const key = editCacheKey(ph.name, allModes.concat(['br:'+brightness], mysTag));
 
     try {
       let blob = await editDbGet(key);
@@ -1255,8 +1399,11 @@ async function runEditForProducts(productIdxs){
           const file = await ph.handle.getFile();
           const dataUrl = await fileToResizedDataUrl(file, 1280, 0.9);
           const reqBody = { action:'edit_image', image: dataUrl, modes: geminiModes.length>0 ? geminiModes : ['cleanup'], brightness: brightness };
-          if(useRefStyle && refStyle && refStyle.sampleDataUrls && refStyle.sampleDataUrls.length > 0){
-            reqBody.refSamples = refStyle.sampleDataUrls;  // 最大2ペアのみ
+          // マイスタイル(favorites) を Gemini に同送
+          if(mystyleSamples.length > 0){
+            reqBody.refSamples = mystyleSamples;
+          } else if(useRefStyle && refStyle && refStyle.sampleDataUrls && refStyle.sampleDataUrls.length > 0){
+            reqBody.refSamples = refStyle.sampleDataUrls;
           }
           const res = await fetch(gasUrl, { method: 'POST', body: JSON.stringify(reqBody) });
           if(!res.ok) throw new Error('Gemini HTTP '+res.status);
