@@ -1,9 +1,11 @@
 /**
  * メダカ在庫撮影アシスタント - Service Worker
+ * v6: 出品タブ(Phase 3) / 履歴タブ(Phase 4) 実装。
+ *     オークタウンCSV(Shift_JIS) + 画像ZIP をブラウザ内で生成、出品履歴を IndexedDB に保存
  * v5: 編集タブ(Phase 2) 実装。AI加工 + ライトボックス + IndexedDB キャッシュ
  */
 
-const CACHE_VERSION = 'medaka-cache-v22';  // バージョン更新で古いキャッシュ自動削除
+const CACHE_VERSION = 'medaka-cache-v23';  // バージョン更新で古いキャッシュ自動削除
 const APP_SHELL = [
   './',
   './index.html',
