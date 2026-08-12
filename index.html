@@ -201,6 +201,15 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .spec-tile-img{position:relative;aspect-ratio:1;background:#000;cursor:zoom-in}
 .spec-tile-img img{width:100%;height:100%;object-fit:cover;display:block}
 .spec-tile-pair{display:grid;grid-template-columns:1fr 1fr;gap:2px;background:var(--line);position:relative}
+/* 加工後がまだ無い間は左半分(加工前)だけを表示する。DOM構造は同じなので
+   スライダーを動かしても img の src 差し替えだけで済む */
+.spec-tile:not(.has-edited) .spec-tile-pair{grid-template-columns:1fr;background:transparent}
+.spec-tile:not(.has-edited) .edited-slot,
+.spec-tile:not(.has-edited) .spec-tile-pair-divider{display:none}
+/* 写真1枚ごとの明るさスライダー */
+.spec-tile-bright{display:flex;align-items:center;gap:8px;padding:7px 8px 0}
+.spec-tile-bright-label{font-size:10px;color:var(--ink-dim);font-family:'JetBrains Mono',monospace;white-space:nowrap}
+.tile-bright-range{flex:1;width:auto;min-width:50px}
 .spec-tile-pair .spec-tile-img{aspect-ratio:1}
 .spec-tile-pair-divider{position:absolute;top:0;bottom:0;left:50%;width:2px;background:var(--bg-2);pointer-events:none;z-index:2}
 .spec-tile-badge{position:absolute;top:6px;left:6px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;font-family:'JetBrains Mono',monospace;backdrop-filter:blur(4px);z-index:1}
@@ -1344,11 +1353,13 @@ function getSelectedAiModes(){ return getSelectedGeminiModes().concat(isUpscaleE
 function getSelectedClientModes(){ return isSquareCropEnabled() ? ['square_crop'] : []; }
 function getAllSelectedModes(){ return getSelectedAiModes().concat(getSelectedClientModes()); }
 function modeKey(modes){ return modes.slice().sort().join('+') || 'cleanup'; }
-// 商品ごとの明るさレベル状態(productIdx → 0〜100。既定55 = 旧「中」)
+// 商品ごとの明るさレベル状態(productIdx → 0〜100)
+// 既定は 0(無補正)。AI加工を実行した写真だけ、従来どおり 55(中) から始まる
+const BRIGHT_AFTER_AI = 55;
 const productBrightness = {};
 function getProductBrightness(productIdx){
   const v = productBrightness[productIdx];
-  return v == null ? 55 : brightnessLevel(v);
+  return v == null ? 0 : brightnessLevel(v);
 }
 function setProductBrightness(productIdx, level){
   productBrightness[productIdx] = brightnessLevel(level);
@@ -1361,9 +1372,16 @@ function productIdxOfPhoto(photoIdx){
   }
   return -1;
 }
+// 写真1枚ごとの明るさ(未設定なら商品の値を使う)
+const photoBrightness = {};
 function getPhotoBrightness(photoIdx){
+  const v = photoBrightness[photoIdx];
+  if(v != null) return brightnessLevel(v);
   const pi = productIdxOfPhoto(photoIdx);
   return pi < 0 ? 0 : getProductBrightness(pi);
+}
+function setPhotoBrightness(photoIdx, level){
+  photoBrightness[photoIdx] = brightnessLevel(level);
 }
 
 function editCacheKey(photoName, modes){
@@ -1609,53 +1627,43 @@ async function renderEditPanel(){
   await renderEditProductList();
 }
 
-// 個体写真1枚ぶんのタイル。明るさスライダーのドラッグ中に
-// リスト全体を作り直さずタイルだけ差し替えられるよう関数に切り出してある
+// 個体写真1枚ぶんのタイル。
+// 「加工前だけ」と「加工前+加工後」で同じDOM構造にして、加工後スロットをCSSで出し分ける。
+// こうしておくとスライダーを動かしても img の src を差し替えるだけで済み、
+// タイルを作り直さない = ドラッグ操作が途切れない。
 function specTileHtml(i){
   const ph = photos[i];
   const st = editState[i];
   const hasEdited = !!(st && st.editedBlobUrl);
-      if(hasEdited){
-        // 加工後あり → 左:加工前 / 右:加工後 の並列表示
-        return `
-          <div class="spec-tile has-edited" data-photo-idx="${i}">
-            <div class="spec-tile-pair">
-              <div class="spec-tile-img" data-action="zoom" data-photo-idx="${i}" title="クリックで拡大">
-                <img src="${ph.blobUrl}" alt="${escapeHtml(ph.name)}">
-                <span class="spec-tile-badge original">加工前</span>
-              </div>
-              <div class="spec-tile-img" data-action="zoom" data-photo-idx="${i}" title="クリックで拡大">
-                <img src="${st.editedBlobUrl}" alt="${escapeHtml(ph.name)}">
-                <span class="spec-tile-badge edited">✨ 加工後</span>
-              </div>
-              <div class="spec-tile-pair-divider"></div>
-            </div>
-            <div class="spec-tile-foot">
-              <span class="spec-tile-name" title="${escapeHtml(ph.name)}">${escapeHtml(ph.name)}</span>
-              <div class="spec-tile-tools">
-                ${flipButtonsHtml(i)}
-                <button class="spec-tile-save" data-action="save" data-photo-idx="${i}" title="加工後をダウンロード">💾 保存</button>
-              </div>
-            </div>
-          </div>
-        `;
-      }
-      // 加工後なし → 単一表示
-      return `
-        <div class="spec-tile" data-photo-idx="${i}">
-          <div class="spec-tile-img" data-action="zoom" data-photo-idx="${i}" title="クリックで拡大">
-            <img src="${ph.blobUrl}" alt="${escapeHtml(ph.name)}">
-            <span class="spec-tile-badge original">加工前</span>
-          </div>
-          <div class="spec-tile-foot">
-            <span class="spec-tile-name" title="${escapeHtml(ph.name)}">${escapeHtml(ph.name)}</span>
-            <div class="spec-tile-tools">
-              ${flipButtonsHtml(i)}
-              <button class="spec-tile-save" data-action="save" data-photo-idx="${i}" disabled title="加工後がありません">💾 保存</button>
-            </div>
-          </div>
+  const level = getPhotoBrightness(i);
+  return `
+    <div class="spec-tile${hasEdited ? ' has-edited' : ''}" data-photo-idx="${i}">
+      <div class="spec-tile-pair">
+        <div class="spec-tile-img" data-action="zoom" data-photo-idx="${i}" title="クリックで拡大">
+          <img src="${ph.blobUrl}" alt="${escapeHtml(ph.name)}">
+          <span class="spec-tile-badge original">加工前</span>
         </div>
-      `;
+        <div class="spec-tile-img edited-slot" data-action="zoom" data-photo-idx="${i}" title="クリックで拡大">
+          <img${hasEdited ? ` src="${st.editedBlobUrl}"` : ''} alt="${escapeHtml(ph.name)}">
+          <span class="spec-tile-badge edited">✨ 加工後</span>
+        </div>
+        <div class="spec-tile-pair-divider"></div>
+      </div>
+      <div class="spec-tile-bright" title="この写真だけの明るさ (Canvas処理・無料)">
+        <span class="spec-tile-bright-label">明るさ</span>
+        <input type="range" class="bright-range tile-bright-range" min="0" max="100" step="5"
+               value="${level}" data-action="tile-bright" data-photo-idx="${i}">
+        <span class="bright-val tile-bright-val">${level}</span>
+      </div>
+      <div class="spec-tile-foot">
+        <span class="spec-tile-name" title="${escapeHtml(ph.name)}">${escapeHtml(ph.name)}</span>
+        <div class="spec-tile-tools">
+          ${flipButtonsHtml(i)}
+          <button class="spec-tile-save" data-action="save" data-photo-idx="${i}"${hasEdited ? '' : ' disabled'} title="${hasEdited ? '加工後をダウンロード' : '加工後がありません'}">💾 保存</button>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 async function renderEditProductList(){
@@ -1666,14 +1674,14 @@ async function renderEditProductList(){
     const brightness = getProductBrightness(idx);
     const brBtn = (lvl, label) => `<button class="brightness-btn ${brightness===lvl?'active':''}" data-action="brightness" data-product-idx="${idx}" data-level="${lvl}">${label}</button>`;
     const brightCtrl = `
-      <div class="bright-ctrl" title="Canvasで処理するので無料。動かすとすぐ「加工後」に反映されます">
-        <span class="brightness-group-label">明るさ</span>
+      <div class="bright-ctrl" title="この商品の個体すべてに同じ明るさを適用します（Canvas処理・無料）。写真ごとの微調整は各写真のスライダーで">
+        <span class="brightness-group-label">明るさ<br><small>まとめて</small></span>
         <div class="brightness-group">
           ${brBtn(0,'なし')}${brBtn(25,'🌑 弱')}${brBtn(55,'🌗 中')}${brBtn(85,'🌕 強')}
         </div>
-        <input type="range" class="bright-range" min="0" max="100" step="5" value="${brightness}"
+        <input type="range" class="bright-range card-bright-range" min="0" max="100" step="5" value="${brightness}"
                data-action="bright-range" data-product-idx="${idx}">
-        <span class="bright-val">${brightness}</span>
+        <span class="bright-val card-bright-val">${brightness}</span>
       </div>`;
     return `
       <div class="edit-card" data-product-idx="${idx}">
@@ -1715,6 +1723,12 @@ function bindEditHandlers(root){
     el.oninput  = () => onBrightnessInput(+el.dataset.productIdx, +el.value, false);
     el.onchange = () => onBrightnessInput(+el.dataset.productIdx, +el.value, true);
   });
+  root.querySelectorAll('[data-action="tile-bright"]').forEach(el => {
+    // 写真1枚ごとの明るさ
+    el.oninput  = () => onPhotoBrightnessInput(+el.dataset.photoIdx, +el.value, false);
+    el.onchange = () => onPhotoBrightnessInput(+el.dataset.photoIdx, +el.value, true);
+    el.onclick  = (e) => e.stopPropagation();
+  });
   root.querySelectorAll('[data-action="save"]').forEach(el => {
     el.onclick = (e) => {
       e.stopPropagation();
@@ -1729,16 +1743,35 @@ function bindEditHandlers(root){
   });
 }
 
-// 1タイルだけ作り直す(スライダーをドラッグ中でも操作が途切れない)
+// 1タイルの中身だけ更新する(DOMは作り直さないのでドラッグ中でも操作が途切れない)
 function refreshSpecTile(i){
   const el = document.querySelector(`.spec-tile[data-photo-idx="${i}"]`);
   if(!el) return false;
-  const tmp = document.createElement('div');
-  tmp.innerHTML = specTileHtml(i).trim();
-  const fresh = tmp.firstElementChild;
-  if(!fresh) return false;
-  el.replaceWith(fresh);
-  bindEditHandlers(fresh);
+  const st = editState[i];
+  const hasEdited = !!(st && st.editedBlobUrl);
+  el.classList.toggle('has-edited', hasEdited);
+
+  const editedImg = el.querySelector('.edited-slot img');
+  if(editedImg){
+    if(hasEdited) editedImg.src = st.editedBlobUrl;
+    else editedImg.removeAttribute('src');
+  }
+  const save = el.querySelector('[data-action="save"]');
+  if(save){
+    save.disabled = !hasEdited;
+    save.title = hasEdited ? '加工後をダウンロード' : '加工後がありません';
+  }
+  const f = getFlip(i);
+  const bh = el.querySelector('[data-action="flip"][data-axis="h"]');
+  const bv = el.querySelector('[data-action="flip"][data-axis="v"]');
+  if(bh) bh.classList.toggle('on', f.h);
+  if(bv) bv.classList.toggle('on', f.v);
+
+  const level = getPhotoBrightness(i);
+  const val = el.querySelector('.tile-bright-val');
+  if(val) val.textContent = level;
+  const rng = el.querySelector('.tile-bright-range');
+  if(rng && +rng.value !== level) rng.value = level;
   return true;
 }
 
@@ -1843,47 +1876,67 @@ async function toggleFlip(i, axis){
 }
 
 // ===== 明るさスライダー(Canvas・無料・即プレビュー) =====
-let brightBusy = false;
+// 待ち行列方式: ドラッグ中に何度呼ばれても最後の値まで必ず追いつく(取りこぼさない)
+const brightQueue = new Set();
+let brightRunning = false;
 const brightTimers = {};
-// quick=true のときは先頭の1枚だけ処理してドラッグ中の見た目を素早く返す
-async function applyBrightness(productIdx, quick){
-  if(brightBusy) return;
-  brightBusy = true;
-  const card = document.querySelector(`.edit-card[data-product-idx="${productIdx}"]`);
-  const valEl = card && card.querySelector('.bright-val');
-  const prevText = valEl ? valEl.textContent : '';
-  if(valEl) valEl.textContent = '…';
+function scheduleRecompose(idxs){
+  idxs.forEach(i => brightQueue.add(i));
+  runBrightQueue();
+}
+async function runBrightQueue(){
+  if(brightRunning) return;
+  brightRunning = true;
   try {
-    const idxs = products[productIdx].specimenIdxs;
-    const targets = quick ? idxs.slice(0, 1) : idxs;
-    let ok = true;
-    for(const i of targets){
-      await recomposePhoto(i);
-      if(!refreshSpecTile(i)) ok = false;
+    while(brightQueue.size){
+      const i = brightQueue.values().next().value;
+      brightQueue.delete(i);
+      try {
+        await recomposePhoto(i);
+        if(!refreshSpecTile(i)) await renderEditProductList();
+      } catch(e){
+        console.warn('brightness failed', photos[i] && photos[i].name, e);
+        toast('明るさ処理に失敗: ' + (e.message || e), 'err');
+      }
     }
-    if(!ok) await renderEditProductList();
-    if(valEl) valEl.textContent = getProductBrightness(productIdx);
-    // 明るさボタンのアクティブ表示を更新
-    if(card) card.querySelectorAll('[data-action="brightness"]').forEach(b => {
-      b.classList.toggle('active', +b.dataset.level === getProductBrightness(productIdx));
-    });
-    const range = card && card.querySelector('.bright-range');
-    if(range && +range.value !== getProductBrightness(productIdx)) range.value = getProductBrightness(productIdx);
-  } catch(e){
-    console.warn('brightness failed', e);
-    toast('明るさ処理に失敗: ' + (e.message || e), 'err');
-    if(valEl) valEl.textContent = prevText;
   } finally {
-    brightBusy = false;
+    brightRunning = false;
   }
 }
+// 写真1枚のスライダー
+function onPhotoBrightnessInput(photoIdx, value, immediate){
+  setPhotoBrightness(photoIdx, value);
+  const tile = document.querySelector(`.spec-tile[data-photo-idx="${photoIdx}"]`);
+  const val = tile && tile.querySelector('.tile-bright-val');
+  if(val) val.textContent = getPhotoBrightness(photoIdx);
+  clearTimeout(brightTimers['p' + photoIdx]);
+  brightTimers['p' + photoIdx] = setTimeout(() => scheduleRecompose([photoIdx]), immediate ? 0 : 150);
+}
+// 商品まとめてのスライダー: その商品の個体すべてを同じ値にする
 function onBrightnessInput(productIdx, value, immediate){
   setProductBrightness(productIdx, value);
+  const idxs = products[productIdx].specimenIdxs;
+  idxs.forEach(i => setPhotoBrightness(i, value));
   const card = document.querySelector(`.edit-card[data-product-idx="${productIdx}"]`);
-  const valEl = card && card.querySelector('.bright-val');
-  if(valEl) valEl.textContent = getProductBrightness(productIdx);
-  clearTimeout(brightTimers[productIdx]);
-  brightTimers[productIdx] = setTimeout(() => applyBrightness(productIdx, !immediate), immediate ? 0 : 180);
+  if(card){
+    const valEl = card.querySelector('.card-bright-val');
+    if(valEl) valEl.textContent = getProductBrightness(productIdx);
+    const range = card.querySelector('.card-bright-range');
+    if(range && +range.value !== getProductBrightness(productIdx)) range.value = getProductBrightness(productIdx);
+    card.querySelectorAll('[data-action="brightness"]').forEach(b => {
+      b.classList.toggle('active', +b.dataset.level === getProductBrightness(productIdx));
+    });
+  }
+  idxs.forEach(i => {
+    const tile = document.querySelector(`.spec-tile[data-photo-idx="${i}"]`);
+    if(!tile) return;
+    const v = tile.querySelector('.tile-bright-val'); if(v) v.textContent = value;
+    const r = tile.querySelector('.tile-bright-range'); if(r) r.value = value;
+  });
+  clearTimeout(brightTimers['c' + productIdx]);
+  // ドラッグ中は先頭1枚だけ、離したら全部
+  const targets = immediate ? idxs : idxs.slice(0, 1);
+  brightTimers['c' + productIdx] = setTimeout(() => scheduleRecompose(targets), immediate ? 0 : 180);
 }
 
 // 全加工後画像を順次ダウンロード保存
@@ -1958,6 +2011,7 @@ $('#btnEditClearCache').onclick = async () => {
   });
   editState = {};
   Object.keys(flipState).forEach(k => delete flipState[k]);
+  Object.keys(photoBrightness).forEach(k => delete photoBrightness[k]);
   renderEditProductList();
   toast(`${n}枚の編集結果を削除しました`, 'ok');
 };
@@ -2116,6 +2170,9 @@ async function runEditForProducts(productIdxs){
         brightness: brightness,
         showEdited: true
       };
+      // AI加工した写真は、まだ明るさに触っていなければ従来どおり中(55)から始める
+      if(photoBrightness[t.photoIdx] == null) setPhotoBrightness(t.photoIdx, BRIGHT_AFTER_AI);
+      if(productBrightness[t.productIdx] == null) setProductBrightness(t.productIdx, BRIGHT_AFTER_AI);
       // 明るさ・反転はここで重ねる(AIを再実行しても設定が消えない)
       try { await recomposePhoto(t.photoIdx); }
       catch(rcErr){ console.warn('recompose after edit failed', rcErr); }
