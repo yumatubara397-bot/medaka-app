@@ -207,6 +207,13 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .spec-tile-badge.edited{background:var(--ok);color:#000}
 .spec-tile-foot{display:flex;gap:6px;padding:6px;align-items:center;justify-content:space-between;flex-wrap:wrap}
 .spec-tile-tools{display:flex;gap:4px;align-items:center}
+/* 明るさ(Canvas・無料・即プレビュー) */
+.bright-ctrl{display:inline-flex;align-items:center;gap:8px;background:var(--bg-2);border:1px solid var(--line);border-radius:99px;padding:4px 12px 4px 10px;flex-wrap:wrap}
+.bright-ctrl .brightness-group{background:transparent;border:none;padding:0}
+.bright-range{-webkit-appearance:none;appearance:none;width:120px;height:4px;border-radius:99px;background:linear-gradient(90deg,#2a3361,var(--accent));outline:none;cursor:pointer}
+.bright-range::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;background:var(--accent);border:2px solid var(--bg);cursor:grab;box-shadow:0 0 0 1px var(--accent)}
+.bright-range::-webkit-slider-thumb:active{cursor:grabbing;transform:scale(1.15)}
+.bright-val{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--accent);min-width:24px;text-align:right}
 .spec-tile-flip{background:var(--line);color:var(--ink);border:none;padding:4px 9px;border-radius:5px;font-size:12px;cursor:pointer;font-weight:700;line-height:1.2}
 .spec-tile-flip:hover{background:var(--ink-dim);color:#000}
 .spec-tile-flip.on{background:var(--accent);color:#000}
@@ -935,18 +942,27 @@ $('#btnOcrAll').onclick = async () => {
 //   3. 黒レベル保持 (Blacks): 純黒の背景は維持
 //   4. 自然な彩度強化 (Vibrance): 鈍い色だけ彩度UP、すでに鮮やかな色はそのまま
 //   5. 明瞭度 (Clarity): 中域コントラスト強化(別関数のアンシャープマスクで対応)
-function adjustBrightnessBlob(blob, level){
-  // Camera Raw のスライダー値に相当するプリセット
-  // shadows: シャドウ持ち上げ量(0-1.0) — 暗部を明るくする強さ
-  // highlightCompress: ハイライト圧縮(0-1.0) — 明部の白飛び防止
-  // vibrance: 自然な彩度UP量(0-1.0)
-  // blackProtect: この輝度以下は純黒として保護
-  const presets = {
-    low:    { shadows: 0.25, highlightCompress: 0.05, vibrance: 0.10, blackProtect: 14 },
-    medium: { shadows: 0.55, highlightCompress: 0.10, vibrance: 0.20, blackProtect: 14 },
-    high:   { shadows: 0.85, highlightCompress: 0.15, vibrance: 0.35, blackProtect: 14 },
-  };
-  const p = presets[level] || presets.medium;
+// 明るさは 0〜100 の連続値。0 = 無補正、25/55/85 が旧 弱/中/強 と同じ効き。
+// shadows: シャドウ持ち上げ量 / highlightCompress: 白飛び防止 / vibrance: 自然な彩度UP
+// blackProtect: この輝度以下は純黒として保護(背景の漆黒を維持)
+const BRIGHT_PRESETS = { none:0, low:25, medium:55, high:85 };
+function brightnessLevel(v){
+  if(typeof v === 'string') return BRIGHT_PRESETS[v] != null ? BRIGHT_PRESETS[v] : 55;
+  const n = Math.round(+v);
+  return Math.max(0, Math.min(100, isNaN(n) ? 55 : n));
+}
+// GAS(Gemini)には従来どおり low/medium/high の3段階で渡す
+function brightnessLabel(v){
+  const n = brightnessLevel(v);
+  return n <= 12 ? 'low' : n < 40 ? 'low' : n < 70 ? 'medium' : 'high';
+}
+function brightnessParams(v){
+  const t = brightnessLevel(v) / 100;
+  return { shadows: 1.0 * t, highlightCompress: 0.18 * t, vibrance: 0.4 * t, blackProtect: 14 };
+}
+// maxEdge を渡すとその長辺に縮小してから処理する(プレビューを軽くするため)
+function adjustBrightnessBlob(blob, level, maxEdge){
+  const p = brightnessParams(level);
 
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -954,10 +970,16 @@ function adjustBrightnessBlob(blob, level){
     img.onload = () => {
       URL.revokeObjectURL(url);
       const c = document.createElement('canvas');
-      c.width = img.naturalWidth;
-      c.height = img.naturalHeight;
+      let w = img.naturalWidth, h = img.naturalHeight;
+      if(maxEdge && Math.max(w, h) > maxEdge){
+        const s = maxEdge / Math.max(w, h);
+        w = Math.max(1, Math.round(w * s)); h = Math.max(1, Math.round(h * s));
+      }
+      c.width = w;
+      c.height = h;
       const ctx = c.getContext('2d');
-      ctx.drawImage(img, 0, 0);
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, 0, 0, w, h);
       const imgData = ctx.getImageData(0, 0, c.width, c.height);
       const d = imgData.data;
 
@@ -1322,13 +1344,26 @@ function getSelectedAiModes(){ return getSelectedGeminiModes().concat(isUpscaleE
 function getSelectedClientModes(){ return isSquareCropEnabled() ? ['square_crop'] : []; }
 function getAllSelectedModes(){ return getSelectedAiModes().concat(getSelectedClientModes()); }
 function modeKey(modes){ return modes.slice().sort().join('+') || 'cleanup'; }
-// 商品ごとの明るさレベル状態(productIdx → 'low'|'medium'|'high')
+// 商品ごとの明るさレベル状態(productIdx → 0〜100。既定55 = 旧「中」)
 const productBrightness = {};
-function getProductBrightness(productIdx){ return productBrightness[productIdx] || 'medium'; }
+function getProductBrightness(productIdx){
+  const v = productBrightness[productIdx];
+  return v == null ? 55 : brightnessLevel(v);
+}
 function setProductBrightness(productIdx, level){
-  productBrightness[productIdx] = level;
-  renderEditProductList();
+  productBrightness[productIdx] = brightnessLevel(level);
   updateCostHint();
+}
+// 写真インデックス → その写真が属する商品インデックス
+function productIdxOfPhoto(photoIdx){
+  for(let i = 0; i < products.length; i++){
+    if(products[i].specimenIdxs.includes(photoIdx)) return i;
+  }
+  return -1;
+}
+function getPhotoBrightness(photoIdx){
+  const pi = productIdxOfPhoto(photoIdx);
+  return pi < 0 ? 0 : getProductBrightness(pi);
 }
 
 function editCacheKey(photoName, modes){
@@ -1574,16 +1609,12 @@ async function renderEditPanel(){
   await renderEditProductList();
 }
 
-async function renderEditProductList(){
-  const list = $('#editProductList');
-  list.innerHTML = products.map((p, idx) => {
-    const labelImg = photos[p.labelIdx]?.blobUrl || '';
-    const title = [p.variety || '未設定', p.controlNo ? `(${p.controlNo})` : ''].join(' ').trim();
-    const specHtml = p.specimenIdxs.map(i => {
-      const ph = photos[i];
-      const st = editState[i];
-      const hasEdited = !!(st && st.editedBlobUrl);
-
+// 個体写真1枚ぶんのタイル。明るさスライダーのドラッグ中に
+// リスト全体を作り直さずタイルだけ差し替えられるよう関数に切り出してある
+function specTileHtml(i){
+  const ph = photos[i];
+  const st = editState[i];
+  const hasEdited = !!(st && st.editedBlobUrl);
       if(hasEdited){
         // 加工後あり → 左:加工前 / 右:加工後 の並列表示
         return `
@@ -1625,9 +1656,25 @@ async function renderEditProductList(){
           </div>
         </div>
       `;
-    }).join('');
+}
+
+async function renderEditProductList(){
+  const list = $('#editProductList');
+  list.innerHTML = products.map((p, idx) => {
+    const title = [p.variety || '未設定', p.controlNo ? `(${p.controlNo})` : ''].join(' ').trim();
+    const specHtml = p.specimenIdxs.map(i => specTileHtml(i)).join('');
     const brightness = getProductBrightness(idx);
     const brBtn = (lvl, label) => `<button class="brightness-btn ${brightness===lvl?'active':''}" data-action="brightness" data-product-idx="${idx}" data-level="${lvl}">${label}</button>`;
+    const brightCtrl = `
+      <div class="bright-ctrl" title="Canvasで処理するので無料。動かすとすぐ「加工後」に反映されます">
+        <span class="brightness-group-label">明るさ</span>
+        <div class="brightness-group">
+          ${brBtn(0,'なし')}${brBtn(25,'🌑 弱')}${brBtn(55,'🌗 中')}${brBtn(85,'🌕 強')}
+        </div>
+        <input type="range" class="bright-range" min="0" max="100" step="5" value="${brightness}"
+               data-action="bright-range" data-product-idx="${idx}">
+        <span class="bright-val">${brightness}</span>
+      </div>`;
     return `
       <div class="edit-card" data-product-idx="${idx}">
         <div class="edit-card-head">
@@ -1637,10 +1684,7 @@ async function renderEditProductList(){
           </div>
           <div class="edit-card-actions">
             <span class="edit-card-meta">個体 ${p.specimenIdxs.length}枚</span>
-            <div class="brightness-group" title="この商品の明るさレベル (Geminiプロンプトに反映)">
-              <span class="brightness-group-label">明るさ</span>
-              ${brBtn('low','🌑 弱')}${brBtn('medium','🌗 中')}${brBtn('high','🌕 強')}
-            </div>
+            ${brightCtrl}
             <button class="btn btn-ghost btn-mini" data-action="run-product" data-product-idx="${idx}">✨ この商品だけ加工</button>
           </div>
         </div>
@@ -1651,29 +1695,51 @@ async function renderEditProductList(){
     `;
   }).join('');
 
-  // クリックハンドラ
-  list.querySelectorAll('[data-action="zoom"]').forEach(el => {
+  bindEditHandlers(list);
+  applySpecSize();
+}
+
+// クリックハンドラ(タイルだけ差し替えたときも同じ関数で貼り直す)
+function bindEditHandlers(root){
+  root.querySelectorAll('[data-action="zoom"]').forEach(el => {
     el.onclick = () => openLightbox(+el.dataset.photoIdx);
   });
-  list.querySelectorAll('[data-action="run-product"]').forEach(el => {
+  root.querySelectorAll('[data-action="run-product"]').forEach(el => {
     el.onclick = () => runEditForProducts([+el.dataset.productIdx]);
   });
-  list.querySelectorAll('[data-action="brightness"]').forEach(el => {
-    el.onclick = () => setProductBrightness(+el.dataset.productIdx, el.dataset.level);
+  root.querySelectorAll('[data-action="brightness"]').forEach(el => {
+    el.onclick = () => onBrightnessInput(+el.dataset.productIdx, +el.dataset.level, true);
   });
-  list.querySelectorAll('[data-action="save"]').forEach(el => {
+  root.querySelectorAll('[data-action="bright-range"]').forEach(el => {
+    // ドラッグ中は先頭1枚だけ即プレビュー、離したら全部に適用
+    el.oninput  = () => onBrightnessInput(+el.dataset.productIdx, +el.value, false);
+    el.onchange = () => onBrightnessInput(+el.dataset.productIdx, +el.value, true);
+  });
+  root.querySelectorAll('[data-action="save"]').forEach(el => {
     el.onclick = (e) => {
       e.stopPropagation();
       downloadEditedPhoto(+el.dataset.photoIdx);
     };
   });
-  list.querySelectorAll('[data-action="flip"]').forEach(el => {
+  root.querySelectorAll('[data-action="flip"]').forEach(el => {
     el.onclick = (e) => {
       e.stopPropagation();
       toggleFlip(+el.dataset.photoIdx, el.dataset.axis);
     };
   });
-  applySpecSize();
+}
+
+// 1タイルだけ作り直す(スライダーをドラッグ中でも操作が途切れない)
+function refreshSpecTile(i){
+  const el = document.querySelector(`.spec-tile[data-photo-idx="${i}"]`);
+  if(!el) return false;
+  const tmp = document.createElement('div');
+  tmp.innerHTML = specTileHtml(i).trim();
+  const fresh = tmp.firstElementChild;
+  if(!fresh) return false;
+  el.replaceWith(fresh);
+  bindEditHandlers(fresh);
+  return true;
 }
 
 // ============================================================
@@ -1733,33 +1799,91 @@ async function flipSourceBlob(i){
   }
   return await photos[i].handle.getFile();
 }
+// 加工後画像を組み立て直す: ベース(AI加工結果 or 元画像) → 明るさ → 反転
+// 明るさも反転も Canvas 処理なので API 課金は発生しない
+const BRIGHT_MAX_EDGE = 1800;   // 出品時は長辺1600pxに縮むのでこの解像度で十分
+async function recomposePhoto(i){
+  const st = editState[i] || {};
+  const f = getFlip(i);
+  const level = getPhotoBrightness(i);
+  const hasBase = !!st.baseBlobUrl;
+  const changed = hasBase || level > 0 || f.h || f.v;
+
+  if(!changed){
+    // AI加工なし・明るさなし・反転なし → 「加工後」を消して元表示に戻す
+    if(st.editedBlobUrl) URL.revokeObjectURL(st.editedBlobUrl);
+    delete editState[i];
+    return;
+  }
+  let out = await flipSourceBlob(i);                       // ベース画像
+  if(level > 0) out = await adjustBrightnessBlob(out, level, BRIGHT_MAX_EDGE);
+  if(f.h || f.v) out = await flipBlob(out, f.h, f.v);
+  if(st.editedBlobUrl) URL.revokeObjectURL(st.editedBlobUrl);
+  editState[i] = Object.assign({}, st, {
+    editedBlobUrl: URL.createObjectURL(out),
+    flip: { h:f.h, v:f.v },
+    brightness: level,
+    showEdited: true
+  });
+}
+
 async function toggleFlip(i, axis){
   const f = Object.assign({}, getFlip(i));
   if(axis === 'h') f.h = !f.h; else f.v = !f.v;
   flipState[i] = f;
   try {
-    const src = await flipSourceBlob(i);
-    const st = editState[i] || {};
-    const out = (f.h || f.v) ? await flipBlob(src, f.h, f.v) : src;
-    if(st.editedBlobUrl) URL.revokeObjectURL(st.editedBlobUrl);
-    // baseBlobUrl(未反転) は保持。AI加工していない場合は元画像が基準なので作らない
-    editState[i] = Object.assign({}, st, {
-      editedBlobUrl: URL.createObjectURL(out),
-      flip: { h:f.h, v:f.v },
-      showEdited: true
-    });
-    // AI加工なし & 反転も解除 → 「加工後なし」に戻す
-    if(!st.baseBlobUrl && !f.h && !f.v){
-      URL.revokeObjectURL(editState[i].editedBlobUrl);
-      delete editState[i];
-    }
-    await renderEditProductList();
+    await recomposePhoto(i);
+    if(!refreshSpecTile(i)) await renderEditProductList();
     const label = [f.h ? '左右' : '', f.v ? '上下' : ''].filter(Boolean).join('+');
     toast(label ? `${label}反転しました` : '反転を解除しました', 'ok');
   } catch(e){
     console.warn('flip failed', e);
     toast('反転に失敗: ' + (e.message || e), 'err');
   }
+}
+
+// ===== 明るさスライダー(Canvas・無料・即プレビュー) =====
+let brightBusy = false;
+const brightTimers = {};
+// quick=true のときは先頭の1枚だけ処理してドラッグ中の見た目を素早く返す
+async function applyBrightness(productIdx, quick){
+  if(brightBusy) return;
+  brightBusy = true;
+  const card = document.querySelector(`.edit-card[data-product-idx="${productIdx}"]`);
+  const valEl = card && card.querySelector('.bright-val');
+  const prevText = valEl ? valEl.textContent : '';
+  if(valEl) valEl.textContent = '…';
+  try {
+    const idxs = products[productIdx].specimenIdxs;
+    const targets = quick ? idxs.slice(0, 1) : idxs;
+    let ok = true;
+    for(const i of targets){
+      await recomposePhoto(i);
+      if(!refreshSpecTile(i)) ok = false;
+    }
+    if(!ok) await renderEditProductList();
+    if(valEl) valEl.textContent = getProductBrightness(productIdx);
+    // 明るさボタンのアクティブ表示を更新
+    if(card) card.querySelectorAll('[data-action="brightness"]').forEach(b => {
+      b.classList.toggle('active', +b.dataset.level === getProductBrightness(productIdx));
+    });
+    const range = card && card.querySelector('.bright-range');
+    if(range && +range.value !== getProductBrightness(productIdx)) range.value = getProductBrightness(productIdx);
+  } catch(e){
+    console.warn('brightness failed', e);
+    toast('明るさ処理に失敗: ' + (e.message || e), 'err');
+    if(valEl) valEl.textContent = prevText;
+  } finally {
+    brightBusy = false;
+  }
+}
+function onBrightnessInput(productIdx, value, immediate){
+  setProductBrightness(productIdx, value);
+  const card = document.querySelector(`.edit-card[data-product-idx="${productIdx}"]`);
+  const valEl = card && card.querySelector('.bright-val');
+  if(valEl) valEl.textContent = getProductBrightness(productIdx);
+  clearTimeout(brightTimers[productIdx]);
+  brightTimers[productIdx] = setTimeout(() => applyBrightness(productIdx, !immediate), immediate ? 0 : 180);
 }
 
 // 全加工後画像を順次ダウンロード保存
@@ -1900,10 +2024,13 @@ async function runEditForProducts(productIdxs){
     fill.style.width = ((i)/tasks.length*100).toFixed(1) + '%';
 
     // キャッシュキーには brightness と refStyle 有無も含める
-    const allModes = geminiModes.concat(upscale?['upscale']:[], sqcrop?['square_crop']:[], useRefStyle?['ref']:[]);
+    // ('nb2' = 明るさを焼き込まない新方式。旧キャッシュ(焼き込み済み)と混ざらないようにする)
+    const allModes = geminiModes.concat(upscale?['upscale']:[], sqcrop?['square_crop']:[], useRefStyle?['ref']:[], ['nb2']);
     // マイスタイルのペア数もキーに含める(学習が増えたら再加工される)
     const mysTag = mystyleSamples.length > 0 ? ['mys:'+mystyleSamples.length] : [];
-    const key = editCacheKey(ph.name, allModes.concat(['br:'+brightness], mysTag));
+    // 明るさはキーに含めない: Canvas側(無料)で後からいくらでも変えられるので、
+    // スライダーを動かしただけでAIを再実行(=課金)しないようにする
+    const key = editCacheKey(ph.name, allModes.concat(mysTag));
 
     try {
       let blob = await editDbGet(key);
@@ -1916,7 +2043,8 @@ async function runEditForProducts(productIdxs){
           text.textContent = `🧹 Gemini加工 ${i+1}/${tasks.length}: ${ph.name}`;
           const file = await ph.handle.getFile();
           const dataUrl = await fileToResizedDataUrl(file, 1280, 0.9);
-          const reqBody = { action:'edit_image', image: dataUrl, modes: geminiModes.length>0 ? geminiModes : ['cleanup'], brightness: brightness };
+          // AIには常に medium を指示し、最終的な明るさは Canvas のスライダーで決める
+          const reqBody = { action:'edit_image', image: dataUrl, modes: geminiModes.length>0 ? geminiModes : ['cleanup'], brightness: 'medium' };
           // マイスタイル(favorites) を Gemini に同送
           if(mystyleSamples.length > 0){
             reqBody.refSamples = mystyleSamples;
@@ -1932,13 +2060,8 @@ async function runEditForProducts(productIdxs){
           curBlob = await ph.handle.getFile();
         }
 
-        // ②a Canvas で明るさ最終補正(AIのバラつきを画一的に均す。背景黒は保護)
-        try {
-          text.textContent = `🌗 明るさ補正 ${i+1}/${tasks.length}: ${ph.name}`;
-          curBlob = await adjustBrightnessBlob(curBlob, brightness);
-        } catch(brErr){
-          console.warn('brightness adjust skipped:', brErr);
-        }
+        // ②a 明るさ補正は焼き込まず、加工後にスライダーで何度でも変えられるよう
+        //     recomposePhoto() 側(Canvas・無料)で最後に重ねる
 
         // ②b お手本スタイルの Canvas 適用(輝度ターゲット + シャープネス)
         if(useRefStyle && refStyle){
@@ -1985,22 +2108,17 @@ async function runEditForProducts(productIdxs){
         if(prevSt.editedBlobUrl) URL.revokeObjectURL(prevSt.editedBlobUrl);
         if(prevSt.baseBlobUrl) URL.revokeObjectURL(prevSt.baseBlobUrl);
       }
-      // 反転指定があればAI加工結果の上に再適用する(再加工しても反転が消えないように)
-      const fl = getFlip(t.photoIdx);
-      let shownBlob = blob;
-      if(fl.h || fl.v){
-        try { shownBlob = await flipBlob(blob, fl.h, fl.v); }
-        catch(flErr){ console.warn('flip after edit failed', flErr); }
-      }
       editState[t.photoIdx] = {
-        editedBlobUrl: URL.createObjectURL(shownBlob),
-        baseBlobUrl: URL.createObjectURL(blob),   // 未反転のAI加工結果(マイスタイル学習・反転の基準に使う)
+        editedBlobUrl: URL.createObjectURL(blob),
+        baseBlobUrl: URL.createObjectURL(blob),   // 明るさ・反転を加える前のAI加工結果(マイスタイル学習の基準にも使う)
         editedKey: key,
         modes: allModes.slice(),
         brightness: brightness,
-        flip: { h: fl.h, v: fl.v },
         showEdited: true
       };
+      // 明るさ・反転はここで重ねる(AIを再実行しても設定が消えない)
+      try { await recomposePhoto(t.photoIdx); }
+      catch(rcErr){ console.warn('recompose after edit failed', rcErr); }
     } catch(e){
       fail++;
       lastError = String(e && e.message || e);
