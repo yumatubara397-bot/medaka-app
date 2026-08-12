@@ -210,6 +210,20 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .spec-tile-bright{display:flex;align-items:center;gap:8px;padding:7px 8px 0}
 .spec-tile-bright-label{font-size:10px;color:var(--ink-dim);font-family:'JetBrains Mono',monospace;white-space:nowrap}
 .tile-bright-range{flex:1;width:auto;min-width:50px}
+/* 写真1枚ごとの詳細調整パネル */
+.tile-adj{border-top:1px solid var(--line);margin-top:7px}
+.tile-adj>summary{cursor:pointer;list-style:none;font-size:10px;color:var(--ink-dim);font-family:'JetBrains Mono',monospace;padding:6px 8px}
+.tile-adj>summary::-webkit-details-marker{display:none}
+.tile-adj>summary::before{content:'▸ ';color:var(--accent)}
+.tile-adj[open]>summary::before{content:'▾ '}
+.tile-adj>summary:hover{color:var(--ink)}
+.adj-dot{color:var(--accent);font-size:9px}
+.tile-adj-body{padding:0 8px 8px;display:flex;flex-direction:column;gap:5px}
+.adj-row{display:flex;align-items:center;gap:8px}
+.adj-label{font-size:10px;color:var(--ink-dim);font-family:'JetBrains Mono',monospace;width:76px;flex:none}
+.adj-range{flex:1;width:auto;min-width:50px}
+.adj-val{min-width:30px}
+.adj-btns{display:flex;gap:4px;flex-wrap:wrap;margin-top:5px}
 .spec-tile-pair .spec-tile-img{aspect-ratio:1}
 .spec-tile-pair-divider{position:absolute;top:0;bottom:0;left:50%;width:2px;background:var(--bg-2);pointer-events:none;z-index:2}
 .spec-tile-badge{position:absolute;top:6px;left:6px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;font-family:'JetBrains Mono',monospace;backdrop-filter:blur(4px);z-index:1}
@@ -969,9 +983,35 @@ function brightnessParams(v){
   const t = brightnessLevel(v) / 100;
   return { shadows: 1.0 * t, highlightCompress: 0.18 * t, vibrance: 0.4 * t, blackProtect: 14 };
 }
+// 写真1枚ごとの調整値
+// bright: 明るさ(0〜100) / contrast: コントラスト(-100〜100) / sat: 彩度(-100〜100)
+// warm: 色温度(-100=青い〜100=暖かい) / sharp: シャープ(0〜100) / rot: 回転(0/90/180/270)
+const ADJ_DEFAULT = { bright:0, contrast:0, sat:0, warm:0, sharp:0, rot:0 };
+const ADJ_SLIDERS = [
+  { k:'contrast', label:'コントラスト', min:-100, max:100 },
+  { k:'sat',      label:'彩度',         min:-100, max:100 },
+  { k:'warm',     label:'色温度',       min:-100, max:100 },
+  { k:'sharp',    label:'シャープ',     min:0,    max:100 }
+];
+function isAdjNeutral(a){
+  return !a.bright && !a.contrast && !a.sat && !a.warm && !a.sharp && !a.rot;
+}
+function hasPixelAdj(a){
+  return !!(a.bright || a.contrast || a.sat || a.warm || a.sharp);
+}
+
 // maxEdge を渡すとその長辺に縮小してから処理する(プレビューを軽くするため)
+// 旧名互換: 明るさだけ渡す呼び出しも受ける
 function adjustBrightnessBlob(blob, level, maxEdge){
-  const p = brightnessParams(level);
+  return applyAdjustBlob(blob, { bright: brightnessLevel(level) }, maxEdge);
+}
+function applyAdjustBlob(blob, adj, maxEdge){
+  const a = Object.assign({}, ADJ_DEFAULT, adj || {});
+  const p = brightnessParams(a.bright);
+  const contrast = Math.max(-100, Math.min(100, +a.contrast || 0)) / 100;
+  const satAmt   = Math.max(-100, Math.min(100, +a.sat || 0)) / 100;
+  const warmAmt  = Math.max(-100, Math.min(100, +a.warm || 0)) / 100;
+  const sharpAmt = Math.max(0, Math.min(100, +a.sharp || 0)) / 100;
 
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -1006,7 +1046,9 @@ function adjustBrightnessBlob(blob, level, maxEdge){
         const lifted = x + p.shadows * shadowWeight * (1 - x);         // 明るくする方向
         // ハイライト圧縮: 明部のみ軽く抑える
         const hiWeight = Math.pow(Math.max(0, (i - 180)/75), 2.0);     // i=180で0, i=255で1.0
-        const compressed = lifted - p.highlightCompress * hiWeight * (lifted - 0.95);
+        let compressed = lifted - p.highlightCompress * hiWeight * (lifted - 0.95);
+        // コントラスト: 中間(0.5)を軸に伸縮させる
+        if(contrast) compressed = 0.5 + (compressed - 0.5) * (1 + contrast * 0.9);
         lut[i] = Math.min(255, Math.max(0, Math.round(compressed * 255)));
       }
 
@@ -1037,14 +1079,61 @@ function adjustBrightnessBlob(blob, level, maxEdge){
           nb = avgC + (nb - avgC) * (1 + vibFactor);
         }
 
+        // 3. 彩度(全体を一律に上げ下げ。マイナスでモノクロ寄り)
+        if(satAmt){
+          const avgS = (nr + ng + nb) / 3;
+          const k = 1 + satAmt;
+          nr = avgS + (nr - avgS) * k;
+          ng = avgS + (ng - avgS) * k;
+          nb = avgS + (nb - avgS) * k;
+        }
+
+        // 4. 色温度(プラスで暖色=赤寄り、マイナスで寒色=青寄り)
+        if(warmAmt){
+          nr *= 1 + warmAmt * 0.22;
+          nb *= 1 - warmAmt * 0.22;
+        }
+
         d[i]   = Math.min(255, Math.max(0, Math.round(nr)));
         d[i+1] = Math.min(255, Math.max(0, Math.round(ng)));
         d[i+2] = Math.min(255, Math.max(0, Math.round(nb)));
       }
       ctx.putImageData(imgData, 0, 0);
+      // 5. シャープ(アンシャープマスク)
+      if(sharpAmt > 0){
+        try { applyUnsharpMask(ctx, c, sharpAmt * 1.2); }
+        catch(shErr){ console.warn('sharpen skipped', shErr); }
+      }
       c.toBlob((b) => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/jpeg', 0.93);
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('画像読込失敗')); };
+    img.src = url;
+  });
+}
+
+// 90度単位の回転(縦位置で撮った写真の向き直しに)
+function rotateBlob(blob, deg){
+  const d = ((+deg % 360) + 360) % 360;
+  if(!d) return Promise.resolve(blob);
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const w = img.naturalWidth, h = img.naturalHeight;
+      const swap = (d === 90 || d === 270);
+      const c = document.createElement('canvas');
+      c.width  = swap ? h : w;
+      c.height = swap ? w : h;
+      const ctx = c.getContext('2d');
+      ctx.translate(c.width / 2, c.height / 2);
+      ctx.rotate(d * Math.PI / 180);
+      ctx.drawImage(img, -w / 2, -h / 2);
+      const isPng = (blob.type || '') === 'image/png';
+      c.toBlob(b => b ? resolve(b) : reject(new Error('回転に失敗しました')),
+               isPng ? 'image/png' : 'image/jpeg', isPng ? undefined : 0.95);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('画像を読み込めませんでした')); };
     img.src = url;
   });
 }
@@ -1372,17 +1461,22 @@ function productIdxOfPhoto(photoIdx){
   }
   return -1;
 }
-// 写真1枚ごとの明るさ(未設定なら商品の値を使う)
-const photoBrightness = {};
-function getPhotoBrightness(photoIdx){
-  const v = photoBrightness[photoIdx];
-  if(v != null) return brightnessLevel(v);
+// 写真1枚ごとの調整値(未設定なら商品の明るさを引き継ぐ)
+const photoAdjust = {};
+function getAdj(photoIdx){
+  const a = photoAdjust[photoIdx];
+  if(a) return a;
   const pi = productIdxOfPhoto(photoIdx);
-  return pi < 0 ? 0 : getProductBrightness(pi);
+  return Object.assign({}, ADJ_DEFAULT, { bright: pi < 0 ? 0 : getProductBrightness(pi) });
 }
-function setPhotoBrightness(photoIdx, level){
-  photoBrightness[photoIdx] = brightnessLevel(level);
+function setAdj(photoIdx, patch){
+  photoAdjust[photoIdx] = Object.assign({}, getAdj(photoIdx), patch);
+  return photoAdjust[photoIdx];
 }
+// 旧名互換(明るさ)
+const photoBrightness = photoAdjust;
+function getPhotoBrightness(photoIdx){ return getAdj(photoIdx).bright; }
+function setPhotoBrightness(photoIdx, level){ setAdj(photoIdx, { bright: brightnessLevel(level) }); }
 
 function editCacheKey(photoName, modes){
   const folder = (folderHandle && folderHandle.name) || 'noname';
@@ -1635,7 +1729,8 @@ function specTileHtml(i){
   const ph = photos[i];
   const st = editState[i];
   const hasEdited = !!(st && st.editedBlobUrl);
-  const level = getPhotoBrightness(i);
+  const adj = getAdj(i);
+  const level = adj.bright;
   return `
     <div class="spec-tile${hasEdited ? ' has-edited' : ''}" data-photo-idx="${i}">
       <div class="spec-tile-pair">
@@ -1655,9 +1750,28 @@ function specTileHtml(i){
                value="${level}" data-action="tile-bright" data-photo-idx="${i}">
         <span class="bright-val tile-bright-val">${level}</span>
       </div>
+      <details class="tile-adj">
+        <summary>🎛 この1枚を調整${isAdjNeutral(adj) ? '' : ' <span class="adj-dot">●</span>'}</summary>
+        <div class="tile-adj-body">
+          ${ADJ_SLIDERS.map(s => `
+            <div class="adj-row">
+              <span class="adj-label">${s.label}</span>
+              <input type="range" class="bright-range adj-range" min="${s.min}" max="${s.max}" step="5"
+                     value="${adj[s.k]}" data-action="adj" data-adj="${s.k}" data-photo-idx="${i}">
+              <span class="bright-val adj-val" data-adj-val="${s.k}">${adj[s.k]}</span>
+            </div>`).join('')}
+          <div class="adj-btns">
+            <button class="spec-tile-flip" data-action="ai-clean" data-photo-idx="${i}" title="この1枚だけAI(Gemini)で浮遊物・ゴミを除去します（約6円）">🧹 AIゴミ取り</button>
+            <button class="spec-tile-flip" data-action="adj-copy" data-photo-idx="${i}" title="この写真の調整値を同じ商品の他の写真にも適用">📋 他の写真にも</button>
+            <button class="spec-tile-flip" data-action="adj-reset" data-photo-idx="${i}" title="この写真の調整・回転・反転をすべて元に戻す">↺ リセット</button>
+          </div>
+        </div>
+      </details>
       <div class="spec-tile-foot">
         <span class="spec-tile-name" title="${escapeHtml(ph.name)}">${escapeHtml(ph.name)}</span>
         <div class="spec-tile-tools">
+          <button class="spec-tile-flip" data-action="ai-clean" data-photo-idx="${i}" title="この1枚だけAIでゴミ取り（約6円）">🧹</button>
+          <button class="spec-tile-flip${adj.rot ? ' on' : ''}" data-action="rotate" data-photo-idx="${i}" title="90°回転（現在 ${adj.rot}°）">↻</button>
           ${flipButtonsHtml(i)}
           <button class="spec-tile-save" data-action="save" data-photo-idx="${i}"${hasEdited ? '' : ' disabled'} title="${hasEdited ? '加工後をダウンロード' : '加工後がありません'}">💾 保存</button>
         </div>
@@ -1729,6 +1843,24 @@ function bindEditHandlers(root){
     el.onchange = () => onPhotoBrightnessInput(+el.dataset.photoIdx, +el.value, true);
     el.onclick  = (e) => e.stopPropagation();
   });
+  root.querySelectorAll('[data-action="adj"]').forEach(el => {
+    // 写真1枚ごとのコントラスト・彩度・色温度・シャープ
+    el.oninput  = () => onPhotoAdjInput(+el.dataset.photoIdx, el.dataset.adj, +el.value, false);
+    el.onchange = () => onPhotoAdjInput(+el.dataset.photoIdx, el.dataset.adj, +el.value, true);
+    el.onclick  = (e) => e.stopPropagation();
+  });
+  root.querySelectorAll('[data-action="rotate"]').forEach(el => {
+    el.onclick = (e) => { e.stopPropagation(); rotatePhoto(+el.dataset.photoIdx); };
+  });
+  root.querySelectorAll('[data-action="adj-reset"]').forEach(el => {
+    el.onclick = (e) => { e.stopPropagation(); resetPhotoAdj(+el.dataset.photoIdx); };
+  });
+  root.querySelectorAll('[data-action="adj-copy"]').forEach(el => {
+    el.onclick = (e) => { e.stopPropagation(); copyAdjToProduct(+el.dataset.photoIdx); };
+  });
+  root.querySelectorAll('[data-action="ai-clean"]').forEach(el => {
+    el.onclick = (e) => { e.stopPropagation(); aiCleanPhoto(+el.dataset.photoIdx); };
+  });
   root.querySelectorAll('[data-action="save"]').forEach(el => {
     el.onclick = (e) => {
       e.stopPropagation();
@@ -1767,11 +1899,25 @@ function refreshSpecTile(i){
   if(bh) bh.classList.toggle('on', f.h);
   if(bv) bv.classList.toggle('on', f.v);
 
-  const level = getPhotoBrightness(i);
+  const adj = getAdj(i);
   const val = el.querySelector('.tile-bright-val');
-  if(val) val.textContent = level;
+  if(val) val.textContent = adj.bright;
   const rng = el.querySelector('.tile-bright-range');
-  if(rng && +rng.value !== level) rng.value = level;
+  if(rng && +rng.value !== adj.bright) rng.value = adj.bright;
+  // 詳細調整のスライダー
+  ADJ_SLIDERS.forEach(s => {
+    const r = el.querySelector(`[data-action="adj"][data-adj="${s.k}"]`);
+    if(r && +r.value !== adj[s.k]) r.value = adj[s.k];
+    const v = el.querySelector(`[data-adj-val="${s.k}"]`);
+    if(v) v.textContent = adj[s.k];
+  });
+  const rot = el.querySelector('[data-action="rotate"]');
+  if(rot){
+    rot.classList.toggle('on', !!adj.rot);
+    rot.title = `90°回転（現在 ${adj.rot}°）`;
+  }
+  const sum = el.querySelector('.tile-adj > summary');
+  if(sum) sum.innerHTML = '🎛 この1枚を調整' + (isAdjNeutral(adj) ? '' : ' <span class="adj-dot">●</span>');
   return true;
 }
 
@@ -1838,24 +1984,26 @@ const BRIGHT_MAX_EDGE = 1800;   // 出品時は長辺1600pxに縮むのでこの
 async function recomposePhoto(i){
   const st = editState[i] || {};
   const f = getFlip(i);
-  const level = getPhotoBrightness(i);
+  const adj = getAdj(i);
   const hasBase = !!st.baseBlobUrl;
-  const changed = hasBase || level > 0 || f.h || f.v;
+  const changed = hasBase || !isAdjNeutral(adj) || f.h || f.v;
 
   if(!changed){
-    // AI加工なし・明るさなし・反転なし → 「加工後」を消して元表示に戻す
+    // AI加工なし・調整なし・反転なし → 「加工後」を消して元表示に戻す
     if(st.editedBlobUrl) URL.revokeObjectURL(st.editedBlobUrl);
     delete editState[i];
     return;
   }
-  let out = await flipSourceBlob(i);                       // ベース画像
-  if(level > 0) out = await adjustBrightnessBlob(out, level, BRIGHT_MAX_EDGE);
+  let out = await flipSourceBlob(i);                        // ベース画像
+  if(hasPixelAdj(adj)) out = await applyAdjustBlob(out, adj, BRIGHT_MAX_EDGE);
+  if(adj.rot) out = await rotateBlob(out, adj.rot);
   if(f.h || f.v) out = await flipBlob(out, f.h, f.v);
   if(st.editedBlobUrl) URL.revokeObjectURL(st.editedBlobUrl);
   editState[i] = Object.assign({}, st, {
     editedBlobUrl: URL.createObjectURL(out),
     flip: { h:f.h, v:f.v },
-    brightness: level,
+    adjust: Object.assign({}, adj),
+    brightness: adj.bright,
     showEdited: true
   });
 }
@@ -1912,6 +2060,48 @@ function onPhotoBrightnessInput(photoIdx, value, immediate){
   clearTimeout(brightTimers['p' + photoIdx]);
   brightTimers['p' + photoIdx] = setTimeout(() => scheduleRecompose([photoIdx]), immediate ? 0 : 150);
 }
+// 写真1枚のコントラスト/彩度/色温度/シャープ
+function onPhotoAdjInput(photoIdx, key, value, immediate){
+  setAdj(photoIdx, { [key]: value });
+  const tile = document.querySelector(`.spec-tile[data-photo-idx="${photoIdx}"]`);
+  const val = tile && tile.querySelector(`[data-adj-val="${key}"]`);
+  if(val) val.textContent = value;
+  clearTimeout(brightTimers['a' + photoIdx]);
+  // シャープは重いので離してから処理する
+  const delay = immediate ? 0 : (key === 'sharp' ? 400 : 150);
+  brightTimers['a' + photoIdx] = setTimeout(() => scheduleRecompose([photoIdx]), delay);
+}
+// 90°回転
+function rotatePhoto(photoIdx){
+  const cur = getAdj(photoIdx).rot || 0;
+  setAdj(photoIdx, { rot: (cur + 90) % 360 });
+  scheduleRecompose([photoIdx]);
+}
+// この写真の調整・回転・反転をすべて解除
+function resetPhotoAdj(photoIdx){
+  photoAdjust[photoIdx] = Object.assign({}, ADJ_DEFAULT);
+  flipState[photoIdx] = { h:false, v:false };
+  scheduleRecompose([photoIdx]);
+  toast('この写真の調整をリセットしました', 'ok');
+}
+// 同じ商品の他の写真にも同じ調整値を適用
+function copyAdjToProduct(photoIdx){
+  const pi = productIdxOfPhoto(photoIdx);
+  if(pi < 0) return;
+  const src = Object.assign({}, getAdj(photoIdx));
+  const others = products[pi].specimenIdxs.filter(i => i !== photoIdx);
+  others.forEach(i => { photoAdjust[i] = Object.assign({}, src); });
+  others.forEach(i => refreshSpecTile(i));
+  scheduleRecompose(others);
+  toast(`${others.length}枚に同じ調整を適用しました`, 'ok');
+}
+// この1枚だけ AI(Gemini) でゴミ取り
+async function aiCleanPhoto(photoIdx){
+  const pi = productIdxOfPhoto(photoIdx);
+  if(pi < 0){ toast('対象の商品が見つかりません', 'err'); return; }
+  await runEditTasks([{ photoIdx, productIdx: pi }], { geminiModes: ['cleanup'], upscale: false, sqcrop: false });
+}
+
 // 商品まとめてのスライダー: その商品の個体すべてを同じ値にする
 function onBrightnessInput(productIdx, value, immediate){
   setProductBrightness(productIdx, value);
@@ -2027,10 +2217,23 @@ function blobToDataUrl(blob){
 }
 
 async function runEditForProducts(productIdxs){
+  const tasks = [];
+  productIdxs.forEach(pi => {
+    products[pi].specimenIdxs.forEach(photoIdx => {
+      tasks.push({ photoIdx, productIdx: pi });
+    });
+  });
+  return runEditTasks(tasks, null);
+}
+
+// tasks: [{photoIdx, productIdx}]
+// override: {geminiModes, upscale, sqcrop} を渡すと画面のチェックボックスではなくこちらを使う
+//           (「この1枚だけAIゴミ取り」用)
+async function runEditTasks(tasks, override){
   const gasUrl = (localStorage.getItem(API_URL_KEY) || '').trim();
-  const geminiModes = getSelectedGeminiModes();
-  const upscale = isUpscaleEnabled();
-  const sqcrop = isSquareCropEnabled();
+  const geminiModes = override ? (override.geminiModes || []) : getSelectedGeminiModes();
+  const upscale = override ? !!override.upscale : isUpscaleEnabled();
+  const sqcrop = override ? !!override.sqcrop : isSquareCropEnabled();
   const useRefStyle = isRefStyleEnabled();
   const needsGas = geminiModes.length > 0 || upscale;
 
@@ -2049,14 +2252,7 @@ async function runEditForProducts(productIdxs){
     toast('設定タブでGAS URLを設定してください', 'err'); switchTab('settings'); return;
   }
 
-  // 対象個体写真を集める
-  const tasks = [];
-  productIdxs.forEach(pi => {
-    products[pi].specimenIdxs.forEach(photoIdx => {
-      tasks.push({ photoIdx, productIdx: pi });
-    });
-  });
-  if(tasks.length === 0){ toast('加工対象がありません', 'err'); return; }
+  if(!tasks || tasks.length === 0){ toast('加工対象がありません', 'err'); return; }
 
   const btn = $('#btnEditRunAll');
   const origLabel = btn.textContent;
