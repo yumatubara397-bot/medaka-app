@@ -222,6 +222,8 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .adj-row{display:flex;align-items:center;gap:8px}
 .adj-label{font-size:10px;color:var(--ink-dim);font-family:'JetBrains Mono',monospace;width:76px;flex:none}
 .adj-range{flex:1;width:auto;min-width:50px}
+/* -100〜+100 のゲージは中央が0とわかるように左右対称の色にする */
+.adj-row.bipolar .adj-range{background:linear-gradient(90deg,#4a63b8,#2a3361 47%,#5a6ab0 50%,#2a3361 53%,var(--accent))}
 .adj-val{min-width:30px}
 .adj-btns{display:flex;gap:4px;flex-wrap:wrap;margin-top:5px}
 .spec-tile-pair .spec-tile-img{aspect-ratio:1}
@@ -993,6 +995,11 @@ const ADJ_SLIDERS = [
   { k:'warm',     label:'色温度',       min:-100, max:100 },
   { k:'sharp',    label:'シャープ',     min:0,    max:100 }
 ];
+// -100〜100 のゲージは +12 のように符号付きで表示する
+function fmtAdj(slider, v){
+  const n = +v || 0;
+  return (slider && slider.min < 0 && n > 0) ? '+' + n : String(n);
+}
 function isAdjNeutral(a){
   return !a.bright && !a.contrast && !a.sat && !a.warm && !a.sharp && !a.rot;
 }
@@ -1461,6 +1468,10 @@ function productIdxOfPhoto(photoIdx){
   }
   return -1;
 }
+// 調整パネルの開閉は全タイル共通で覚えておく(既定=開いた状態)
+const ADJ_OPEN_KEY = 'medaka_adj_open';
+function adjPanelOpen(){ return localStorage.getItem(ADJ_OPEN_KEY) !== '0'; }
+
 // 写真1枚ごとの調整値(未設定なら商品の明るさを引き継ぐ)
 const photoAdjust = {};
 function getAdj(photoIdx){
@@ -1750,15 +1761,15 @@ function specTileHtml(i){
                value="${level}" data-action="tile-bright" data-photo-idx="${i}">
         <span class="bright-val tile-bright-val">${level}</span>
       </div>
-      <details class="tile-adj">
+      <details class="tile-adj"${adjPanelOpen() ? ' open' : ''}>
         <summary>🎛 この1枚を調整${isAdjNeutral(adj) ? '' : ' <span class="adj-dot">●</span>'}</summary>
         <div class="tile-adj-body">
           ${ADJ_SLIDERS.map(s => `
-            <div class="adj-row">
+            <div class="adj-row${s.min < 0 ? ' bipolar' : ''}">
               <span class="adj-label">${s.label}</span>
               <input type="range" class="bright-range adj-range" min="${s.min}" max="${s.max}" step="5"
                      value="${adj[s.k]}" data-action="adj" data-adj="${s.k}" data-photo-idx="${i}">
-              <span class="bright-val adj-val" data-adj-val="${s.k}">${adj[s.k]}</span>
+              <span class="bright-val adj-val" data-adj-val="${s.k}">${fmtAdj(s, adj[s.k])}</span>
             </div>`).join('')}
           <div class="adj-btns">
             <button class="spec-tile-flip" data-action="ai-clean" data-photo-idx="${i}" title="この1枚だけAI(Gemini)で浮遊物・ゴミを除去します（約6円）">🧹 AIゴミ取り</button>
@@ -1849,6 +1860,10 @@ function bindEditHandlers(root){
     el.onchange = () => onPhotoAdjInput(+el.dataset.photoIdx, el.dataset.adj, +el.value, true);
     el.onclick  = (e) => e.stopPropagation();
   });
+  root.querySelectorAll('.tile-adj').forEach(el => {
+    // 開閉状態は全タイル共通で覚える
+    el.ontoggle = () => localStorage.setItem(ADJ_OPEN_KEY, el.open ? '1' : '0');
+  });
   root.querySelectorAll('[data-action="rotate"]').forEach(el => {
     el.onclick = (e) => { e.stopPropagation(); rotatePhoto(+el.dataset.photoIdx); };
   });
@@ -1909,7 +1924,7 @@ function refreshSpecTile(i){
     const r = el.querySelector(`[data-action="adj"][data-adj="${s.k}"]`);
     if(r && +r.value !== adj[s.k]) r.value = adj[s.k];
     const v = el.querySelector(`[data-adj-val="${s.k}"]`);
-    if(v) v.textContent = adj[s.k];
+    if(v) v.textContent = fmtAdj(s, adj[s.k]);
   });
   const rot = el.querySelector('[data-action="rotate"]');
   if(rot){
@@ -2065,7 +2080,7 @@ function onPhotoAdjInput(photoIdx, key, value, immediate){
   setAdj(photoIdx, { [key]: value });
   const tile = document.querySelector(`.spec-tile[data-photo-idx="${photoIdx}"]`);
   const val = tile && tile.querySelector(`[data-adj-val="${key}"]`);
-  if(val) val.textContent = value;
+  if(val) val.textContent = fmtAdj(ADJ_SLIDERS.find(s => s.k === key), value);
   clearTimeout(brightTimers['a' + photoIdx]);
   // シャープは重いので離してから処理する
   const delay = immediate ? 0 : (key === 'sharp' ? 400 : 150);
