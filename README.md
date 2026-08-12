@@ -34,7 +34,12 @@
 - **⚙ オークタウン共通設定** … カテゴリID・開催期間・発送元・配送方法など37項目。localStorage に保存
 - **📝 説明文テンプレート** … `{品種} {ランク} {数量} {管理番号} {備考} {タイトル} {送料}` が使える。
   値が空になったプレースホルダだけの行（例: `【備考】`）は自動削除。見出し行はそのまま残る
+- **🖼 出品画像の書き出し** … 一眼レフの10MB級JPEGやGemini加工後のPNGを、
+  **JPEG化 + 長辺リサイズ（既定1600px）+ 1枚あたり上限（既定3MB）** に自動変換。
+  EXIFの回転を反映してから書き出すので縦位置写真が横倒しにならない。上限超過時は「画質を下げる → それでも超えれば縮小」の順に自動調整
 - 商品ごとに **タイトル（自動生成／手編集可・全角65文字カウンタ付き）／開始価格／備考** を設定
+- 生成前チェック … タイトル空 / 開始価格が数字でない / 画像0枚 / カテゴリID未設定 は**中止**、
+  65文字超・画像6枚以上・管理番号の空や重複は**確認ダイアログ**
 - **📦 CSV + 画像ZIP を生成** で以下を1つのZIPにしてダウンロード
   - `auctown_YYYYMMDD_HHMMSS.csv`（44列・**Shift_JIS**。UTF-8(BOM)も選択可）
   - 画像 `<管理番号>_01.jpg` … `_05.jpg`（1商品あたり最大5枚）
@@ -67,8 +72,22 @@ GAS側のスクリプトプロパティに `CLAUDE_API_KEY` / `GEMINI_API_KEY` /
 - **画像の対応付け**: `products[i].labelIdx / specimenIdxs` が写真配列のインデックス。
   加工後画像は IndexedDB(`medaka-edit` / `edited`)、履歴は同DBの `history` ストア（v3）
 
-## 検証済みの動作（2026-08-06）
+## 検証済みの動作
 
 - 生成ZIP: `zipfile.testzip()` でCRC検証OK / CSVが `cp932` でデコード可能 / 44列
 - 説明文: HTMLモードで `<br>` 変換、`【発送について】` などの見出しが消えないこと
 - 履歴: IndexedDB への保存・状態変更・発送日自動セット・フィルタ・一括更新・全削除（Chrome CDPで実行）
+- **実画像でのエンドツーエンド**（Chrome CDP で `buildAuctownExport()` を実行し、生成ZIPをPythonで検証）
+  - 4000×3000 / 約10MB のJPEG → **1600×1200 / 約1.3MB** に変換
+  - EXIF Orientation=6（保存3000×4000）の縦位置写真 → **1600×1200 で正立**
+  - 加工後PNG → JPEG に変換して同梱
+  - CSVの画像列とZIP内のファイル名が一致、2商品8枚で生成時間 約1.3秒
+  - 開始価格が数字でない場合に生成が中止されること
+
+### テストのやり方（再現用）
+
+`__testimg/` に PIL で作った実JPEG（EXIF回転付き含む）を置き、`index.html` のコピーを
+Chrome ヘッドレス（`--remote-debugging-port` + `--allow-file-access-from-files`）で開いて
+CDP の `Runtime.evaluate` から `photos` / `products` / `editState` を差し込み、
+`window.downloadBlob` を差し替えて生成ZIPを base64 で回収 → Python の `zipfile` + `PIL` で検証する。
+（`--virtual-time-budget` を使うとIndexedDBや画像デコードが完了前に打ち切られるので使わないこと）

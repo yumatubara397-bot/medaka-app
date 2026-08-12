@@ -525,6 +525,26 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
           </div>
         </details>
 
+        <details class="lst-fold" id="lstImgFold">
+          <summary>🖼 出品画像の書き出し <small>一眼レフの大きなJPEG・加工後PNGを、ヤフオクに通るJPEGへ自動変換</small></summary>
+          <div class="lst-fold-body">
+            <label class="chip-toggle" style="margin-bottom:10px"><input type="checkbox" id="lstImgConvert" checked><span>JPEG化してリサイズする（推奨）</span></label>
+            <div class="lst-grid">
+              <div class="field"><label>長辺の最大px</label><input type="number" id="lstImgMaxEdge" min="400" max="4000" step="100"></div>
+              <div class="field"><label>1枚の上限MB</label><input type="number" id="lstImgMaxMB" min="0.3" max="10" step="0.1"></div>
+              <div class="field"><label>JPEG画質 (0.4〜1)</label><input type="number" id="lstImgQuality" min="0.4" max="1" step="0.02"></div>
+            </div>
+            <div class="hint" style="font-size:11px;color:var(--ink-dim);margin-top:8px;line-height:1.7">
+              EXIFの回転情報を反映してから書き出すので、縦位置で撮った写真が横倒しになりません。<br>
+              上限MBを超える場合は「画質を下げる → それでも超えれば縮小」の順に自動調整します。OFFにすると元ファイルをそのまま同梱します。
+            </div>
+            <div class="btn-row">
+              <button id="btnLstImgSave" class="btn btn-ghost btn-mini">💾 画像設定を保存</button>
+              <button id="btnLstImgReset" class="btn btn-ghost btn-mini">初期値に戻す</button>
+            </div>
+          </div>
+        </details>
+
         <div class="bar-row">
           <div class="bar-info"><span id="lstSelCount">0</span> / <span id="lstTotalCount">0</span> 件を出品 <span class="hist-meta" id="lstImgInfo"></span></div>
           <div class="lst-toolbar">
@@ -2280,6 +2300,58 @@ function extForBlob(blob, fallbackName){
   const m = /\.([a-z0-9]+)$/i.exec(fallbackName || '');
   return m ? m[1].toLowerCase() : 'jpg';
 }
+// ===== 出品用の画像書き出し =====
+// 一眼レフのJPEGは1枚10MB超もあり、Gemini加工後はPNGで返ってくる。
+// ヤフオク/オークタウンにそのまま通らないので、JPEG化 + 長辺リサイズ + 容量上限に収める。
+const LST_IMG_KEY = 'medaka_listing_img';
+const IMG_OPT_DEFAULT = { convert:true, maxEdge:1600, maxMB:3, quality:0.88 };
+function lstImgOpt(){
+  let o = {};
+  try { o = JSON.parse(localStorage.getItem(LST_IMG_KEY) || '{}'); } catch(e){ o = {}; }
+  const m = Object.assign({}, IMG_OPT_DEFAULT, o);
+  m.maxEdge = Math.max(400, Math.min(4000, +m.maxEdge || IMG_OPT_DEFAULT.maxEdge));
+  m.maxMB   = Math.max(0.3, Math.min(10, +m.maxMB || IMG_OPT_DEFAULT.maxMB));
+  m.quality = Math.max(0.4, Math.min(1, +m.quality || IMG_OPT_DEFAULT.quality));
+  return m;
+}
+function canvasToBlob(c, quality){
+  return new Promise(resolve => c.toBlob(resolve, 'image/jpeg', quality));
+}
+// blob → {blob, ext, note} 出品用に整えた画像
+async function prepareExportImage(blob, fallbackName){
+  const opt = lstImgOpt();
+  if(!opt.convert) return { blob, ext: extForBlob(blob, fallbackName), note:'' };
+  let bmp;
+  try {
+    // imageOrientation:'from-image' で一眼レフのEXIF回転を反映してから描画する
+    bmp = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+  } catch(e){
+    console.warn('createImageBitmap 失敗、元画像のまま出力', e);
+    return { blob, ext: extForBlob(blob, fallbackName), note:'変換失敗' };
+  }
+  const limit = opt.maxMB * 1024 * 1024;
+  let w = bmp.width, h = bmp.height;
+  let maxEdge = opt.maxEdge, quality = opt.quality, out = null;
+
+  for(let attempt = 0; attempt < 6; attempt++){
+    const scale = Math.min(1, maxEdge / Math.max(w, h));
+    const cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+    const c = document.createElement('canvas');
+    c.width = cw; c.height = ch;
+    const ctx = c.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(bmp, 0, 0, cw, ch);
+    out = await canvasToBlob(c, quality);
+    if(!out) break;
+    if(out.size <= limit) break;
+    if(quality > 0.6) quality -= 0.12;      // まず画質を落とす
+    else maxEdge = Math.round(maxEdge * 0.8); // それでも超えるなら縮小
+  }
+  if(bmp.close) bmp.close();
+  if(!out) return { blob, ext: extForBlob(blob, fallbackName), note:'変換失敗' };
+  return { blob: out, ext:'jpg', note: out.size > limit ? '上限超過' : '' };
+}
+
 function lstBaseName(p, idx, used){
   let base = String(p.controlNo || '').trim().replace(/[^0-9A-Za-z_-]/g, '');
   if(!base) base = 'P' + String(idx + 1).padStart(3, '0');
@@ -2325,6 +2397,28 @@ $('#btnLstTemplateReset').onclick = () => {
   localStorage.removeItem(LST_TEMPLATE_KEY);
   $('#lstTemplate').value = DESC_TEMPLATE_DEFAULT;
   renderListingList();
+  toast('初期値に戻しました', 'ok');
+};
+function fillImgForm(){
+  const o = lstImgOpt();
+  $('#lstImgConvert').checked = !!o.convert;
+  $('#lstImgMaxEdge').value = o.maxEdge;
+  $('#lstImgMaxMB').value = o.maxMB;
+  $('#lstImgQuality').value = o.quality;
+}
+$('#btnLstImgSave').onclick = () => {
+  localStorage.setItem(LST_IMG_KEY, JSON.stringify({
+    convert: $('#lstImgConvert').checked,
+    maxEdge: +$('#lstImgMaxEdge').value,
+    maxMB:   +$('#lstImgMaxMB').value,
+    quality: +$('#lstImgQuality').value
+  }));
+  fillImgForm();   // 丸めた値を反映
+  toast('画像設定を保存しました', 'ok');
+};
+$('#btnLstImgReset').onclick = () => {
+  localStorage.removeItem(LST_IMG_KEY);
+  fillImgForm();
   toast('初期値に戻しました', 'ok');
 };
 $('#btnGotoImport2').onclick = () => switchTab('import');
@@ -2616,6 +2710,38 @@ function downloadBlob(blob, filename){
 // ===== ZIP生成メイン =====
 $('#btnBuildZip').onclick = buildAuctownExport;
 
+// 生成前チェック: errors があれば中止、warnings は確認ダイアログ
+function validateForExport(targets){
+  const errors = [], warnings = [];
+  const cfg = lstConfig();
+  const incLabel = $('#lstIncludeLabel').checked;
+  if(!String(cfg.CATEGORY_ID || '').trim()) errors.push('カテゴリIDが未設定です（⚙ オークタウン共通設定）');
+  if(!/^\d+$/.test(String(cfg.DURATION || '').trim())) errors.push('開催期間は日数（数字）で入力してください');
+  if(!/^\d+$/.test(String(cfg.END_HOUR || '').trim())) errors.push('終了時間は時（数字）で入力してください');
+  if(!/^\d+$/.test(String(cfg.COUNT || '').trim())) errors.push('個数は数字で入力してください');
+
+  const seenCtrl = new Set();
+  targets.forEach(({ p, idx }) => {
+    const st = lstGet(p);
+    const label = `商品#${idx+1}${p.controlNo ? '(' + p.controlNo + ')' : ''}`;
+    if(!st.title.trim()) errors.push(`${label}: タイトルが空です`);
+    const price = String(st.price || cfg.START_PRICE || '').trim();
+    if(!/^\d+$/.test(price)) errors.push(`${label}: 開始価格「${price}」が数字ではありません`);
+    else if(+price < 1) errors.push(`${label}: 開始価格は1円以上にしてください`);
+
+    const imgs = planImages(p);
+    if(imgs.length === 0) errors.push(`${label}: 出品画像が0枚です`);
+    const totalImgs = (incLabel ? 1 : 0) + p.specimenIdxs.length;
+    if(totalImgs > 5) warnings.push(`${label}: 画像${totalImgs}枚のうち先頭5枚のみ出品します（オークタウンCSVは5枚まで）`);
+    if(textWidth(st.title) > 65) warnings.push(`${label}: タイトルが全角65文字を超えるため切り捨てます`);
+    const ctrl = String(p.controlNo || '').trim();
+    if(!ctrl) warnings.push(`${label}: 管理番号が空です（画像名は P${String(idx+1).padStart(3,'0')}_01.jpg になります）`);
+    else if(seenCtrl.has(ctrl)) warnings.push(`管理番号 ${ctrl} が重複しています（画像名を -2 で区別します）`);
+    else seenCtrl.add(ctrl);
+  });
+  return { errors, warnings };
+}
+
 async function buildAuctownExport(){
   const targets = products.map((p, idx) => ({ p, idx })).filter(t => lstGet(t.p).include);
   if(targets.length === 0){ toast('出品対象が0件です', 'err'); return; }
@@ -2626,8 +2752,20 @@ async function buildAuctownExport(){
   const now = new Date();
   const ts = tsStamp(now);
 
-  const emptyTitle = targets.filter(t => !lstGet(t.p).title.trim()).length;
-  if(emptyTitle > 0){ toast(`タイトルが空の商品が ${emptyTitle}件あります`, 'err'); return; }
+  const { errors, warnings } = validateForExport(targets);
+  if(errors.length > 0){
+    const w = $('#lstWarn');
+    w.classList.remove('hidden');
+    w.innerHTML = '❌ 出品できない項目があります<br>' + errors.map(escapeHtml).join('<br>');
+    w.scrollIntoView({ behavior:'smooth', block:'center' });
+    toast(`エラー ${errors.length}件のため生成を中止しました`, 'err');
+    return;
+  }
+  if(warnings.length > 0){
+    const head = warnings.slice(0, 10).join('\n');
+    const more = warnings.length > 10 ? `\n…他${warnings.length - 10}件` : '';
+    if(!confirm(`⚠️ 確認\n\n${head}${more}\n\nこのまま生成しますか？`)) return;
+  }
 
   const btn = $('#btnBuildZip'); const orig = btn.textContent;
   btn.disabled = true; btn.textContent = '生成中...';
@@ -2639,19 +2777,26 @@ async function buildAuctownExport(){
     const histItems = [];
     let zeroPhoto = [];
     let done = 0;
+    let totalImages = 0, convertFail = 0, oversize = 0;
+    targets.forEach(t => totalImages += planImages(t.p).length);
+    let imgDone = 0;
 
     for(const t of targets){
       const p = t.p, st = lstGet(p);
-      lstProgress(done, targets.length, `画像を準備中 ${done+1} / ${targets.length}`);
       const base = lstBaseName(p, t.idx, usedNames);
       const plan = planImages(p);
       const imageNames = [];
       for(let n = 0; n < plan.length; n++){
-        const blob = await planImageBlob(plan[n]);
-        const ext = extForBlob(blob, photos[plan[n].photoIdx].name);
-        const fname = `${base}_${String(n+1).padStart(2,'0')}.${ext}`;
-        files.push({ name: fname, data: new Uint8Array(await blob.arrayBuffer()) });
+        lstProgress(imgDone, totalImages, `画像を書き出し中 ${imgDone+1} / ${totalImages}枚（商品 ${done+1}/${targets.length}）`);
+        const raw = await planImageBlob(plan[n]);
+        const prepared = await prepareExportImage(raw, photos[plan[n].photoIdx].name);
+        if(prepared.note === '変換失敗') convertFail++;
+        if(prepared.note === '上限超過') oversize++;
+        const fname = `${base}_${String(n+1).padStart(2,'0')}.${prepared.ext}`;
+        files.push({ name: fname, data: new Uint8Array(await prepared.blob.arrayBuffer()) });
         imageNames.push(fname);
+        imgDone++;
+        await new Promise(r => setTimeout(r, 0));   // UIを固まらせない
       }
       if(imageNames.length === 0) zeroPhoto.push(p.controlNo || `#${t.idx+1}`);
 
@@ -2686,8 +2831,8 @@ async function buildAuctownExport(){
       });
 
       done++;
-      lstProgress(done, targets.length, `画像を準備中 ${done} / ${targets.length}`);
     }
+    lstProgress(totalImages, totalImages, 'ZIPを作成中…');
 
     const csvText = csvRows.map(r => r.map(escapeCsvField).join(',')).join('\r\n') + '\r\n';
     const csvBytes = csvToBytes(csvText, encoding);
@@ -2711,10 +2856,15 @@ async function buildAuctownExport(){
     renderListingList();
     await renderHistoryPanel();
 
-    let msg = `📦 ${zipName} を生成しました（${targets.length}件 / 画像${files.length}枚）`;
+    const mb = (zipBlob.size / 1024 / 1024).toFixed(1);
+    let msg = `📦 ${zipName} を生成しました（${targets.length}件 / 画像${files.length}枚 / ${mb}MB）`;
     if(encoding === 'sjis' && encodeSjis.lastUnmapped > 0) msg += ` ※Shift_JISに無い文字 ${encodeSjis.lastUnmapped}個を「?」に置換`;
+    if(convertFail > 0) msg += ` ⚠️画像変換に失敗 ${convertFail}枚（元のまま出力）`;
+    if(oversize > 0) msg += ` ⚠️上限超過のまま ${oversize}枚`;
     if(zeroPhoto.length > 0) msg += ` ⚠️画像0枚: ${zeroPhoto.join(', ')}`;
-    toast(msg, zeroPhoto.length ? 'err' : 'ok');
+    const tooBig = zipBlob.size > 100 * 1024 * 1024;
+    if(tooBig) msg += ' ⚠️ZIPが100MB超です。アップロードに失敗する場合は「🖼出品画像の書き出し」で長辺px/上限MBを下げるか、件数を分けて生成してください';
+    toast(msg, (zeroPhoto.length || convertFail || oversize || tooBig) ? 'err' : 'ok');
   } catch(e){
     console.error(e);
     toast('ZIP生成に失敗: ' + (e.message || e), 'err');
@@ -2931,6 +3081,7 @@ $('#btnHistExport').onclick = async () => {
   if(typeof o.htmlDesc === 'boolean') $('#lstHtmlDesc').checked = o.htmlDesc;
   if(o.encoding) $('#lstEncoding').value = o.encoding;
   $('#lstTemplate').value = lstTemplateText();
+  fillImgForm();
 })();
 
 // ===== Service Worker =====
