@@ -195,7 +195,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .brightness-btn:hover{color:var(--ink)}
 .brightness-btn.active{background:var(--accent);color:#000}
 
-.edit-specimens{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.edit-specimens{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--spec-min,300px),1fr));gap:10px}
 .spec-tile{background:var(--bg-2);border:1px solid var(--line);border-radius:10px;overflow:hidden;position:relative}
 .spec-tile.has-edited{grid-column:span 2}  /* 加工後がある時は2列幅で並列表示 */
 .spec-tile-img{position:relative;aspect-ratio:1;background:#000;cursor:zoom-in}
@@ -205,7 +205,12 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .spec-tile-pair-divider{position:absolute;top:0;bottom:0;left:50%;width:2px;background:var(--bg-2);pointer-events:none;z-index:2}
 .spec-tile-badge{position:absolute;top:6px;left:6px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;font-family:'JetBrains Mono',monospace;backdrop-filter:blur(4px);z-index:1}
 .spec-tile-badge.edited{background:var(--ok);color:#000}
-.spec-tile-foot{display:flex;gap:6px;padding:6px;align-items:center;justify-content:space-between}
+.spec-tile-foot{display:flex;gap:6px;padding:6px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.spec-tile-tools{display:flex;gap:4px;align-items:center}
+.spec-tile-flip{background:var(--line);color:var(--ink);border:none;padding:4px 9px;border-radius:5px;font-size:12px;cursor:pointer;font-weight:700;line-height:1.2}
+.spec-tile-flip:hover{background:var(--ink-dim);color:#000}
+.spec-tile-flip.on{background:var(--accent);color:#000}
+.spec-tile-flip:disabled{opacity:.4;cursor:not-allowed}
 .spec-tile-name{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--ink-dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .spec-tile-toggle{background:var(--line);color:var(--ink);border:none;padding:3px 7px;border-radius:5px;font-size:9px;cursor:pointer;font-weight:700}
 .spec-tile-toggle.on{background:var(--ok);color:#000}
@@ -404,6 +409,13 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
             <label class="chip-toggle" title="Canvas で正方形にトリミング(コスト0・AI不使用)"><input type="checkbox" id="modeSquare"><span>📐 正方形クロップ (Canvas)</span></label>
           </div>
           <div class="edit-actions">
+            <div class="brightness-group" title="加工前/加工後サムネの表示サイズ">
+              <span class="brightness-group-label">表示</span>
+              <button class="brightness-btn" data-action="spec-size" data-size="s">小</button>
+              <button class="brightness-btn" data-action="spec-size" data-size="m">中</button>
+              <button class="brightness-btn" data-action="spec-size" data-size="l">大</button>
+              <button class="brightness-btn" data-action="spec-size" data-size="xl">特大</button>
+            </div>
             <button id="btnEditRunAll" class="btn btn-primary">✨ AI加工 一括実行</button>
             <button id="btnEditSaveAll" class="btn btn-ghost" title="現在の加工後画像を全部保存">💾 全部保存</button>
             <button id="btnEditClearCache" class="btn btn-ghost" title="この取込フォルダの編集済みをすべて削除">🗑 編集結果をクリア</button>
@@ -1589,7 +1601,10 @@ async function renderEditProductList(){
             </div>
             <div class="spec-tile-foot">
               <span class="spec-tile-name" title="${escapeHtml(ph.name)}">${escapeHtml(ph.name)}</span>
-              <button class="spec-tile-save" data-action="save" data-photo-idx="${i}" title="加工後をダウンロード">💾 保存</button>
+              <div class="spec-tile-tools">
+                ${flipButtonsHtml(i)}
+                <button class="spec-tile-save" data-action="save" data-photo-idx="${i}" title="加工後をダウンロード">💾 保存</button>
+              </div>
             </div>
           </div>
         `;
@@ -1603,7 +1618,10 @@ async function renderEditProductList(){
           </div>
           <div class="spec-tile-foot">
             <span class="spec-tile-name" title="${escapeHtml(ph.name)}">${escapeHtml(ph.name)}</span>
-            <button class="spec-tile-save" data-action="save" data-photo-idx="${i}" disabled title="加工後がありません">💾 保存</button>
+            <div class="spec-tile-tools">
+              ${flipButtonsHtml(i)}
+              <button class="spec-tile-save" data-action="save" data-photo-idx="${i}" disabled title="加工後がありません">💾 保存</button>
+            </div>
           </div>
         </div>
       `;
@@ -1649,6 +1667,99 @@ async function renderEditProductList(){
       downloadEditedPhoto(+el.dataset.photoIdx);
     };
   });
+  list.querySelectorAll('[data-action="flip"]').forEach(el => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      toggleFlip(+el.dataset.photoIdx, el.dataset.axis);
+    };
+  });
+  applySpecSize();
+}
+
+// ============================================================
+// ===== 表示サイズ / 左右・上下反転 =====
+// ============================================================
+const SPEC_SIZE_KEY = 'medaka_spec_size';
+const SPEC_SIZES = { s:180, m:300, l:440, xl:620 };
+function getSpecSize(){
+  const v = localStorage.getItem(SPEC_SIZE_KEY);
+  return SPEC_SIZES[v] ? v : 'm';
+}
+function applySpecSize(){
+  const key = getSpecSize();
+  const list = $('#editProductList');
+  if(list) list.style.setProperty('--spec-min', SPEC_SIZES[key] + 'px');
+  $$('[data-action="spec-size"]').forEach(b => b.classList.toggle('active', b.dataset.size === key));
+}
+$$('[data-action="spec-size"]').forEach(b => {
+  b.onclick = () => { localStorage.setItem(SPEC_SIZE_KEY, b.dataset.size); applySpecSize(); };
+});
+
+// 反転状態: flipState[photoIdx] = {h:左右, v:上下}
+const flipState = {};
+function getFlip(i){ return flipState[i] || { h:false, v:false }; }
+function hasFlip(i){ const f = getFlip(i); return f.h || f.v; }
+function flipButtonsHtml(i){
+  const f = getFlip(i);
+  return `<button class="spec-tile-flip${f.h ? ' on' : ''}" data-action="flip" data-axis="h" data-photo-idx="${i}" title="左右反転">⇄</button>` +
+         `<button class="spec-tile-flip${f.v ? ' on' : ''}" data-action="flip" data-axis="v" data-photo-idx="${i}" title="上下反転">⇅</button>`;
+}
+// Canvas で反転した Blob を返す(元の形式を維持: PNGはPNG、それ以外はJPEG)
+function flipBlob(blob, h, v){
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth; c.height = img.naturalHeight;
+      const ctx = c.getContext('2d');
+      ctx.translate(h ? c.width : 0, v ? c.height : 0);
+      ctx.scale(h ? -1 : 1, v ? -1 : 1);
+      ctx.drawImage(img, 0, 0);
+      const isPng = (blob.type || '') === 'image/png';
+      c.toBlob(b => b ? resolve(b) : reject(new Error('反転に失敗しました')),
+               isPng ? 'image/png' : 'image/jpeg', isPng ? undefined : 0.95);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('画像を読み込めませんでした')); };
+    img.src = url;
+  });
+}
+// 反転の基準になる画像(AI加工結果があればそれ、無ければ元ファイル)
+async function flipSourceBlob(i){
+  const st = editState[i];
+  if(st && st.baseBlobUrl){
+    try { return await (await fetch(st.baseBlobUrl)).blob(); } catch(e){ console.warn('base取得失敗', e); }
+  }
+  return await photos[i].handle.getFile();
+}
+async function toggleFlip(i, axis){
+  const f = Object.assign({}, getFlip(i));
+  if(axis === 'h') f.h = !f.h; else f.v = !f.v;
+  flipState[i] = f;
+  try {
+    const src = await flipSourceBlob(i);
+    const st = editState[i] || {};
+    const out = (f.h || f.v) ? await flipBlob(src, f.h, f.v) : src;
+    if(st.editedBlobUrl) URL.revokeObjectURL(st.editedBlobUrl);
+    // baseBlobUrl(未反転) は保持。AI加工していない場合は元画像が基準なので作らない
+    editState[i] = Object.assign({}, st, {
+      editedBlobUrl: URL.createObjectURL(out),
+      flip: { h:f.h, v:f.v },
+      showEdited: true
+    });
+    // AI加工なし & 反転も解除 → 「加工後なし」に戻す
+    if(!st.baseBlobUrl && !f.h && !f.v){
+      URL.revokeObjectURL(editState[i].editedBlobUrl);
+      delete editState[i];
+    }
+    await renderEditProductList();
+    const label = [f.h ? '左右' : '', f.v ? '上下' : ''].filter(Boolean).join('+');
+    toast(label ? `${label}反転しました` : '反転を解除しました', 'ok');
+  } catch(e){
+    console.warn('flip failed', e);
+    toast('反転に失敗: ' + (e.message || e), 'err');
+  }
 }
 
 // 全加工後画像を順次ダウンロード保存
@@ -1685,9 +1796,16 @@ async function downloadEditedPhoto(photoIdx){
     setTimeout(() => URL.revokeObjectURL(url), 1000);
 
     // マイスタイル自動学習: 元画像と加工後をペアで保存
+    // 反転は「好みの加工」ではないので、学習には未反転(baseBlobUrl)を使う。
+    // AI加工していない(反転だけの)画像は学習しない
+    if(!st.baseBlobUrl){
+      toast(`💾 ${a.download} を保存しました`, 'ok');
+      return;
+    }
     try {
       const beforeBlob = await ph.handle.getFile();
-      await favAdd(beforeBlob, blob, ph.name);
+      const learnBlob = await (await fetch(st.baseBlobUrl)).blob();
+      await favAdd(beforeBlob, learnBlob, ph.name);
       await refreshMystyleUi();
       toast(`💾 保存 + 📚 マイスタイル学習`, 'ok');
     } catch(favErr){
@@ -1710,8 +1828,12 @@ $('#btnEditClearCache').onclick = async () => {
   const folder = (folderHandle && folderHandle.name) || 'noname';
   const n = await editDbDeleteByPrefix(folder + ':');
   // メモリ上の blobUrl も破棄
-  Object.values(editState).forEach(s => s.editedBlobUrl && URL.revokeObjectURL(s.editedBlobUrl));
+  Object.values(editState).forEach(s => {
+    if(s.editedBlobUrl) URL.revokeObjectURL(s.editedBlobUrl);
+    if(s.baseBlobUrl) URL.revokeObjectURL(s.baseBlobUrl);
+  });
   editState = {};
+  Object.keys(flipState).forEach(k => delete flipState[k]);
   renderEditProductList();
   toast(`${n}枚の編集結果を削除しました`, 'ok');
 };
@@ -1858,14 +1980,25 @@ async function runEditForProducts(productIdxs){
         await editDbPut(key, blob);
         ok++;
       }
-      if(editState[t.photoIdx] && editState[t.photoIdx].editedBlobUrl){
-        URL.revokeObjectURL(editState[t.photoIdx].editedBlobUrl);
+      const prevSt = editState[t.photoIdx];
+      if(prevSt){
+        if(prevSt.editedBlobUrl) URL.revokeObjectURL(prevSt.editedBlobUrl);
+        if(prevSt.baseBlobUrl) URL.revokeObjectURL(prevSt.baseBlobUrl);
+      }
+      // 反転指定があればAI加工結果の上に再適用する(再加工しても反転が消えないように)
+      const fl = getFlip(t.photoIdx);
+      let shownBlob = blob;
+      if(fl.h || fl.v){
+        try { shownBlob = await flipBlob(blob, fl.h, fl.v); }
+        catch(flErr){ console.warn('flip after edit failed', flErr); }
       }
       editState[t.photoIdx] = {
-        editedBlobUrl: URL.createObjectURL(blob),
+        editedBlobUrl: URL.createObjectURL(shownBlob),
+        baseBlobUrl: URL.createObjectURL(blob),   // 未反転のAI加工結果(マイスタイル学習・反転の基準に使う)
         editedKey: key,
         modes: allModes.slice(),
         brightness: brightness,
+        flip: { h: fl.h, v: fl.v },
         showEdited: true
       };
     } catch(e){
