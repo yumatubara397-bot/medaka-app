@@ -210,6 +210,38 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .spec-tile-bright{display:flex;align-items:center;gap:8px;padding:7px 8px 0}
 .spec-tile-bright-label{font-size:10px;color:var(--ink-dim);font-family:'JetBrains Mono',monospace;white-space:nowrap}
 .tile-bright-range{flex:1;width:auto;min-width:50px}
+/* ===== ChatGPTで整える ===== */
+.ai-section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:10px 0}
+.ai-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.ai-title{font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px}
+.ai-model{background:var(--bg-2);color:var(--ink-dim);font-size:10px;padding:2px 8px;border-radius:99px;font-family:'JetBrains Mono',monospace}
+.ai-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ai-opts{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
+.ai-manual-hint{font-size:10px;color:var(--ink-dim)}
+.ai-hint{font-size:11px;color:var(--ink-dim);margin-top:8px;line-height:1.6}
+.ai-notes-label{font-size:11px;font-weight:700;margin-top:12px}
+.ai-notes-label small{font-weight:400;color:var(--ink-dim);font-size:10px;margin-left:6px}
+.ai-notes{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;min-height:4px}
+.ai-note{display:inline-flex;align-items:center;gap:6px;background:var(--bg-2);border:1px solid var(--line);border-radius:99px;padding:4px 10px;font-size:11px}
+.ai-note button{background:transparent;border:none;color:var(--ink-dim);cursor:pointer;font-size:13px;line-height:1;padding:0}
+.ai-note button:hover{color:var(--accent-2)}
+.ai-notes-empty{font-size:11px;color:var(--ink-dim)}
+.ai-note-add{display:flex;gap:6px;margin-top:8px}
+.ai-note-add input{flex:1;background:var(--bg-2);border:1px solid var(--line);border-radius:8px;color:var(--ink);font-size:12px;padding:7px 10px;font-family:inherit}
+.ai-note-add input:focus{outline:none;border-color:var(--accent)}
+/* タイル内のフィードバック */
+.ai-fb{display:none;align-items:center;gap:6px;padding:6px 8px 0;flex-wrap:wrap}
+.spec-tile.ai-edited .ai-fb{display:flex}
+.ai-fb-q{font-size:10px;color:var(--ink-dim);font-family:'JetBrains Mono',monospace}
+.ai-fb-panel{display:none;padding:8px;margin:6px 8px 0;background:var(--bg-2);border:1px solid var(--line);border-radius:8px}
+.ai-fb-panel.open{display:block}
+.ai-fb-chips{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px}
+.ai-chip{background:var(--line);color:var(--ink);border:none;border-radius:99px;padding:3px 9px;font-size:10px;cursor:pointer;font-weight:700}
+.ai-chip:hover{background:var(--accent);color:#000}
+.ai-fb-input{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:6px;color:var(--ink);font-size:11px;padding:6px 8px;font-family:inherit}
+.ai-fb-input:focus{outline:none;border-color:var(--accent)}
+.ai-fb-remember{padding:4px 10px;font-size:10px;margin-top:6px}
+
 /* 写真1枚ごとの詳細調整パネル */
 .tile-adj{border-top:1px solid var(--line);margin-top:7px}
 .tile-adj>summary{cursor:pointer;list-style:none;font-size:10px;color:var(--ink-dim);font-family:'JetBrains Mono',monospace;padding:6px 8px}
@@ -454,6 +486,35 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
           </div>
         </div>
         <div id="editCostHint" class="hint" style="margin-top:6px"></div>
+
+        <!-- ===== ChatGPT(OpenAI)で「いい感じにして」 ===== -->
+        <div class="ai-section" id="aiSection">
+          <div class="ai-head">
+            <div class="ai-title">🤖 ChatGPTで整える <span class="ai-model" id="aiModelBadge">gpt-image-2</span></div>
+            <div class="ai-actions">
+              <select id="aiQuality" class="lst-select" title="品質。高いほど綺麗ですが料金も上がります">
+                <option value="low">低品質（速い・安い）</option>
+                <option value="medium" selected>標準</option>
+                <option value="high">高品質（遅い・高い）</option>
+              </select>
+              <button id="btnAiAll" class="btn btn-primary btn-mini" title="全商品の個体写真をまとめて「いい感じに」します">🤖 全部を「いい感じに」</button>
+            </div>
+          </div>
+          <div class="ai-opts">
+            <label class="chip-toggle" title="黒で余白を足して正方形にしてから渡します。引き伸ばさないのでヒレの長さが変わりません"><input type="checkbox" id="aiSquare" checked><span>⬛ 正方形(1:1)にする</span></label>
+            <label class="chip-toggle" title="背景を完全な黒に統一します"><input type="checkbox" id="aiBlackBg" checked><span>🌑 背景を真っ黒に</span></label>
+            <label class="chip-toggle" title="商品写真として見栄えの良い向きにChatGPTが揃えます（左右反転あり）"><input type="checkbox" id="aiAutoOrient" checked><span>🔄 向きはAIにおまかせ</span></label>
+            <span class="ai-manual-hint">向きが気に入らなければ ⇄ ⇅ ↻ で手動修正できます</span>
+          </div>
+          <div class="ai-hint" id="aiCostHint"></div>
+          <div class="ai-notes-label">📝 AIへの指示メモ <small>ダメ出しした内容をここに貯めて、次回以降も毎回守らせます</small></div>
+          <div class="ai-notes" id="aiNotesBox"></div>
+          <div class="ai-note-add">
+            <input type="text" id="aiNoteInput" placeholder="例: 背景の黒はもっと締める / 明るくしすぎない / 体色は絶対に変えない">
+            <button id="btnAiNoteAdd" class="btn btn-ghost btn-mini">追加</button>
+          </div>
+        </div>
+
         <div id="editProgress" class="edit-progress hidden">
           <div class="edit-progress-bar"><div class="edit-progress-fill" id="editProgressFill"></div></div>
           <div class="edit-progress-text" id="editProgressText"></div>
@@ -1728,6 +1789,7 @@ async function renderEditPanel(){
   $('#editEmpty').classList.add('hidden');
   $('#editLoaded').classList.remove('hidden');
   updateCostHint();
+  updateAiCostHint();
   await refreshMystyleUi();
   await renderEditProductList();
 }
@@ -1743,7 +1805,7 @@ function specTileHtml(i){
   const adj = getAdj(i);
   const level = adj.bright;
   return `
-    <div class="spec-tile${hasEdited ? ' has-edited' : ''}" data-photo-idx="${i}">
+    <div class="spec-tile${hasEdited ? ' has-edited' : ''}${(st && st.aiEngine === 'openai') ? ' ai-edited' : ''}" data-photo-idx="${i}">
       <div class="spec-tile-pair">
         <div class="spec-tile-img" data-action="zoom" data-photo-idx="${i}" title="クリックで拡大">
           <img src="${ph.blobUrl}" alt="${escapeHtml(ph.name)}">
@@ -1778,10 +1840,28 @@ function specTileHtml(i){
           </div>
         </div>
       </details>
+      <div class="ai-fb">
+        <span class="ai-fb-q">🤖 ChatGPTの仕上がりは？</span>
+        <button class="spec-tile-flip" data-action="ai-ok" data-photo-idx="${i}" title="良ければこのまま使います">👍 OK</button>
+        <button class="spec-tile-flip" data-action="ai-ng" data-photo-idx="${i}" title="ダメな理由を伝えてその場で作り直します">👎 ここを直す</button>
+      </div>
+      <div class="ai-fb-panel" data-fb-panel="${i}">
+        <div class="ai-fb-chips">
+          ${['暗い','明るすぎる','色が変わった','ぼやけた','背景が不自然','ゴミが残っている','魚の形が変わった','加工しすぎ']
+            .map(t => `<button class="ai-chip" data-action="ai-chip" data-photo-idx="${i}">${t}</button>`).join('')}
+        </div>
+        <input type="text" class="ai-fb-input" data-fb-input="${i}" placeholder="どこがダメか書いてください（例: 背景の黒が灰色になった）">
+        <label class="chip-toggle ai-fb-remember"><input type="checkbox" data-fb-remember="${i}" checked><span>次回から毎回守らせる</span></label>
+        <div class="adj-btns">
+          <button class="spec-tile-flip" data-action="ai-redo" data-photo-idx="${i}">🔁 この指摘で作り直す</button>
+          <button class="spec-tile-flip" data-action="ai-cancel" data-photo-idx="${i}">閉じる</button>
+        </div>
+      </div>
       <div class="spec-tile-foot">
         <span class="spec-tile-name" title="${escapeHtml(ph.name)}">${escapeHtml(ph.name)}</span>
         <div class="spec-tile-tools">
-          <button class="spec-tile-flip" data-action="ai-clean" data-photo-idx="${i}" title="この1枚だけAIでゴミ取り（約6円）">🧹</button>
+          <button class="spec-tile-flip" data-action="ai-good" data-photo-idx="${i}" title="この1枚をChatGPTで「いい感じに」する">🤖</button>
+          <button class="spec-tile-flip" data-action="ai-clean" data-photo-idx="${i}" title="この1枚だけGeminiでゴミ取り（約6円）">🧹</button>
           <button class="spec-tile-flip${adj.rot ? ' on' : ''}" data-action="rotate" data-photo-idx="${i}" title="90°回転（現在 ${adj.rot}°）">↻</button>
           ${flipButtonsHtml(i)}
           <button class="spec-tile-save" data-action="save" data-photo-idx="${i}"${hasEdited ? '' : ' disabled'} title="${hasEdited ? '加工後をダウンロード' : '加工後がありません'}">💾 保存</button>
@@ -1876,6 +1956,33 @@ function bindEditHandlers(root){
   root.querySelectorAll('[data-action="ai-clean"]').forEach(el => {
     el.onclick = (e) => { e.stopPropagation(); aiCleanPhoto(+el.dataset.photoIdx); };
   });
+  // ChatGPT: この1枚を「いい感じに」 / フィードバック
+  root.querySelectorAll('[data-action="ai-good"]').forEach(el => {
+    el.onclick = (e) => { e.stopPropagation(); runOpenAiEdit([+el.dataset.photoIdx], ''); };
+  });
+  root.querySelectorAll('[data-action="ai-ok"]').forEach(el => {
+    el.onclick = (e) => { e.stopPropagation(); closeAiFb(+el.dataset.photoIdx); toast('👍 この仕上がりで出品します', 'ok'); };
+  });
+  root.querySelectorAll('[data-action="ai-ng"]').forEach(el => {
+    el.onclick = (e) => { e.stopPropagation(); openAiFb(+el.dataset.photoIdx); };
+  });
+  root.querySelectorAll('[data-action="ai-cancel"]').forEach(el => {
+    el.onclick = (e) => { e.stopPropagation(); closeAiFb(+el.dataset.photoIdx); };
+  });
+  root.querySelectorAll('[data-action="ai-redo"]').forEach(el => {
+    el.onclick = (e) => { e.stopPropagation(); aiRedo(+el.dataset.photoIdx); };
+  });
+  root.querySelectorAll('[data-action="ai-chip"]').forEach(el => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      const i = +el.dataset.photoIdx;
+      const input = document.querySelector(`[data-fb-input="${i}"]`);
+      if(!input) return;
+      const t = el.textContent.trim();
+      input.value = input.value.trim() ? input.value.trim() + '、' + t : t;
+      input.focus();
+    };
+  });
   root.querySelectorAll('[data-action="save"]').forEach(el => {
     el.onclick = (e) => {
       e.stopPropagation();
@@ -1897,6 +2004,7 @@ function refreshSpecTile(i){
   const st = editState[i];
   const hasEdited = !!(st && st.editedBlobUrl);
   el.classList.toggle('has-edited', hasEdited);
+  el.classList.toggle('ai-edited', !!(st && st.aiEngine === 'openai'));
 
   const editedImg = el.querySelector('.edited-slot img');
   if(editedImg){
@@ -2075,6 +2183,240 @@ function onPhotoBrightnessInput(photoIdx, value, immediate){
   clearTimeout(brightTimers['p' + photoIdx]);
   brightTimers['p' + photoIdx] = setTimeout(() => scheduleRecompose([photoIdx]), immediate ? 0 : 150);
 }
+// ============================================================
+// ===== 🤖 ChatGPT(OpenAI画像編集)で「いい感じにして」 =====
+// ============================================================
+const AI_CFG_KEY   = 'medaka_openai_cfg';    // {model, quality, square, blackBg, autoOrient}
+const AI_NOTES_KEY = 'medaka_ai_notes';      // ダメ出しを貯めて毎回守らせる指示
+const AI_MODEL_DEFAULT = 'gpt-image-2';
+// 品質ごとのおおよその単価(2026年8月時点の公開情報からの目安。実額はOpenAIの請求で確認)
+const AI_COST_YEN = { low: 1, medium: 5, high: 25 };
+
+function aiCfg(){
+  let o = {};
+  try { o = JSON.parse(localStorage.getItem(AI_CFG_KEY) || '{}'); } catch(e){ o = {}; }
+  return Object.assign({ model: AI_MODEL_DEFAULT, quality:'medium', square:true, blackBg:true, autoOrient:true }, o);
+}
+function saveAiCfg(patch){
+  localStorage.setItem(AI_CFG_KEY, JSON.stringify(Object.assign(aiCfg(), patch)));
+}
+function aiNotes(){
+  try { return JSON.parse(localStorage.getItem(AI_NOTES_KEY) || '[]'); } catch(e){ return []; }
+}
+function saveAiNotes(list){ localStorage.setItem(AI_NOTES_KEY, JSON.stringify(list)); }
+function addAiNote(text){
+  const t = String(text || '').trim();
+  if(!t) return false;
+  const list = aiNotes();
+  if(list.some(n => n.text === t)) return false;   // 同じ指摘は増やさない
+  list.push({ text: t, ts: Date.now() });
+  saveAiNotes(list);
+  renderAiNotes();
+  return true;
+}
+function removeAiNote(idx){
+  const list = aiNotes();
+  list.splice(idx, 1);
+  saveAiNotes(list);
+  renderAiNotes();
+}
+
+const AI_BASE_PROMPT = [
+  'あなたは日本のメダカ（観賞魚）をネット販売するための商品写真を仕上げるレタッチャーです。',
+  'この写真を、そのまま出品できる状態に「いい感じ」に仕上げてください。',
+  '',
+  '【やること】',
+  '・水面の浮遊物、餌の食べ残し、糞、白い浮遊ゴミ、気泡、容器の汚れ、映り込みや強い反射を自然に取り除く',
+  '・メダカがはっきり見えるように明るさとコントラストを整え、色かぶりを補正する',
+  '',
+  '【絶対に守ること】',
+  '・メダカの体色、模様、ラメの入り方、ヒレの長さと形、体型を変えない。引き伸ばしたり縮めたりしない',
+  '・画像を縦横に歪ませない（アスペクト比を変えてヒレが伸び縮みするのは厳禁）',
+  '・匹数を増減させない。新しい生き物・水草・小物を描き足さない',
+  '・実物と違って見える誇張はしない（生体販売なのでクレームに直結します）'
+].join('\n');
+
+function buildAiPrompt(extra){
+  const cfg = aiCfg();
+  const lines = [AI_BASE_PROMPT];
+  const opt = [];
+  if(cfg.square)    opt.push('・仕上がりは正方形(1:1)。メダカを中央に置き、ヒレが切れないようにする。すでに黒い余白が足してある場合はその黒をそのまま活かし、被写体を引き伸ばさない');
+  if(cfg.blackBg)   opt.push('・背景は完全な黒（真っ黒）に統一する。水面・容器の縁・底床が写っている場合も自然に黒へなじませる');
+  if(cfg.autoOrient)opt.push('・メダカの向きは、商品写真として最も見栄えが良いと思う向きに整える（必要なら左右反転してよい）。ただし体型・ヒレの形は変えないこと');
+  if(opt.length) lines.push('', '【仕上げの指定】', opt.join('\n'));
+
+  const notes = aiNotes();
+  if(notes.length){
+    lines.push('', '【毎回必ず守ること（過去のダメ出しから）】',
+      notes.map((n, i) => `${i + 1}. ${n.text}`).join('\n'));
+  }
+  if(extra && String(extra).trim()){
+    lines.push('', '【今回の修正指示（最優先）】', String(extra).trim());
+  }
+  return lines.join('\n');
+}
+
+function renderAiNotes(){
+  const box = $('#aiNotesBox');
+  if(!box) return;
+  const list = aiNotes();
+  if(list.length === 0){
+    box.innerHTML = '<span class="ai-notes-empty">まだありません。👎で伝えた内容がここに貯まります</span>';
+    return;
+  }
+  box.innerHTML = list.map((n, i) =>
+    `<span class="ai-note">${escapeHtml(n.text)}<button data-action="ai-note-del" data-idx="${i}" title="削除">×</button></span>`
+  ).join('');
+  box.querySelectorAll('[data-action="ai-note-del"]').forEach(el => {
+    el.onclick = () => removeAiNote(+el.dataset.idx);
+  });
+}
+function updateAiCostHint(){
+  const cfg = aiCfg();
+  let specCount = 0;
+  products.forEach(p => specCount += p.specimenIdxs.length);
+  const yen = AI_COST_YEN[cfg.quality] || AI_COST_YEN.medium;
+  $('#aiModelBadge').textContent = cfg.model;
+  $('#aiCostHint').textContent =
+    `${cfg.model} / ${cfg.quality} … 1枚あたり約${yen}円（目安）。個体写真 ${specCount}枚すべてなら約${yen * specCount}円。` +
+    (cfg.square ? ' 黒で余白を足して正方形にしてから渡すので、ヒレが伸び縮みしません。' : '');
+}
+
+// 送信前の下ごしらえ: EXIF回転を反映し、長辺1024に縮小。正方形指定なら黒で余白を足す
+async function prepareAiInput(file, square){
+  const MAX = 1024;
+  let bmp;
+  try { bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+  catch(e){ bmp = await createImageBitmap(file); }
+  let w = bmp.width, h = bmp.height;
+  const s = Math.min(1, MAX / Math.max(w, h));
+  w = Math.max(1, Math.round(w * s)); h = Math.max(1, Math.round(h * s));
+  const side = Math.max(w, h);
+  const c = document.createElement('canvas');
+  c.width  = square ? side : w;
+  c.height = square ? side : h;
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  if(square){ ctx.fillStyle = '#000'; ctx.fillRect(0, 0, side, side); }
+  ctx.drawImage(bmp, square ? (side - w) / 2 : 0, square ? (side - h) / 2 : 0, w, h);
+  if(bmp.close) bmp.close();
+  return c.toDataURL('image/png');
+}
+
+// 実行本体: photoIdxs を ChatGPT で加工する。extraNote はその場のダメ出し
+async function runOpenAiEdit(photoIdxs, extraNote){
+  const gasUrl = (localStorage.getItem(API_URL_KEY) || '').trim();
+  if(!gasUrl.startsWith('https://script.google.com/')){
+    toast('設定タブでGAS URLを設定してください', 'err'); switchTab('settings'); return;
+  }
+  if(!photoIdxs || photoIdxs.length === 0){ toast('対象がありません', 'err'); return; }
+
+  const cfg = aiCfg();
+  const prompt = buildAiPrompt(extraNote);
+  const prog = $('#editProgress'), fill = $('#editProgressFill'), text = $('#editProgressText');
+  prog.classList.remove('hidden'); fill.style.width = '0%';
+  $('#btnAiAll').disabled = true;
+
+  let ok = 0, fail = 0, lastError = '';
+  for(let n = 0; n < photoIdxs.length; n++){
+    const i = photoIdxs[n];
+    const ph = photos[i];
+    text.textContent = `🤖 ChatGPTで加工中 ${n+1}/${photoIdxs.length}: ${ph.name}`;
+    fill.style.width = (n / photoIdxs.length * 100).toFixed(1) + '%';
+    try {
+      const file = await ph.handle.getFile();
+      const dataUrl = await prepareAiInput(file, !!cfg.square);
+      const res = await fetch(gasUrl, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'openai_edit', image: dataUrl, prompt: prompt,
+          model: cfg.model, quality: cfg.quality,
+          size: cfg.square ? '1024x1024' : 'auto'
+        })
+      });
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      const json = await res.json();
+      if(!json || !json.ok || !json.image) throw new Error((json && json.error) || 'OpenAI応答が不正です');
+      const blob = await (await fetch(json.image)).blob();
+
+      const prev = editState[i];
+      if(prev){
+        if(prev.editedBlobUrl) URL.revokeObjectURL(prev.editedBlobUrl);
+        if(prev.baseBlobUrl) URL.revokeObjectURL(prev.baseBlobUrl);
+      }
+      editState[i] = {
+        editedBlobUrl: URL.createObjectURL(blob),
+        baseBlobUrl: URL.createObjectURL(blob),
+        aiEngine: 'openai',
+        aiPrompt: prompt,
+        modes: ['openai'],
+        showEdited: true
+      };
+      // 明るさ・回転・反転の手動調整は、この上に重ねる
+      try { await recomposePhoto(i); } catch(e){ console.warn('recompose failed', e); }
+      if(!refreshSpecTile(i)) await renderEditProductList();
+      ok++;
+    } catch(e){
+      fail++; lastError = String(e && e.message || e);
+      console.warn('openai edit fail', ph.name, e);
+    }
+  }
+  fill.style.width = '100%';
+  setTimeout(() => prog.classList.add('hidden'), 600);
+  $('#btnAiAll').disabled = false;
+  toast(`🤖 ChatGPT加工: 成功 ${ok} / 失敗 ${fail}` + (lastError ? ` — ${lastError}` : ''), fail ? 'err' : 'ok');
+}
+
+// タイルのフィードバック操作
+function aiFbPanel(i){ return document.querySelector(`[data-fb-panel="${i}"]`); }
+function openAiFb(i){ const p = aiFbPanel(i); if(p) p.classList.add('open'); }
+function closeAiFb(i){ const p = aiFbPanel(i); if(p) p.classList.remove('open'); }
+function aiFbText(i){
+  const el = document.querySelector(`[data-fb-input="${i}"]`);
+  return el ? el.value : '';
+}
+async function aiRedo(i){
+  const note = aiFbText(i).trim();
+  if(!note){ toast('どこがダメか入力してください', 'err'); return; }
+  const remember = document.querySelector(`[data-fb-remember="${i}"]`);
+  if(remember && remember.checked){
+    if(addAiNote(note)) toast('📝 次回から毎回守らせます', 'ok');
+  }
+  closeAiFb(i);
+  await runOpenAiEdit([i], note);
+}
+
+$('#btnAiAll').onclick = () => {
+  const idxs = [];
+  products.forEach(p => p.specimenIdxs.forEach(i => idxs.push(i)));
+  const cfg = aiCfg();
+  const yen = (AI_COST_YEN[cfg.quality] || 5) * idxs.length;
+  if(!confirm(`${idxs.length}枚を ChatGPT で「いい感じに」します。\n目安 約${yen}円（${cfg.quality}品質）\n\n実行しますか？`)) return;
+  runOpenAiEdit(idxs, '');
+};
+$('#btnAiNoteAdd').onclick = () => {
+  const el = $('#aiNoteInput');
+  if(addAiNote(el.value)){ el.value = ''; toast('📝 指示を追加しました', 'ok'); }
+  else toast('空か、すでに同じ指示があります', 'err');
+};
+$('#aiNoteInput').addEventListener('keydown', e => { if(e.key === 'Enter') $('#btnAiNoteAdd').click(); });
+$('#aiQuality').addEventListener('change', () => { saveAiCfg({ quality: $('#aiQuality').value }); updateAiCostHint(); });
+['#aiSquare','#aiBlackBg','#aiAutoOrient'].forEach(sel => {
+  $(sel).addEventListener('change', () => {
+    saveAiCfg({ square: $('#aiSquare').checked, blackBg: $('#aiBlackBg').checked, autoOrient: $('#aiAutoOrient').checked });
+    updateAiCostHint();
+  });
+});
+(function restoreAiCfg(){
+  const cfg = aiCfg();
+  $('#aiQuality').value = cfg.quality;
+  $('#aiSquare').checked = !!cfg.square;
+  $('#aiBlackBg').checked = !!cfg.blackBg;
+  $('#aiAutoOrient').checked = !!cfg.autoOrient;
+  renderAiNotes();
+  updateAiCostHint();
+})();
+
 // 写真1枚のコントラスト/彩度/色温度/シャープ
 function onPhotoAdjInput(photoIdx, key, value, immediate){
   setAdj(photoIdx, { [key]: value });
