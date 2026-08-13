@@ -2455,9 +2455,7 @@ async function runOpenAiEdit(photoIdxs, extraNote, opts){
         size: (opts && opts.fromEdited) ? 'auto' : (cfg.square ? '1024x1024' : 'auto')
       };
       if(useMask) body.mask = opts.mask;
-      const res = await fetch(gasUrl, { method: 'POST', body: JSON.stringify(body) });
-      if(!res.ok) throw new Error('HTTP ' + res.status);
-      const json = await res.json();
+      const json = await postGas(body);
       if(!json || !json.ok || !json.image) throw new Error(friendlyGasError((json && json.error) || 'OpenAI応答が不正です'));
       const blob = await (await fetch(json.image)).blob();
 
@@ -2701,6 +2699,28 @@ $('#aiQuality').addEventListener('change', () => { saveAiCfg({ quality: $('#aiQu
     updateAiCostHint();
   });
 });
+// GASへPOSTしてJSONを受け取る。HTMLが返ってきたら原因を切り分けて教える
+async function postGas(body){
+  const gasUrl = (localStorage.getItem(API_URL_KEY) || '').trim();
+  if(!gasUrl.startsWith('https://script.google.com/')){
+    throw new Error('設定タブでGAS URLを設定してください');
+  }
+  const res = await fetch(gasUrl, { method: 'POST', body: JSON.stringify(body) });
+  const text = await res.text();
+  const head = text.trim().slice(0, 1);
+  if(head === '<'){
+    // GASはエラー時・未承認時にHTMLを返す
+    let why = 'GASがJSONではなくHTMLを返しました。';
+    if(/承認|authoriz/i.test(text)) why += 'Webアプリの「アクセスできるユーザー」が【全員】になっているか確認してください。';
+    else if(/見つかりません|not found|TypeError|SyntaxError|エラー/i.test(text)) why += 'GASのコードにエラーがある可能性があります。GASエディタで保存し直してエラーが出ないか確認してください。';
+    else why += 'デプロイ設定（アクセスできるユーザー=全員／URLが /exec で終わっているか）と、コードの構文エラーを確認してください。';
+    throw new Error(why + ' ※GASのURLをブラウザで直接開くと、実際のエラー内容が読めます');
+  }
+  if(!res.ok) throw new Error('HTTP ' + res.status + ': ' + text.slice(0, 200));
+  try { return JSON.parse(text); }
+  catch(e){ throw new Error('GASの応答がJSONではありません: ' + text.slice(0, 200)); }
+}
+
 // GASが古い(新しいactionに未対応)ときのエラーを分かりやすく言い換える
 function isStaleGasError(msg){
   const s = String(msg || '');
@@ -2729,8 +2749,7 @@ $('#btnTestOpenai').onclick = async () => {
   btn.disabled = true; btn.textContent = '確認中...';
   const badge = $('#openaiStatus');
   try {
-    const res = await fetch(gasUrl, { method:'POST', body: JSON.stringify({ action:'openai_check', model: aiCfg().model }) });
-    const json = await res.json();
+    const json = await postGas({ action:'openai_check', model: aiCfg().model });
     if(json && json.ok){
       badge.textContent = json.modelAvailable ? 'OK' : 'キーOK / モデル未確認';
       badge.className = 'api-status set';
