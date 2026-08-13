@@ -716,6 +716,25 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
       </div>
 
       <div class="settings-card">
+        <div class="field">
+          <label>🤖 ChatGPT（OpenAI）画像編集 <span id="openaiStatus" class="api-status unset">未確認</span></label>
+          <input type="text" id="openaiModel" placeholder="gpt-image-2">
+        </div>
+        <div style="font-size:11px;color:var(--ink-dim);margin-top:6px;line-height:1.7">
+          <strong style="color:var(--ink)">APIキーはこのアプリには入れません。</strong>
+          ブラウザにキーを置かないため、GAS側のスクリプトプロパティ <code>OPENAI_API_KEY</code> に保存します。<br>
+          手順: GASプロジェクト → 左の⚙プロジェクトの設定 → スクリプト プロパティ →
+          「スクリプト プロパティを追加」→ プロパティ <code>OPENAI_API_KEY</code> / 値 <code>sk-...</code> → 保存 →
+          「デプロイを管理」で新バージョンとして再デプロイ。<br>
+          キーの発行: <span style="color:var(--accent)">platform.openai.com/api-keys</span>（支払い方法の登録が必要です）
+        </div>
+        <div class="btn-row">
+          <button id="btnSaveOpenaiModel" class="btn btn-ghost">モデル名を保存</button>
+          <button id="btnTestOpenai" class="btn btn-ghost" title="/v1/models を見るだけなので画像生成の課金は発生しません">🤖 ChatGPT接続テスト（無料）</button>
+        </div>
+      </div>
+
+      <div class="settings-card">
         <div style="font-size:12px;line-height:1.7;color:var(--ink-dim)">
           <strong style="color:var(--ink)">バージョン情報</strong><br>
           メダカ出品アシスタント v2.0 (Phase 1〜4)<br>
@@ -2407,8 +2426,45 @@ $('#aiQuality').addEventListener('change', () => { saveAiCfg({ quality: $('#aiQu
     updateAiCostHint();
   });
 });
+// 設定タブ: モデル名の保存と接続テスト
+$('#btnSaveOpenaiModel').onclick = () => {
+  const m = $('#openaiModel').value.trim() || AI_MODEL_DEFAULT;
+  saveAiCfg({ model: m });
+  $('#openaiModel').value = m;
+  updateAiCostHint();
+  toast('モデル名を保存しました: ' + m, 'ok');
+};
+$('#btnTestOpenai').onclick = async () => {
+  const gasUrl = (localStorage.getItem(API_URL_KEY) || '').trim();
+  if(!gasUrl.startsWith('https://script.google.com/')){ toast('先にGAS URLを保存してください', 'err'); return; }
+  const btn = $('#btnTestOpenai'); const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = '確認中...';
+  const badge = $('#openaiStatus');
+  try {
+    const res = await fetch(gasUrl, { method:'POST', body: JSON.stringify({ action:'openai_check', model: aiCfg().model }) });
+    const json = await res.json();
+    if(json && json.ok){
+      badge.textContent = json.modelAvailable ? 'OK' : 'キーOK / モデル未確認';
+      badge.className = 'api-status set';
+      toast(json.modelAvailable
+        ? `✅ OPENAI_API_KEY 有効・${json.model} が使えます`
+        : `✅ キーは有効ですが ${json.model} が一覧に見つかりません（モデル名を確認してください）`,
+        json.modelAvailable ? 'ok' : 'err');
+    } else {
+      badge.textContent = (json && json.keySet === false) ? 'キー未設定' : 'エラー';
+      badge.className = 'api-status unset';
+      toast('❌ ' + ((json && json.error) || '確認に失敗しました'), 'err');
+    }
+  } catch(e){
+    badge.textContent = 'エラー'; badge.className = 'api-status unset';
+    toast('接続エラー: ' + (e.message || e), 'err');
+  }
+  btn.disabled = false; btn.textContent = orig;
+};
+
 (function restoreAiCfg(){
   const cfg = aiCfg();
+  $('#openaiModel').value = cfg.model;
   $('#aiQuality').value = cfg.quality;
   $('#aiSquare').checked = !!cfg.square;
   $('#aiBlackBg').checked = !!cfg.blackBg;
