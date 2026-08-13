@@ -2355,7 +2355,7 @@ async function runOpenAiEdit(photoIdxs, extraNote){
       });
       if(!res.ok) throw new Error('HTTP ' + res.status);
       const json = await res.json();
-      if(!json || !json.ok || !json.image) throw new Error((json && json.error) || 'OpenAI応答が不正です');
+      if(!json || !json.ok || !json.image) throw new Error(friendlyGasError((json && json.error) || 'OpenAI応答が不正です'));
       const blob = await (await fetch(json.image)).blob();
 
       const prev = editState[i];
@@ -2426,6 +2426,19 @@ $('#aiQuality').addEventListener('change', () => { saveAiCfg({ quality: $('#aiQu
     updateAiCostHint();
   });
 });
+// GASが古い(新しいactionに未対応)ときのエラーを分かりやすく言い換える
+function isStaleGasError(msg){
+  const s = String(msg || '');
+  return s.includes('devicePrefix') || s.includes('未対応です');
+}
+function friendlyGasError(msg){
+  if(isStaleGasError(msg)){
+    return 'GAS側のコードが古いままです。medaka-gas/追加コード_openai.gs を貼り付けて、'
+         + '「デプロイを管理」から既存デプロイを新バージョンで再デプロイしてください';
+  }
+  return String(msg || '');
+}
+
 // 設定タブ: モデル名の保存と接続テスト
 $('#btnSaveOpenaiModel').onclick = () => {
   const m = $('#openaiModel').value.trim() || AI_MODEL_DEFAULT;
@@ -2451,9 +2464,10 @@ $('#btnTestOpenai').onclick = async () => {
         : `✅ キーは有効ですが ${json.model} が一覧に見つかりません（モデル名を確認してください）`,
         json.modelAvailable ? 'ok' : 'err');
     } else {
-      badge.textContent = (json && json.keySet === false) ? 'キー未設定' : 'エラー';
+      const err = (json && json.error) || '確認に失敗しました';
+      badge.textContent = isStaleGasError(err) ? 'GASが古い' : (json && json.keySet === false) ? 'キー未設定' : 'エラー';
       badge.className = 'api-status unset';
-      toast('❌ ' + ((json && json.error) || '確認に失敗しました'), 'err');
+      toast('❌ ' + friendlyGasError(err), 'err');
     }
   } catch(e){
     badge.textContent = 'エラー'; badge.className = 'api-status unset';
