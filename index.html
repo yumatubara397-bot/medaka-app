@@ -232,6 +232,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 /* タイル内のフィードバック */
 .ai-fb{display:none;align-items:center;gap:6px;padding:6px 8px 0;flex-wrap:wrap}
 .spec-tile.ai-edited .ai-fb{display:flex}
+.spec-tile:not(.ai-edited) .ai-only{display:none}
 .ai-fb-q{font-size:10px;color:var(--ink-dim);font-family:'JetBrains Mono',monospace}
 .ai-fb-panel{display:none;padding:8px;margin:6px 8px 0;background:var(--bg-2);border:1px solid var(--line);border-radius:8px}
 .ai-fb-panel.open{display:block}
@@ -241,6 +242,24 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .ai-fb-input{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:6px;color:var(--ink);font-size:11px;padding:6px 8px;font-family:inherit}
 .ai-fb-input:focus{outline:none;border-color:var(--accent)}
 .ai-fb-remember{padding:4px 10px;font-size:10px;margin-top:6px}
+
+/* 部分修正(マスク)モーダル */
+.mask-modal{max-width:900px}
+.mask-stage{position:relative;display:inline-block;max-width:100%;background:#000;border-radius:8px;overflow:hidden;line-height:0}
+.mask-stage img{max-width:100%;max-height:56vh;display:block}
+.mask-stage canvas{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;touch-action:none}
+.mask-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
+.mask-tool-label{font-size:10px;color:var(--ink-dim);font-family:'JetBrains Mono',monospace}
+.mask-tools .bright-range{width:110px}
+.mask-hint{font-size:11px;color:var(--ink-dim)}
+.mask-hint.painted{color:var(--ok)}
+.mask-chips{display:flex;gap:5px;flex-wrap:wrap;margin:10px 0 8px}
+.mask-cost{font-size:11px;color:var(--ink-dim);margin-right:auto;font-family:'JetBrains Mono',monospace}
+.spec-tile-flip.on-erase{background:var(--accent-2);color:#fff}
+/* 使った金額の表示 */
+.ai-spend{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid var(--line);font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--ink-dim)}
+.ai-spend b{color:var(--accent);font-size:13px}
+.ai-spend .btn-mini{margin-left:auto}
 
 /* 写真1枚ごとの詳細調整パネル */
 .tile-adj{border-top:1px solid var(--line);margin-top:7px}
@@ -513,6 +532,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
             <input type="text" id="aiNoteInput" placeholder="例: 背景の黒はもっと締める / 明るくしすぎない / 体色は絶対に変えない">
             <button id="btnAiNoteAdd" class="btn btn-ghost btn-mini">追加</button>
           </div>
+          <div class="ai-spend" id="aiSpend"></div>
         </div>
 
         <div id="editProgress" class="edit-progress hidden">
@@ -556,6 +576,45 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
           <button id="btnAddPairConfirm" class="btn btn-primary" disabled>📚 追加</button>
           <button id="btnAddPairReset" class="btn btn-ghost btn-mini" title="現在の選択をクリア">クリア</button>
           <button id="btnAddPairCloseFooter" class="btn btn-ghost">閉じる</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 部分修正(マスク)モーダル ===== -->
+    <div id="maskModal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-content mask-modal">
+        <div class="modal-head">
+          <h3>🖌 部分修正 — 直したい場所を塗って、どう直すか書く</h3>
+          <button id="btnMaskClose" class="modal-close" aria-label="閉じる">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="mask-stage" id="maskStage">
+            <img id="maskImg" alt="">
+            <canvas id="maskCanvas"></canvas>
+          </div>
+          <div class="mask-tools">
+            <label class="mask-tool-label">ブラシ</label>
+            <input type="range" id="maskBrush" class="bright-range" min="10" max="200" step="5" value="60">
+            <span class="bright-val" id="maskBrushVal">60</span>
+            <button id="btnMaskErase" class="spec-tile-flip" title="塗った部分を消すモードに切替">🧽 消しゴム</button>
+            <button id="btnMaskClear" class="spec-tile-flip">全部消す</button>
+            <span class="mask-hint" id="maskPaintedHint">まだ塗っていません</span>
+          </div>
+          <div class="mask-chips">
+            <button class="ai-chip" data-mask-chip>ここのゴミを消す</button>
+            <button class="ai-chip" data-mask-chip>ここを黒背景になじませる</button>
+            <button class="ai-chip" data-mask-chip>ここを明るくする</button>
+            <button class="ai-chip" data-mask-chip>ここの色を元の体色に戻す</button>
+            <button class="ai-chip" data-mask-chip>ここのヒレの形を元に戻す</button>
+            <button class="ai-chip" data-mask-chip>ここの反射・写り込みを消す</button>
+          </div>
+          <input type="text" id="maskInstruction" class="ai-fb-input" placeholder="この場所をどう直したいか（例: 右上の白い浮遊物を消して黒くする）">
+          <label class="chip-toggle ai-fb-remember"><input type="checkbox" id="maskRemember"><span>この指示を次回から毎回守らせる</span></label>
+        </div>
+        <div class="modal-actions">
+          <span class="mask-cost" id="maskCost"></span>
+          <button id="btnMaskRun" class="btn btn-primary">🎨 この範囲を修正する</button>
+          <button id="btnMaskCancel" class="btn btn-ghost">閉じる</button>
         </div>
       </div>
     </div>
@@ -1880,6 +1939,7 @@ function specTileHtml(i){
         <span class="spec-tile-name" title="${escapeHtml(ph.name)}">${escapeHtml(ph.name)}</span>
         <div class="spec-tile-tools">
           <button class="spec-tile-flip" data-action="ai-good" data-photo-idx="${i}" title="この1枚をChatGPTで「いい感じに」する">🤖</button>
+          <button class="spec-tile-flip ai-only" data-action="ai-mask" data-photo-idx="${i}" title="直したい場所を塗って部分修正する">🖌</button>
           <button class="spec-tile-flip" data-action="ai-clean" data-photo-idx="${i}" title="この1枚だけGeminiでゴミ取り（約6円）">🧹</button>
           <button class="spec-tile-flip${adj.rot ? ' on' : ''}" data-action="rotate" data-photo-idx="${i}" title="90°回転（現在 ${adj.rot}°）">↻</button>
           ${flipButtonsHtml(i)}
@@ -1978,6 +2038,9 @@ function bindEditHandlers(root){
   // ChatGPT: この1枚を「いい感じに」 / フィードバック
   root.querySelectorAll('[data-action="ai-good"]').forEach(el => {
     el.onclick = (e) => { e.stopPropagation(); runOpenAiEdit([+el.dataset.photoIdx], ''); };
+  });
+  root.querySelectorAll('[data-action="ai-mask"]').forEach(el => {
+    el.onclick = (e) => { e.stopPropagation(); openMaskModal(+el.dataset.photoIdx); };
   });
   root.querySelectorAll('[data-action="ai-ok"]').forEach(el => {
     el.onclick = (e) => { e.stopPropagation(); closeAiFb(+el.dataset.photoIdx); toast('👍 この仕上がりで出品します', 'ok'); };
@@ -2322,8 +2385,43 @@ async function prepareAiInput(file, square){
   return c.toDataURL('image/png');
 }
 
-// 実行本体: photoIdxs を ChatGPT で加工する。extraNote はその場のダメ出し
-async function runOpenAiEdit(photoIdxs, extraNote){
+// 部分修正(マスク)用のプロンプト
+function buildMaskPrompt(instruction){
+  const lines = [
+    'このメダカ（日本の観賞魚）の販売用写真を、部分的に修正します。',
+    '透明マスクで指定された部分だけを描き直し、それ以外の部分は一切変更しないでください。',
+    '',
+    '【指定された場所をどう直すか】',
+    String(instruction || '').trim(),
+    '',
+    '【守ること】',
+    '・メダカの体色、模様、ラメ、ヒレの長さと形、体型は変えない',
+    '・匹数を増減させない。新しい生き物や物を描き足さない',
+    '・修正した部分が周囲と自然につながるようにする'
+  ];
+  const notes = aiNotes();
+  if(notes.length){
+    lines.push('', '【毎回必ず守ること（過去のダメ出しから）】',
+      notes.map((n, i) => `${i + 1}. ${n.text}`).join('\n'));
+  }
+  return lines.join('\n');
+}
+// Blob を PNG の dataUrl にする(マスクとサイズを揃えるため)
+async function blobToPngDataUrl(blob){
+  const img = new Image();
+  const url = URL.createObjectURL(blob);
+  try {
+    img.src = url; await img.decode();
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    c.getContext('2d').drawImage(img, 0, 0);
+    return c.toDataURL('image/png');
+  } finally { URL.revokeObjectURL(url); }
+}
+
+// 実行本体: photoIdxs を ChatGPT で加工する。
+// extraNote = その場のダメ出し / opts.mask = 部分修正のマスク / opts.fromEdited = 加工後画像を入力に使う
+async function runOpenAiEdit(photoIdxs, extraNote, opts){
   const gasUrl = (localStorage.getItem(API_URL_KEY) || '').trim();
   if(!gasUrl.startsWith('https://script.google.com/')){
     toast('設定タブでGAS URLを設定してください', 'err'); switchTab('settings'); return;
@@ -2331,28 +2429,33 @@ async function runOpenAiEdit(photoIdxs, extraNote){
   if(!photoIdxs || photoIdxs.length === 0){ toast('対象がありません', 'err'); return; }
 
   const cfg = aiCfg();
-  const prompt = buildAiPrompt(extraNote);
+  const useMask = !!(opts && opts.mask);
+  const prompt = useMask ? buildMaskPrompt(extraNote) : buildAiPrompt(extraNote);
   const prog = $('#editProgress'), fill = $('#editProgressFill'), text = $('#editProgressText');
   prog.classList.remove('hidden'); fill.style.width = '0%';
   $('#btnAiAll').disabled = true;
 
-  let ok = 0, fail = 0, lastError = '';
+  let ok = 0, fail = 0, lastError = '', spent = 0;
   for(let n = 0; n < photoIdxs.length; n++){
     const i = photoIdxs[n];
     const ph = photos[i];
-    text.textContent = `🤖 ChatGPTで加工中 ${n+1}/${photoIdxs.length}: ${ph.name}`;
+    text.textContent = (useMask ? '🖌 部分修正中 ' : '🤖 ChatGPTで加工中 ') + `${n+1}/${photoIdxs.length}: ${ph.name}`;
     fill.style.width = (n / photoIdxs.length * 100).toFixed(1) + '%';
     try {
-      const file = await ph.handle.getFile();
-      const dataUrl = await prepareAiInput(file, !!cfg.square);
-      const res = await fetch(gasUrl, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'openai_edit', image: dataUrl, prompt: prompt,
-          model: cfg.model, quality: cfg.quality,
-          size: cfg.square ? '1024x1024' : 'auto'
-        })
-      });
+      // 部分修正のときは「今の加工後画像」を入力にする(マスクと同じ絵・同じサイズでないと合わない)
+      let dataUrl;
+      if(opts && opts.fromEdited && editState[i] && editState[i].editedBlobUrl){
+        dataUrl = await blobToPngDataUrl(await (await fetch(editState[i].editedBlobUrl)).blob());
+      } else {
+        dataUrl = await prepareAiInput(await ph.handle.getFile(), !!cfg.square);
+      }
+      const body = {
+        action: 'openai_edit', image: dataUrl, prompt: prompt,
+        model: cfg.model, quality: cfg.quality,
+        size: (opts && opts.fromEdited) ? 'auto' : (cfg.square ? '1024x1024' : 'auto')
+      };
+      if(useMask) body.mask = opts.mask;
+      const res = await fetch(gasUrl, { method: 'POST', body: JSON.stringify(body) });
       if(!res.ok) throw new Error('HTTP ' + res.status);
       const json = await res.json();
       if(!json || !json.ok || !json.image) throw new Error(friendlyGasError((json && json.error) || 'OpenAI応答が不正です'));
@@ -2371,6 +2474,10 @@ async function runOpenAiEdit(photoIdxs, extraNote){
         modes: ['openai'],
         showEdited: true
       };
+      // 使った金額を記録(APIのusageがあれば実額、無ければ品質ごとの目安)
+      const yen = yenFromUsage(json.usage, cfg.quality);
+      spent += yen;
+      logAiSpend(yen, useMask ? 'mask' : 'edit', !json.usage);
       // 明るさ・回転・反転の手動調整は、この上に重ねる
       try { await recomposePhoto(i); } catch(e){ console.warn('recompose failed', e); }
       if(!refreshSpecTile(i)) await renderEditProductList();
@@ -2383,8 +2490,176 @@ async function runOpenAiEdit(photoIdxs, extraNote){
   fill.style.width = '100%';
   setTimeout(() => prog.classList.add('hidden'), 600);
   $('#btnAiAll').disabled = false;
-  toast(`🤖 ChatGPT加工: 成功 ${ok} / 失敗 ${fail}` + (lastError ? ` — ${lastError}` : ''), fail ? 'err' : 'ok');
+  const spentTxt = spent ? `（今回 約¥${Math.round(spent * 100) / 100}）` : '';
+  toast((useMask ? '🖌 部分修正' : '🤖 ChatGPT加工') + `: 成功 ${ok} / 失敗 ${fail}${spentTxt}` + (lastError ? ` — ${lastError}` : ''), fail ? 'err' : 'ok');
 }
+
+// ===== 使った金額の記録・表示 =====
+const AI_USAGE_KEY = 'medaka_ai_usage';
+const AI_RATE_KEY  = 'medaka_ai_rates';
+// gpt-image-2 の公開単価(100万トークンあたりUSD)。変わったらここを直す
+const AI_RATE_DEFAULT = { jpy: 155, textIn: 5, imgIn: 8, imgOut: 30 };
+function aiRates(){
+  let o = {};
+  try { o = JSON.parse(localStorage.getItem(AI_RATE_KEY) || '{}'); } catch(e){ o = {}; }
+  return Object.assign({}, AI_RATE_DEFAULT, o);
+}
+// APIが返した usage から実額(円)を計算。usageが無ければ品質ごとの目安を使う
+function yenFromUsage(usage, quality){
+  const r = aiRates();
+  if(usage && (usage.input_tokens || usage.output_tokens)){
+    const d = usage.input_tokens_details || {};
+    const textIn = d.text_tokens || 0;
+    const imgIn  = d.image_tokens != null ? d.image_tokens : Math.max(0, (usage.input_tokens || 0) - textIn);
+    const out    = usage.output_tokens || 0;
+    const usd = (textIn * r.textIn + imgIn * r.imgIn + out * r.imgOut) / 1e6;
+    return Math.round(usd * r.jpy * 100) / 100;
+  }
+  return AI_COST_YEN[quality] || AI_COST_YEN.medium;
+}
+function aiUsageLog(){
+  try { return JSON.parse(localStorage.getItem(AI_USAGE_KEY) || '[]'); } catch(e){ return []; }
+}
+function logAiSpend(yen, kind, estimated){
+  const list = aiUsageLog();
+  list.push({ ts: Date.now(), yen: yen, kind: kind || 'edit', est: !!estimated });
+  if(list.length > 2000) list.splice(0, list.length - 2000);
+  localStorage.setItem(AI_USAGE_KEY, JSON.stringify(list));
+  renderAiSpend();
+}
+function renderAiSpend(){
+  const box = $('#aiSpend');
+  if(!box) return;
+  const list = aiUsageLog();
+  const now = new Date();
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const sum = (from) => list.filter(x => x.ts >= from).reduce((a, b) => a + (+b.yen || 0), 0);
+  const fmt = v => '¥' + (Math.round(v * 100) / 100).toLocaleString('ja-JP');
+  const anyEst = list.some(x => x.est);
+  box.innerHTML =
+    `💰 実際に使った額 — 今日 <b>${fmt(sum(startOfDay))}</b> ／ 今月 <b>${fmt(sum(startOfMonth))}</b> ／ 累計 <b>${fmt(sum(0))}</b>` +
+    ` <span>（${list.length}回・$1=${aiRates().jpy}円換算${anyEst ? '・一部は概算' : ''}）</span>` +
+    `<button class="btn btn-ghost btn-mini" data-action="ai-spend-reset">履歴をリセット</button>`;
+  const btn = box.querySelector('[data-action="ai-spend-reset"]');
+  if(btn) btn.onclick = () => {
+    if(!confirm('使った金額の記録をリセットしますか？（OpenAI側の請求は変わりません）')) return;
+    localStorage.removeItem(AI_USAGE_KEY);
+    renderAiSpend();
+    toast('記録をリセットしました', 'ok');
+  };
+}
+
+// ============================================================
+// ===== 🖌 部分修正(マスク) =====
+// ============================================================
+// 塗った場所だけを ChatGPT に描き直させる。
+// OpenAI の edits は「マスクの透明部分＝描き直す場所」なので、
+// 塗った所を destination-out でくり抜いた PNG を作って一緒に送る。
+let maskState = { photoIdx: -1, erasing: false, painted: false };
+// 画面表示用は半透明の赤で塗るが、実際のマスクは「完全に抜ける」必要があるので
+// 不透明で記録する専用キャンバスを裏に持つ
+const maskPaintCanvas = document.createElement('canvas');
+
+function openMaskModal(i){
+  const st = editState[i];
+  if(!st || !st.editedBlobUrl){ toast('先に🤖で加工してください', 'err'); return; }
+  maskState = { photoIdx: i, erasing: false, painted: false };
+  const img = $('#maskImg');
+  img.onload = () => {
+    const c = $('#maskCanvas');
+    c.width = img.naturalWidth;
+    c.height = img.naturalHeight;
+    c.getContext('2d').clearRect(0, 0, c.width, c.height);
+    maskPaintCanvas.width = c.width;
+    maskPaintCanvas.height = c.height;
+    maskPaintCanvas.getContext('2d').clearRect(0, 0, c.width, c.height);
+    updateMaskHint();
+  };
+  img.src = st.editedBlobUrl;
+  $('#maskInstruction').value = '';
+  $('#maskRemember').checked = false;
+  $('#btnMaskErase').classList.remove('on-erase');
+  const cfg = aiCfg();
+  $('#maskCost').textContent = `1回あたり約${AI_COST_YEN[cfg.quality] || 5}円（${cfg.quality}品質・目安）`;
+  $('#maskModal').classList.remove('hidden');
+}
+function closeMaskModal(){ $('#maskModal').classList.add('hidden'); }
+function updateMaskHint(){
+  const h = $('#maskPaintedHint');
+  h.textContent = maskState.painted ? '✓ 塗った範囲だけを直します' : 'まだ塗っていません（塗らずに実行すると全体を直します）';
+  h.classList.toggle('painted', maskState.painted);
+}
+(function bindMaskPaint(){
+  const c = $('#maskCanvas');
+  let drawing = false;
+  const pos = (e) => {
+    const r = c.getBoundingClientRect();
+    return { x: (e.clientX - r.left) / r.width * c.width, y: (e.clientY - r.top) / r.height * c.height };
+  };
+  const dot = (e) => {
+    const p = pos(e);
+    const size = Math.max(4, +$('#maskBrush').value * (c.width / 800));   // 表示サイズに依らず一定の感覚に
+    const stroke = (ctx, style) => {
+      ctx.globalCompositeOperation = maskState.erasing ? 'destination-out' : 'source-over';
+      ctx.fillStyle = style;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+    };
+    stroke(c.getContext('2d'), 'rgba(255,80,110,.55)');               // 画面表示用(半透明の赤)
+    stroke(maskPaintCanvas.getContext('2d'), 'rgba(255,255,255,1)');  // マスク用(完全不透明)
+    if(!maskState.erasing){ maskState.painted = true; updateMaskHint(); }
+  };
+  c.addEventListener('pointerdown', e => { drawing = true; c.setPointerCapture(e.pointerId); dot(e); });
+  c.addEventListener('pointermove', e => { if(drawing) dot(e); });
+  c.addEventListener('pointerup', () => { drawing = false; });
+  c.addEventListener('pointercancel', () => { drawing = false; });
+})();
+$('#maskBrush').addEventListener('input', () => { $('#maskBrushVal').textContent = $('#maskBrush').value; });
+$('#btnMaskErase').onclick = () => {
+  maskState.erasing = !maskState.erasing;
+  $('#btnMaskErase').classList.toggle('on-erase', maskState.erasing);
+};
+$('#btnMaskClear').onclick = () => {
+  const c = $('#maskCanvas');
+  c.getContext('2d').clearRect(0, 0, c.width, c.height);
+  maskPaintCanvas.getContext('2d').clearRect(0, 0, maskPaintCanvas.width, maskPaintCanvas.height);
+  maskState.painted = false;
+  updateMaskHint();
+};
+$('#btnMaskClose').onclick = closeMaskModal;
+$('#btnMaskCancel').onclick = closeMaskModal;
+$$('[data-mask-chip]').forEach(b => {
+  b.onclick = () => {
+    const el = $('#maskInstruction');
+    el.value = el.value.trim() ? el.value.trim() + '、' + b.textContent.trim() : b.textContent.trim();
+    el.focus();
+  };
+});
+// 塗った所を完全に透明にした PNG(=マスク)を作る
+function buildMaskDataUrl(){
+  const paint = maskPaintCanvas;
+  const m = document.createElement('canvas');
+  m.width = paint.width; m.height = paint.height;
+  const ctx = m.getContext('2d');
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, m.width, m.height);
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.drawImage(paint, 0, 0);
+  return m.toDataURL('image/png');
+}
+$('#btnMaskRun').onclick = async () => {
+  const i = maskState.photoIdx;
+  const note = $('#maskInstruction').value.trim();
+  if(i < 0) return;
+  if(!note){ toast('どう直したいか書いてください', 'err'); return; }
+  if($('#maskRemember').checked) addAiNote(note);
+  const mask = maskState.painted ? buildMaskDataUrl() : null;
+  closeMaskModal();
+  await runOpenAiEdit([i], note, { mask: mask, fromEdited: true });
+};
 
 // タイルのフィードバック操作
 function aiFbPanel(i){ return document.querySelector(`[data-fb-panel="${i}"]`); }
@@ -2485,6 +2760,7 @@ $('#btnTestOpenai').onclick = async () => {
   $('#aiAutoOrient').checked = !!cfg.autoOrient;
   renderAiNotes();
   updateAiCostHint();
+  renderAiSpend();
 })();
 
 // 写真1枚のコントラスト/彩度/色温度/シャープ
