@@ -1888,11 +1888,11 @@ function specTileHtml(i){
   return `
     <div class="spec-tile${hasEdited ? ' has-edited' : ''}${(st && st.aiEngine === 'openai') ? ' ai-edited' : ''}" data-photo-idx="${i}">
       <div class="spec-tile-pair">
-        <div class="spec-tile-img" data-action="zoom" data-photo-idx="${i}" title="クリックで拡大">
+        <div class="spec-tile-img" data-action="zoom" data-side="before" data-photo-idx="${i}" title="クリックで加工前を拡大">
           <img src="${ph.blobUrl}" alt="${escapeHtml(ph.name)}">
           <span class="spec-tile-badge original">加工前</span>
         </div>
-        <div class="spec-tile-img edited-slot" data-action="zoom" data-photo-idx="${i}" title="クリックで拡大">
+        <div class="spec-tile-img edited-slot" data-action="zoom" data-side="after" data-photo-idx="${i}" title="クリックで加工後を拡大">
           <img${hasEdited ? ` src="${st.editedBlobUrl}"` : ''} alt="${escapeHtml(ph.name)}">
           <span class="spec-tile-badge edited">✨ 加工後</span>
         </div>
@@ -1998,7 +1998,7 @@ async function renderEditProductList(){
 // クリックハンドラ(タイルだけ差し替えたときも同じ関数で貼り直す)
 function bindEditHandlers(root){
   root.querySelectorAll('[data-action="zoom"]').forEach(el => {
-    el.onclick = () => openLightbox(+el.dataset.photoIdx);
+    el.onclick = () => openLightbox(+el.dataset.photoIdx, el.dataset.side);
   });
   root.querySelectorAll('[data-action="run-product"]').forEach(el => {
     el.onclick = () => runEditForProducts([+el.dataset.productIdx]);
@@ -3265,7 +3265,8 @@ function getZoomablePhotoIdxs(){
   return idxs;
 }
 
-function openLightbox(photoIdx){
+// side: 'after'(加工後をクリック) / 'before'(加工前をクリック)
+function openLightbox(photoIdx, side){
   lbState.photoIdxs = getZoomablePhotoIdxs();
   lbState.pos = lbState.photoIdxs.indexOf(photoIdx);
   if(lbState.pos < 0) lbState.pos = 0;
@@ -3273,9 +3274,9 @@ function openLightbox(photoIdx){
   lbState.rot = 0;
   const st = editState[photoIdx];
   const hasEdited = !!(st && st.editedBlobUrl);
-  lbState.showEdited = hasEdited;
-  // 加工後があれば比較スライダーをデフォルトで開く(違いが分かりやすい)
-  lbState.compareMode = hasEdited;
+  // クリックした側の1枚だけを大きく見せる(比較したいときは ⇔ ボタンで切替)
+  lbState.showEdited = (side === 'before') ? false : hasEdited;
+  lbState.compareMode = false;
   lbState.cmpPercent = 50;
   stopAutoPlay();
   $('#lightbox').classList.remove('hidden');
@@ -3379,8 +3380,8 @@ function stopAutoPlay(){
 
 $('#lbClose').onclick = closeLightbox;
 $('#lightbox').addEventListener('click', (e) => { if(e.target.id === 'lightbox') closeLightbox(); });
-$('#lbPrev').onclick = () => { stopAutoPlay(); lbState.pos = (lbState.pos - 1 + lbState.photoIdxs.length) % lbState.photoIdxs.length; lbState.zoom = LB_ZOOM_DEFAULT; lbState.rot = 0; const st = editState[lbState.photoIdxs[lbState.pos]]; lbState.compareMode = !!(st && st.editedBlobUrl); lbState.cmpPercent = 50; renderLightbox(); };
-$('#lbNext').onclick = () => { stopAutoPlay(); lbState.pos = (lbState.pos + 1) % lbState.photoIdxs.length; lbState.zoom = LB_ZOOM_DEFAULT; lbState.rot = 0; const st = editState[lbState.photoIdxs[lbState.pos]]; lbState.compareMode = !!(st && st.editedBlobUrl); lbState.cmpPercent = 50; renderLightbox(); };
+$('#lbPrev').onclick = () => { stopAutoPlay(); lbState.pos = (lbState.pos - 1 + lbState.photoIdxs.length) % lbState.photoIdxs.length; lbState.zoom = LB_ZOOM_DEFAULT; lbState.rot = 0; const st = editState[lbState.photoIdxs[lbState.pos]]; lbState.showEdited = !!(st && st.editedBlobUrl); lbState.compareMode = false; lbState.cmpPercent = 50; renderLightbox(); };
+$('#lbNext').onclick = () => { stopAutoPlay(); lbState.pos = (lbState.pos + 1) % lbState.photoIdxs.length; lbState.zoom = LB_ZOOM_DEFAULT; lbState.rot = 0; const st = editState[lbState.photoIdxs[lbState.pos]]; lbState.showEdited = !!(st && st.editedBlobUrl); lbState.compareMode = false; lbState.cmpPercent = 50; renderLightbox(); };
 $('#lbZoomIn').onclick = () => { lbState.zoom = Math.min(8, lbState.zoom * 1.4); renderLightbox(); };
 $('#lbZoomOut').onclick = () => { lbState.zoom = Math.max(0.2, lbState.zoom / 1.4); renderLightbox(); };
 $('#lbZoomReset').onclick = () => { lbState.zoom = (Math.abs(lbState.zoom - 1) < 0.01) ? LB_ZOOM_DEFAULT : 1; lbState.rot = 0; lbState.cmpPercent = 50; renderLightbox(); };
