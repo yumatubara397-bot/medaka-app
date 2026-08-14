@@ -519,6 +519,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
                 <option value="high">高品質 high</option>
               </select>
               <button id="btnAiAll" class="btn btn-primary btn-mini" title="全商品の個体写真をまとめて「いい感じに」します">🤖 全部を「いい感じに」</button>
+              <button id="btnAiDiscardAll" class="btn btn-ghost btn-mini" title="AIで作った画像を全部消して元画像に戻します（キャッシュも消えます）">🗑 AI結果を全部消す</button>
             </div>
           </div>
           <div class="ai-opts">
@@ -1942,6 +1943,7 @@ function specTileHtml(i){
         <div class="spec-tile-tools">
           <button class="spec-tile-flip" data-action="ai-good" data-photo-idx="${i}" title="この1枚をChatGPTで「いい感じに」する">🤖</button>
           <button class="spec-tile-flip ai-only" data-action="ai-mask" data-photo-idx="${i}" title="直したい場所を塗って部分修正する">🖌</button>
+          <button class="spec-tile-flip ai-only" data-action="ai-discard" data-photo-idx="${i}" title="AI結果を消して元画像に戻す">🗑</button>
           <button class="spec-tile-flip" data-action="ai-clean" data-photo-idx="${i}" title="この1枚だけGeminiでゴミ取り（約6円）">🧹</button>
           <button class="spec-tile-flip${adj.rot ? ' on' : ''}" data-action="rotate" data-photo-idx="${i}" title="90°回転（現在 ${adj.rot}°）">↻</button>
           ${flipButtonsHtml(i)}
@@ -2043,6 +2045,9 @@ function bindEditHandlers(root){
   });
   root.querySelectorAll('[data-action="ai-mask"]').forEach(el => {
     el.onclick = (e) => { e.stopPropagation(); openMaskModal(+el.dataset.photoIdx); };
+  });
+  root.querySelectorAll('[data-action="ai-discard"]').forEach(el => {
+    el.onclick = (e) => { e.stopPropagation(); discardAiResult(+el.dataset.photoIdx); };
   });
   root.querySelectorAll('[data-action="ai-ok"]').forEach(el => {
     el.onclick = (e) => { e.stopPropagation(); closeAiFb(+el.dataset.photoIdx); toast('👍 この仕上がりで出品します', 'ok'); };
@@ -2338,7 +2343,9 @@ function buildAiPrompt(extra){
   const lines = [AI_BASE_PROMPT];
   const opt = [];
   if(cfg.square)    opt.push('・仕上がりは正方形(1:1)。メダカを中央に置き、ヒレが切れないようにする。すでに黒い余白が足してある場合はその黒をそのまま活かし、被写体を引き伸ばさない');
-  if(cfg.blackBg)   opt.push('・背景は完全な黒（真っ黒）に統一する。水面・容器の縁・底床が写っている場合も自然に黒へなじませる');
+  if(cfg.blackBg)   opt.push('・背景は完全な黒（#000000）に統一する。水面・容器の縁・底床が写っている場合も自然に黒へなじませる。\n'
+                           + '  灰色がかった黒・紫がかった黒・グラデーション・模様・光の帯を入れない。\n'
+                           + '  すでに真っ黒な部分は、そのまま真っ黒のまま変えないこと');
   if(cfg.autoOrient)opt.push('・メダカの向きは、商品写真として最も見栄えが良いと思う向きに整える（必要なら左右反転してよい）。ただし体型・ヒレの形は変えないこと');
   if(opt.length) lines.push('', '【仕上げの指定】', opt.join('\n'));
 
@@ -2395,9 +2402,56 @@ async function prepareAiInput(file, square){
   const ctx = c.getContext('2d');
   ctx.imageSmoothingQuality = 'high';
   if(square){ ctx.fillStyle = '#000'; ctx.fillRect(0, 0, side, side); }
-  ctx.drawImage(bmp, square ? (side - w) / 2 : 0, square ? (side - h) / 2 : 0, w, h);
+  const dx = square ? (side - w) / 2 : 0;
+  const dy = square ? (side - h) / 2 : 0;
+  ctx.drawImage(bmp, dx, dy, w, h);
   if(bmp.close) bmp.close();
-  return c.toDataURL('image/png');
+  // 写真そのものが入っている範囲(=黒帯でない範囲)も返す。AI結果の黒帯を戻すのに使う
+  return { dataUrl: c.toDataURL('image/png'), rect: { x: dx, y: dy, w: w, h: h, side: c.width } };
+}
+
+// AI結果の背景を確実に黒へ戻す(Canvas・無料)
+// ① 自分で足した黒帯の部分は必ず純黒に塗り直す
+// ② 暗い画素をなだらかに純黒へ落とす(メダカ本体の暗部を潰さないよう弱めのしきい値)
+function enforceBlackBackground(blob, rect){
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth; c.height = img.naturalHeight;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+
+      // ① 黒帯を塗り直す(送った画像と返ってきた画像でサイズが違っても比率で合わせる)
+      if(rect && rect.side){
+        const k = c.width / rect.side;
+        const x = Math.round(rect.x * k), y = Math.round(rect.y * k);
+        const w = Math.round(rect.w * k), h = Math.round(rect.h * k);
+        ctx.fillStyle = '#000';
+        if(y > 0){ ctx.fillRect(0, 0, c.width, y); ctx.fillRect(0, y + h, c.width, c.height - (y + h)); }
+        if(x > 0){ ctx.fillRect(0, 0, x, c.height); ctx.fillRect(x + w, 0, c.width - (x + w), c.height); }
+      }
+
+      // ② 暗部を純黒へ(しきい値未満は0、そこから少し上はなだらかに落とす)
+      const HARD = 24, SOFT = 44;
+      const d = ctx.getImageData(0, 0, c.width, c.height);
+      const p = d.data;
+      for(let i = 0; i < p.length; i += 4){
+        const lum = 0.299*p[i] + 0.587*p[i+1] + 0.114*p[i+2];
+        if(lum >= SOFT) continue;
+        const k = lum <= HARD ? 0 : (lum - HARD) / (SOFT - HARD);
+        p[i] = Math.round(p[i] * k);
+        p[i+1] = Math.round(p[i+1] * k);
+        p[i+2] = Math.round(p[i+2] * k);
+      }
+      ctx.putImageData(d, 0, 0);
+      c.toBlob(b => b ? resolve(b) : reject(new Error('黒背景の処理に失敗しました')), 'image/png');
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('画像を読み込めませんでした')); };
+    img.src = url;
+  });
 }
 
 // 部分修正(マスク)用のプロンプト
@@ -2458,11 +2512,15 @@ async function runOpenAiEdit(photoIdxs, extraNote, opts){
     fill.style.width = (n / photoIdxs.length * 100).toFixed(1) + '%';
     try {
       // 部分修正のときは「今の加工後画像」を入力にする(マスクと同じ絵・同じサイズでないと合わない)
-      let dataUrl;
+      let dataUrl, padRect = null;
       if(opts && opts.fromEdited && editState[i] && editState[i].editedBlobUrl){
         dataUrl = await blobToPngDataUrl(await (await fetch(editState[i].editedBlobUrl)).blob());
       } else {
-        dataUrl = await prepareAiInput(await ph.handle.getFile(), !!cfg.square);
+        // 作り直しのときは、前回のAI結果を先に捨てて必ず元画像から始める
+        await clearAiResult(i, { skipRender: true });
+        const prep = await prepareAiInput(await ph.handle.getFile(), !!cfg.square);
+        dataUrl = prep.dataUrl;
+        padRect = cfg.square ? prep.rect : null;
       }
       const body = {
         action: 'openai_edit', image: dataUrl, prompt: prompt,
@@ -2472,7 +2530,13 @@ async function runOpenAiEdit(photoIdxs, extraNote, opts){
       if(useMask) body.mask = opts.mask;
       const json = await postGas(body);
       if(!json || !json.ok || !json.image) throw new Error(friendlyGasError((json && json.error) || 'OpenAI応答が不正です'));
-      const blob = await (await fetch(json.image)).blob();
+      let blob = await (await fetch(json.image)).blob();
+
+      // 「背景を真っ黒に」がONなら、AI任せにせずCanvasで確実に黒へ戻す(無料)
+      if(cfg.blackBg){
+        try { blob = await enforceBlackBackground(blob, padRect); }
+        catch(bgErr){ console.warn('黒背景の後処理をスキップ', bgErr); }
+      }
 
       const prev = editState[i];
       if(prev){
@@ -2674,6 +2738,31 @@ $('#btnMaskRun').onclick = async () => {
   await runOpenAiEdit([i], note, { mask: mask, fromEdited: true });
 };
 
+// ===== AI結果の破棄 =====
+// 同じ写真をAIで作り直すとき、前回(＝古いモデル・低い画質)の結果が残らないようにする。
+// IndexedDBに残っているキャッシュも消すので、古い結果が復活することはない。
+async function clearAiResult(i, opts){
+  const st = editState[i];
+  if(st){
+    if(st.editedBlobUrl) URL.revokeObjectURL(st.editedBlobUrl);
+    if(st.baseBlobUrl) URL.revokeObjectURL(st.baseBlobUrl);
+    delete editState[i];
+  }
+  try {
+    const folder = (folderHandle && folderHandle.name) || 'noname';
+    await editDbDeleteByPrefix(folder + ':' + photos[i].name + ':');
+  } catch(e){ console.warn('キャッシュ削除に失敗', e); }
+  if(!(opts && opts.skipRender)){
+    await recomposePhoto(i);                    // 手動調整(明るさ等)が残っていれば元画像から作り直す
+    if(!refreshSpecTile(i)) await renderEditProductList();
+  }
+}
+async function discardAiResult(i){
+  if(!editState[i]){ toast('この写真にはAI結果がありません', 'err'); return; }
+  await clearAiResult(i);
+  toast('AI結果を消して元画像に戻しました', 'ok');
+}
+
 // タイルのフィードバック操作
 function aiFbPanel(i){ return document.querySelector(`[data-fb-panel="${i}"]`); }
 function openAiFb(i){ const p = aiFbPanel(i); if(p) p.classList.add('open'); }
@@ -2700,6 +2789,15 @@ $('#btnAiAll').onclick = () => {
   const yen = (AI_COST_YEN[cfg.quality] || 5) * idxs.length;
   if(!confirm(`${idxs.length}枚を ChatGPT で「いい感じに」します。\n目安 約${yen}円（${cfg.quality}品質）\n\n実行しますか？`)) return;
   runOpenAiEdit(idxs, '');
+};
+$('#btnAiDiscardAll').onclick = async () => {
+  const idxs = [];
+  products.forEach(p => p.specimenIdxs.forEach(i => { if(editState[i]) idxs.push(i); }));
+  if(idxs.length === 0){ toast('消すAI結果がありません', 'err'); return; }
+  if(!confirm(`${idxs.length}枚のAI加工結果を消して元画像に戻します。\n（保存済みのキャッシュも消えるので、次回は必ず作り直しになります）\n\nよろしいですか？`)) return;
+  for(const i of idxs) await clearAiResult(i, { skipRender: true });
+  await renderEditProductList();
+  toast(`${idxs.length}枚のAI結果を消しました`, 'ok');
 };
 $('#btnAiNoteAdd').onclick = () => {
   const el = $('#aiNoteInput');
@@ -3150,8 +3248,8 @@ async function runEditTasks(tasks, override){
 // ===== ライトボックス(写真クリックで拡大) =====
 // ============================================================
 
-// 画面に収まる大きさを1.0としたときの既定ズーム(150%)
-const LB_ZOOM_DEFAULT = 1.5;
+// 画面に収まる大きさを1.0としたときの既定ズーム(130%)
+const LB_ZOOM_DEFAULT = 1.3;
 let lbState = {
   photoIdxs: [], pos: 0, zoom: LB_ZOOM_DEFAULT, rot: 0,
   showEdited: true,    // A/B 単一表示時にどっちを出すか
