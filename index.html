@@ -1154,14 +1154,141 @@ function hasPixelAdj(a){
 function adjustBrightnessBlob(blob, level, maxEdge){
   return applyAdjustBlob(blob, { bright: brightnessLevel(level) }, maxEdge);
 }
-function applyAdjustBlob(blob, adj, maxEdge){
+// ===== 高速化: デコード済みのソースを使い回す =====
+// スライダーを動かすたびに元の巨大JPEGをデコードし直すと遅いので、
+// 縮小済みの ImageBitmap をキャッシュしておく(最大6枚)
+const srcBmpCache = new Map();   // key -> ImageBitmap
+function srcBmpKey(i, maxEdge){
+  const st = editState[i] || {};
+  return i + '|' + (st.baseBlobUrl || 'orig') + '|' + maxEdge;
+}
+function dropSrcBitmaps(i){
+  for(const k of Array.from(srcBmpCache.keys())){
+    if(k.startsWith(i + '|')){
+      const b = srcBmpCache.get(k);
+      if(b && b.close) b.close();
+      srcBmpCache.delete(k);
+    }
+  }
+}
+async function getSourceBitmap(i, maxEdge){
+  const key = srcBmpKey(i, maxEdge);
+  const hit = srcBmpCache.get(key);
+  if(hit){                       // LRU: 使ったものを最後に回す
+    srcBmpCache.delete(key); srcBmpCache.set(key, hit);
+    return hit;
+  }
+  const blob = await flipSourceBlob(i);
+  let bmp;
+  try {
+    // デコードと縮小を1回でやる(メインスレッドを止めにくい)
+    bmp = await createImageBitmap(blob, { resizeWidth: maxEdge, resizeQuality: 'high' });
+    if(bmp.height > maxEdge){    // 縦長だった場合は高さ基準でやり直す
+      bmp.close && bmp.close();
+      bmp = await createImageBitmap(blob, { resizeHeight: maxEdge, resizeQuality: 'high' });
+    }
+  } catch(e){
+    bmp = await createImageBitmap(blob);
+  }
+  srcBmpCache.set(key, bmp);
+  while(srcBmpCache.size > 6){    // 古いものから捨てる
+    const oldKey = srcBmpCache.keys().next().value;
+    const old = srcBmpCache.get(oldKey);
+    if(old && old.close) old.close();
+    srcBmpCache.delete(oldKey);
+  }
+  return bmp;
+}
+
+// ImageBitmap から直接調整をかける(デコードを省くぶん速い)
+function applyAdjustFromBitmap(bmp, adj, opts){
+  const o = opts || {};
+  const c = document.createElement('canvas');
+  c.width = bmp.width; c.height = bmp.height;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(bmp, 0, 0);
+  applyAdjustToContext(ctx, c, adj, o.skipSharpen);
+  return new Promise((resolve, reject) => {
+    c.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')),
+             'image/jpeg', o.quality || 0.9);
+  });
+}
+
+// 画素処理の本体(canvasのcontextを直接書き換える)。
+// Blob版・ImageBitmap版の両方から呼ぶので、ここだけを持てば処理は1か所にまとまる
+function applyAdjustToContext(ctx, c, adj, skipSharpen){
   const a = Object.assign({}, ADJ_DEFAULT, adj || {});
   const p = brightnessParams(a.bright);
   const contrast = Math.max(-100, Math.min(100, +a.contrast || 0)) / 100;
   const satAmt   = Math.max(-100, Math.min(100, +a.sat || 0)) / 100;
   const warmAmt  = Math.max(-100, Math.min(100, +a.warm || 0)) / 100;
-  const sharpAmt = Math.max(0, Math.min(100, +a.sharp || 0)) / 100;
+  const sharpAmt = skipSharpen ? 0 : Math.max(0, Math.min(100, +a.sharp || 0)) / 100;
 
+  const imgData = ctx.getImageData(0, 0, c.width, c.height);
+  const d = imgData.data;
+
+  // === LUT: 輝度値 0-255 → 補正後の値 ===
+  // シャドウ持ち上げ(暗部ほど強く) / ハイライト圧縮(白飛び防止) / コントラスト
+  const lut = new Uint8Array(256);
+  for(let i = 0; i < 256; i++){
+    const x = i / 255;
+    const shadowWeight = Math.pow(Math.max(0, 1 - i/160), 1.8);   // i=0で1.0, i=160で0
+    const lifted = x + p.shadows * shadowWeight * (1 - x);
+    const hiWeight = Math.pow(Math.max(0, (i - 180)/75), 2.0);    // i=180で0, i=255で1.0
+    let compressed = lifted - p.highlightCompress * hiWeight * (lifted - 0.95);
+    if(contrast) compressed = 0.5 + (compressed - 0.5) * (1 + contrast * 0.9);
+    lut[i] = Math.min(255, Math.max(0, Math.round(compressed * 255)));
+  }
+
+  const vibStrength = p.vibrance;
+  const warmR = 1 + warmAmt * 0.22, warmB = 1 - warmAmt * 0.22;
+  const satK = 1 + satAmt;
+  for(let i = 0; i < d.length; i += 4){
+    const r = d[i], g = d[i+1], b = d[i+2];
+    const lum = 0.299*r + 0.587*g + 0.114*b;
+    if(lum < p.blackProtect) continue;     // 純黒(背景)は触らない
+
+    // 1. 輝度ベースのリフト(色相を保ったまま明るくする)
+    const newLum = lut[Math.round(lum)];
+    const ratio = lum > 1 ? newLum / lum : 1;
+    let nr = r * ratio, ng = g * ratio, nb = b * ratio;
+
+    // 2. Vibrance: 鈍い色だけ彩度を上げる
+    if(vibStrength > 0){
+      const maxC = Math.max(nr, ng, nb);
+      const minC = Math.min(nr, ng, nb);
+      const sat = maxC > 1 ? (maxC - minC) / maxC : 0;
+      const vibFactor = vibStrength * (1 - sat) * 1.5;
+      const avgC = (nr + ng + nb) / 3;
+      nr = avgC + (nr - avgC) * (1 + vibFactor);
+      ng = avgC + (ng - avgC) * (1 + vibFactor);
+      nb = avgC + (nb - avgC) * (1 + vibFactor);
+    }
+    // 3. 彩度(全体を一律に)
+    if(satAmt){
+      const avgS = (nr + ng + nb) / 3;
+      nr = avgS + (nr - avgS) * satK;
+      ng = avgS + (ng - avgS) * satK;
+      nb = avgS + (nb - avgS) * satK;
+    }
+    // 4. 色温度(プラスで暖色)
+    if(warmAmt){ nr *= warmR; nb *= warmB; }
+
+    d[i]   = nr < 0 ? 0 : nr > 255 ? 255 : nr;
+    d[i+1] = ng < 0 ? 0 : ng > 255 ? 255 : ng;
+    d[i+2] = nb < 0 ? 0 : nb > 255 ? 255 : nb;
+  }
+  ctx.putImageData(imgData, 0, 0);
+
+  // 5. シャープ(アンシャープマスク)。重いのでドラッグ中は skipSharpen で飛ばす
+  if(sharpAmt > 0){
+    try { applyUnsharpMask(ctx, c, sharpAmt * 1.2); }
+    catch(shErr){ console.warn('sharpen skipped', shErr); }
+  }
+}
+
+// maxEdge を渡すとその長辺に縮小してから処理する
+function applyAdjustBlob(blob, adj, maxEdge){
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(blob);
@@ -1173,86 +1300,11 @@ function applyAdjustBlob(blob, adj, maxEdge){
         const s = maxEdge / Math.max(w, h);
         w = Math.max(1, Math.round(w * s)); h = Math.max(1, Math.round(h * s));
       }
-      c.width = w;
-      c.height = h;
-      const ctx = c.getContext('2d');
+      c.width = w; c.height = h;
+      const ctx = c.getContext('2d', { willReadFrequently: true });
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, 0, 0, w, h);
-      const imgData = ctx.getImageData(0, 0, c.width, c.height);
-      const d = imgData.data;
-
-      // === LUT: 輝度値 0-255 → 補正後の値 ===
-      // シャドウ持ち上げ:
-      //   暗いピクセル(0-128) ほど強く持ち上げる
-      //   weight = (1 - in/128)^2 で 暗いほど1.0、明るいほど0.0
-      // ハイライト保護:
-      //   明るいピクセル(192-255) を軽くカーブで圧縮
-      const lut = new Uint8Array(256);
-      for(let i = 0; i < 256; i++){
-        const x = i / 255;
-        // シャドウリフト: 暗部のみ強く持ち上げる(滑らかな曲線)
-        const shadowWeight = Math.pow(Math.max(0, 1 - i/160), 1.8);   // i=0で1.0, i=160で0
-        const lifted = x + p.shadows * shadowWeight * (1 - x);         // 明るくする方向
-        // ハイライト圧縮: 明部のみ軽く抑える
-        const hiWeight = Math.pow(Math.max(0, (i - 180)/75), 2.0);     // i=180で0, i=255で1.0
-        let compressed = lifted - p.highlightCompress * hiWeight * (lifted - 0.95);
-        // コントラスト: 中間(0.5)を軸に伸縮させる
-        if(contrast) compressed = 0.5 + (compressed - 0.5) * (1 + contrast * 0.9);
-        lut[i] = Math.min(255, Math.max(0, Math.round(compressed * 255)));
-      }
-
-      // === ピクセル走査: LUT適用 + 彩度強化(背景黒は保護) ===
-      const vibStrength = p.vibrance;
-      for(let i = 0; i < d.length; i += 4){
-        const r = d[i], g = d[i+1], b = d[i+2];
-        const lum = 0.299*r + 0.587*g + 0.114*b;
-        if(lum < p.blackProtect){
-          // 純黒は触らない(背景の漆黒を保持)
-          continue;
-        }
-        // 1. 輝度ベースのリフト(色相を保ったまま明るくする)
-        const newLum = lut[Math.round(lum)];
-        const ratio = lum > 1 ? newLum / lum : 1;
-        let nr = r * ratio, ng = g * ratio, nb = b * ratio;
-
-        // 2. Vibrance: 鈍い色だけ彩度を上げる
-        if(vibStrength > 0){
-          const maxC = Math.max(nr, ng, nb);
-          const minC = Math.min(nr, ng, nb);
-          const sat = maxC > 1 ? (maxC - minC) / maxC : 0;       // 0-1: 現在の彩度
-          // vibrance係数: 彩度が低いほど効きが強い(自然な仕上がり)
-          const vibFactor = vibStrength * (1 - sat) * 1.5;
-          const avgC = (nr + ng + nb) / 3;
-          nr = avgC + (nr - avgC) * (1 + vibFactor);
-          ng = avgC + (ng - avgC) * (1 + vibFactor);
-          nb = avgC + (nb - avgC) * (1 + vibFactor);
-        }
-
-        // 3. 彩度(全体を一律に上げ下げ。マイナスでモノクロ寄り)
-        if(satAmt){
-          const avgS = (nr + ng + nb) / 3;
-          const k = 1 + satAmt;
-          nr = avgS + (nr - avgS) * k;
-          ng = avgS + (ng - avgS) * k;
-          nb = avgS + (nb - avgS) * k;
-        }
-
-        // 4. 色温度(プラスで暖色=赤寄り、マイナスで寒色=青寄り)
-        if(warmAmt){
-          nr *= 1 + warmAmt * 0.22;
-          nb *= 1 - warmAmt * 0.22;
-        }
-
-        d[i]   = Math.min(255, Math.max(0, Math.round(nr)));
-        d[i+1] = Math.min(255, Math.max(0, Math.round(ng)));
-        d[i+2] = Math.min(255, Math.max(0, Math.round(nb)));
-      }
-      ctx.putImageData(imgData, 0, 0);
-      // 5. シャープ(アンシャープマスク)
-      if(sharpAmt > 0){
-        try { applyUnsharpMask(ctx, c, sharpAmt * 1.2); }
-        catch(shErr){ console.warn('sharpen skipped', shErr); }
-      }
+      applyAdjustToContext(ctx, c, adj, false);
       c.toBlob((b) => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/jpeg', 0.93);
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('画像読込失敗')); };
@@ -2193,7 +2245,10 @@ async function flipSourceBlob(i){
 // 加工後画像を組み立て直す: ベース(AI加工結果 or 元画像) → 明るさ → 反転
 // 明るさも反転も Canvas 処理なので API 課金は発生しない
 const BRIGHT_MAX_EDGE = 1800;   // 出品時は長辺1600pxに縮むのでこの解像度で十分
-async function recomposePhoto(i){
+// preview=true: ドラッグ中の速さ優先(小さめ・シャープ省略)
+// preview=false: 指を離したときの仕上げ(通常サイズ・シャープあり)
+const PREVIEW_MAX_EDGE = 900;
+async function recomposePhoto(i, preview){
   const st = editState[i] || {};
   const f = getFlip(i);
   const adj = getAdj(i);
@@ -2204,10 +2259,22 @@ async function recomposePhoto(i){
     // AI加工なし・調整なし・反転なし → 「加工後」を消して元表示に戻す
     if(st.editedBlobUrl) URL.revokeObjectURL(st.editedBlobUrl);
     delete editState[i];
+    dropSrcBitmaps(i);
     return;
   }
-  let out = await flipSourceBlob(i);                        // ベース画像
-  if(hasPixelAdj(adj)) out = await applyAdjustBlob(out, adj, BRIGHT_MAX_EDGE);
+
+  const maxEdge = preview ? PREVIEW_MAX_EDGE : BRIGHT_MAX_EDGE;
+  let out;
+  if(hasPixelAdj(adj)){
+    // デコード済みのソースを使い回すので、2回目以降が速い
+    const bmp = await getSourceBitmap(i, maxEdge);
+    out = await applyAdjustFromBitmap(bmp, adj, {
+      skipSharpen: !!preview,
+      quality: preview ? 0.82 : 0.93
+    });
+  } else {
+    out = await flipSourceBlob(i);
+  }
   if(adj.rot) out = await rotateBlob(out, adj.rot);
   if(f.h || f.v) out = await flipBlob(out, f.h, f.v);
   if(st.editedBlobUrl) URL.revokeObjectURL(st.editedBlobUrl);
@@ -2216,6 +2283,7 @@ async function recomposePhoto(i){
     flip: { h:f.h, v:f.v },
     adjust: Object.assign({}, adj),
     brightness: adj.bright,
+    preview: !!preview,
     showEdited: true
   });
 }
@@ -2237,11 +2305,15 @@ async function toggleFlip(i, axis){
 
 // ===== 明るさスライダー(Canvas・無料・即プレビュー) =====
 // 待ち行列方式: ドラッグ中に何度呼ばれても最後の値まで必ず追いつく(取りこぼさない)
-const brightQueue = new Set();
+const brightQueue = new Map();     // photoIdx -> preview(true/false)
 let brightRunning = false;
 const brightTimers = {};
-function scheduleRecompose(idxs){
-  idxs.forEach(i => brightQueue.add(i));
+function scheduleRecompose(idxs, preview){
+  idxs.forEach(i => {
+    // 同じ写真が既に「仕上げ」待ちなら、プレビューで上書きしない
+    if(brightQueue.get(i) === false) return;
+    brightQueue.set(i, !!preview);
+  });
   runBrightQueue();
 }
 async function runBrightQueue(){
@@ -2249,10 +2321,11 @@ async function runBrightQueue(){
   brightRunning = true;
   try {
     while(brightQueue.size){
-      const i = brightQueue.values().next().value;
+      const i = brightQueue.keys().next().value;
+      const preview = brightQueue.get(i);
       brightQueue.delete(i);
       try {
-        await recomposePhoto(i);
+        await recomposePhoto(i, preview);
         if(!refreshSpecTile(i)) await renderEditProductList();
       } catch(e){
         console.warn('brightness failed', photos[i] && photos[i].name, e);
@@ -2270,7 +2343,7 @@ function onPhotoBrightnessInput(photoIdx, value, immediate){
   const val = tile && tile.querySelector('.tile-bright-val');
   if(val) val.textContent = getPhotoBrightness(photoIdx);
   clearTimeout(brightTimers['p' + photoIdx]);
-  brightTimers['p' + photoIdx] = setTimeout(() => scheduleRecompose([photoIdx]), immediate ? 0 : 150);
+  brightTimers['p' + photoIdx] = setTimeout(() => scheduleRecompose([photoIdx], !immediate), immediate ? 0 : 150);
 }
 // ============================================================
 // ===== 🤖 ChatGPT(OpenAI画像編集)で「いい感じにして」 =====
@@ -2551,6 +2624,7 @@ async function runOpenAiEdit(photoIdxs, extraNote, opts){
         modes: ['openai'],
         showEdited: true
       };
+      dropSrcBitmaps(i);   // AI結果が変わったので、調整用のソースキャッシュを作り直す
       // 使った金額を記録(APIのusageがあれば実額、無ければ品質ごとの目安)
       const yen = yenFromUsage(json.usage, cfg.quality);
       spent += yen;
@@ -2748,6 +2822,7 @@ async function clearAiResult(i, opts){
     if(st.baseBlobUrl) URL.revokeObjectURL(st.baseBlobUrl);
     delete editState[i];
   }
+  dropSrcBitmaps(i);
   try {
     const folder = (folderHandle && folderHandle.name) || 'noname';
     await editDbDeleteByPrefix(folder + ':' + photos[i].name + ':');
@@ -2919,8 +2994,8 @@ function onPhotoAdjInput(photoIdx, key, value, immediate){
   if(val) val.textContent = fmtAdj(ADJ_SLIDERS.find(s => s.k === key), value);
   clearTimeout(brightTimers['a' + photoIdx]);
   // シャープは重いので離してから処理する
-  const delay = immediate ? 0 : (key === 'sharp' ? 400 : 150);
-  brightTimers['a' + photoIdx] = setTimeout(() => scheduleRecompose([photoIdx]), delay);
+  const delay = immediate ? 0 : 120;
+  brightTimers['a' + photoIdx] = setTimeout(() => scheduleRecompose([photoIdx], !immediate), delay);
 }
 // 90°回転
 function rotatePhoto(photoIdx){
@@ -2977,7 +3052,7 @@ function onBrightnessInput(productIdx, value, immediate){
   clearTimeout(brightTimers['c' + productIdx]);
   // ドラッグ中は先頭1枚だけ、離したら全部
   const targets = immediate ? idxs : idxs.slice(0, 1);
-  brightTimers['c' + productIdx] = setTimeout(() => scheduleRecompose(targets), immediate ? 0 : 180);
+  brightTimers['c' + productIdx] = setTimeout(() => scheduleRecompose(targets, !immediate), immediate ? 0 : 180);
 }
 
 // 全加工後画像を順次ダウンロード保存
