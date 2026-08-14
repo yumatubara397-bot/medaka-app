@@ -309,7 +309,9 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .lightbox.hidden{display:none !important}
 .lb-stage{max-width:96vw;max-height:80vh;overflow:auto;display:grid;place-items:center;cursor:grab}
 .lb-stage:active{cursor:grabbing}
-.lb-stage img{max-width:none;display:block;transform-origin:center center;transition:transform .15s}
+/* 原寸だと一眼レフの写真が巨大すぎるので、画面に収まる大きさを基準にして
+   その倍率(既定150%)で表示する。はみ出す分は .lb-stage のスクロールで見る */
+.lb-stage img{max-width:96vw;max-height:78vh;width:auto;height:auto;display:block;transform-origin:center center;transition:transform .15s,max-width .15s,max-height .15s}
 .lb-close{position:absolute;top:14px;right:18px;background:transparent;border:none;color:#fff;font-size:34px;line-height:1;cursor:pointer;width:44px;height:44px;border-radius:50%}
 .lb-close:hover{background:rgba(255,255,255,.1)}
 .lb-nav{position:absolute;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.08);border:none;color:#fff;font-size:40px;line-height:1;width:54px;height:80px;border-radius:8px;cursor:pointer}
@@ -511,10 +513,10 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
           <div class="ai-head">
             <div class="ai-title">🤖 ChatGPTで整える <span class="ai-model" id="aiModelBadge">gpt-image-2</span></div>
             <div class="ai-actions">
-              <select id="aiQuality" class="lst-select" title="品質。高いほど綺麗ですが料金も上がります">
-                <option value="low">低品質（速い・安い）</option>
-                <option value="medium" selected>標準</option>
-                <option value="high">高品質（遅い・高い）</option>
+              <select id="aiQuality" class="lst-select" title="品質。費用を抑えるため現在は low に固定しています">
+                <option value="low" selected>低品質 low（固定中）</option>
+                <option value="medium">標準 medium</option>
+                <option value="high">高品質 high</option>
               </select>
               <button id="btnAiAll" class="btn btn-primary btn-mini" title="全商品の個体写真をまとめて「いい感じに」します">🤖 全部を「いい感じに」</button>
             </div>
@@ -777,7 +779,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
       <div class="settings-card">
         <div class="field">
           <label>🤖 ChatGPT（OpenAI）画像編集 <span id="openaiStatus" class="api-status unset">未確認</span></label>
-          <input type="text" id="openaiModel" placeholder="gpt-image-2">
+          <input type="text" id="openaiModel" placeholder="gpt-image-2（モデル名。APIキーはここに入れません）">
         </div>
         <div style="font-size:11px;color:var(--ink-dim);margin-top:6px;line-height:1.7">
           <strong style="color:var(--ink)">APIキーはこのアプリには入れません。</strong>
@@ -2271,13 +2273,26 @@ function onPhotoBrightnessInput(photoIdx, value, immediate){
 const AI_CFG_KEY   = 'medaka_openai_cfg';    // {model, quality, square, blackBg, autoOrient}
 const AI_NOTES_KEY = 'medaka_ai_notes';      // ダメ出しを貯めて毎回守らせる指示
 const AI_MODEL_DEFAULT = 'gpt-image-2';
+// 画質ロック: 費用を抑えるため low 固定。
+// medium/high を使いたくなったら、この定数を false にすれば選べるようになる。
+const AI_QUALITY_LOCKED = true;
+const AI_QUALITY_LOCK_TO = 'low';
 // 品質ごとのおおよその単価(2026年8月時点の公開情報からの目安。実額はOpenAIの請求で確認)
 const AI_COST_YEN = { low: 1, medium: 5, high: 25 };
 
+// 「モデル名」欄にAPIキーを貼ってしまう事故を防ぐ
+function looksLikeApiKey(s){
+  const v = String(s || '').trim();
+  return /^sk-/i.test(v) || v.length > 40;
+}
 function aiCfg(){
   let o = {};
   try { o = JSON.parse(localStorage.getItem(AI_CFG_KEY) || '{}'); } catch(e){ o = {}; }
-  return Object.assign({ model: AI_MODEL_DEFAULT, quality:'medium', square:true, blackBg:true, autoOrient:true }, o);
+  const cfg = Object.assign({ model: AI_MODEL_DEFAULT, quality: AI_QUALITY_LOCK_TO, square:true, blackBg:true, autoOrient:true }, o);
+  // 誤ってAPIキーが保存されていたら既定のモデル名に戻す(画面に出さない)
+  if(looksLikeApiKey(cfg.model)) cfg.model = AI_MODEL_DEFAULT;
+  if(AI_QUALITY_LOCKED) cfg.quality = AI_QUALITY_LOCK_TO;
+  return cfg;
 }
 function saveAiCfg(patch){
   localStorage.setItem(AI_CFG_KEY, JSON.stringify(Object.assign(aiCfg(), patch)));
@@ -2360,7 +2375,7 @@ function updateAiCostHint(){
   const yen = AI_COST_YEN[cfg.quality] || AI_COST_YEN.medium;
   $('#aiModelBadge').textContent = cfg.model;
   $('#aiCostHint').textContent =
-    `${cfg.model} / ${cfg.quality} … 1枚あたり約${yen}円（目安）。個体写真 ${specCount}枚すべてなら約${yen * specCount}円。` +
+    `${cfg.model} / ${cfg.quality}${AI_QUALITY_LOCKED ? '（固定中）' : ''} … 1枚あたり約${yen}円（目安）。個体写真 ${specCount}枚すべてなら約${yen * specCount}円。` +
     (cfg.square ? ' 黒で余白を足して正方形にしてから渡すので、ヒレが伸び縮みしません。' : '');
 }
 
@@ -2692,7 +2707,15 @@ $('#btnAiNoteAdd').onclick = () => {
   else toast('空か、すでに同じ指示があります', 'err');
 };
 $('#aiNoteInput').addEventListener('keydown', e => { if(e.key === 'Enter') $('#btnAiNoteAdd').click(); });
-$('#aiQuality').addEventListener('change', () => { saveAiCfg({ quality: $('#aiQuality').value }); updateAiCostHint(); });
+$('#aiQuality').addEventListener('change', () => {
+  if(AI_QUALITY_LOCKED){
+    $('#aiQuality').value = AI_QUALITY_LOCK_TO;
+    toast(`画質は ${AI_QUALITY_LOCK_TO} に固定中です（費用対策）。上げたい場合は開発者に依頼してください`, 'err');
+    return;
+  }
+  saveAiCfg({ quality: $('#aiQuality').value });
+  updateAiCostHint();
+});
 ['#aiSquare','#aiBlackBg','#aiAutoOrient'].forEach(sel => {
   $(sel).addEventListener('change', () => {
     saveAiCfg({ square: $('#aiSquare').checked, blackBg: $('#aiBlackBg').checked, autoOrient: $('#aiAutoOrient').checked });
@@ -2737,6 +2760,12 @@ function friendlyGasError(msg){
 // 設定タブ: モデル名の保存と接続テスト
 $('#btnSaveOpenaiModel').onclick = () => {
   const m = $('#openaiModel').value.trim() || AI_MODEL_DEFAULT;
+  if(looksLikeApiKey(m)){
+    $('#openaiModel').value = AI_MODEL_DEFAULT;
+    saveAiCfg({ model: AI_MODEL_DEFAULT });
+    toast('⚠️ ここはモデル名の欄です（APIキーは入れないでください）。APIキーはGASのスクリプトプロパティ OPENAI_API_KEY に入れてください', 'err');
+    return;
+  }
   saveAiCfg({ model: m });
   $('#openaiModel').value = m;
   updateAiCostHint();
@@ -2753,9 +2782,11 @@ $('#btnTestOpenai').onclick = async () => {
     if(json && json.ok){
       badge.textContent = json.modelAvailable ? 'OK' : 'キーOK / モデル未確認';
       badge.className = 'api-status set';
+      // モデル名は長い値をそのまま出さない(キーを貼ってしまった場合に画面へ晒さないため)
+      const shown = String(json.model || '').slice(0, 24);
       toast(json.modelAvailable
-        ? `✅ OPENAI_API_KEY 有効・${json.model} が使えます`
-        : `✅ キーは有効ですが ${json.model} が一覧に見つかりません（モデル名を確認してください）`,
+        ? `✅ OPENAI_API_KEY 有効・${shown} が使えます`
+        : `✅ キーは有効です。ただしモデル名「${shown}…」が一覧に見つかりません（設定タブのモデル名を gpt-image-2 に直してください）`,
         json.modelAvailable ? 'ok' : 'err');
     } else {
       const err = (json && json.error) || '確認に失敗しました';
@@ -3119,8 +3150,10 @@ async function runEditTasks(tasks, override){
 // ===== ライトボックス(写真クリックで拡大) =====
 // ============================================================
 
+// 画面に収まる大きさを1.0としたときの既定ズーム(150%)
+const LB_ZOOM_DEFAULT = 1.5;
 let lbState = {
-  photoIdxs: [], pos: 0, zoom: 1, rot: 0,
+  photoIdxs: [], pos: 0, zoom: LB_ZOOM_DEFAULT, rot: 0,
   showEdited: true,    // A/B 単一表示時にどっちを出すか
   compareMode: false,  // 比較スライダー表示中か
   cmpPercent: 50,      // スライダーの左→右の割合(0..100)
@@ -3138,7 +3171,7 @@ function openLightbox(photoIdx){
   lbState.photoIdxs = getZoomablePhotoIdxs();
   lbState.pos = lbState.photoIdxs.indexOf(photoIdx);
   if(lbState.pos < 0) lbState.pos = 0;
-  lbState.zoom = 1;
+  lbState.zoom = LB_ZOOM_DEFAULT;
   lbState.rot = 0;
   const st = editState[photoIdx];
   const hasEdited = !!(st && st.editedBlobUrl);
@@ -3180,14 +3213,17 @@ function renderLightbox(){
     cmpEl.classList.add('hidden');
     imgEl.style.display = '';
     imgEl.src = showEdited ? st.editedBlobUrl : ph.blobUrl;
-    imgEl.style.transform = `scale(${lbState.zoom}) rotate(${lbState.rot}deg)`;
+    // 画面に収まる大きさ(96vw/78vh)を1.0として、その倍率で表示する
+    imgEl.style.maxWidth  = (96 * lbState.zoom) + 'vw';
+    imgEl.style.maxHeight = (78 * lbState.zoom) + 'vh';
+    imgEl.style.transform = `rotate(${lbState.rot}deg)`;
   }
 
   // キャプション
   const tag = lbState.compareMode
     ? '  ・ 比較スライダー'
     : (hasEdited ? (showEdited ? '  ・ ✨ 加工後' : '  ・ 加工前') : '  ・ 加工前のみ');
-  $('#lbCaption').textContent = `${ph.name}  (${lbState.pos+1}/${lbState.photoIdxs.length})${tag}`;
+  $('#lbCaption').textContent = `${ph.name}  (${lbState.pos+1}/${lbState.photoIdxs.length})${tag}  ・ ${Math.round(lbState.zoom * 100)}%`;
 
   // ボタン有効/無効
   $('#lbCmpMode').classList.toggle('active', lbState.compareMode);
@@ -3245,11 +3281,11 @@ function stopAutoPlay(){
 
 $('#lbClose').onclick = closeLightbox;
 $('#lightbox').addEventListener('click', (e) => { if(e.target.id === 'lightbox') closeLightbox(); });
-$('#lbPrev').onclick = () => { stopAutoPlay(); lbState.pos = (lbState.pos - 1 + lbState.photoIdxs.length) % lbState.photoIdxs.length; lbState.zoom = 1; lbState.rot = 0; const st = editState[lbState.photoIdxs[lbState.pos]]; lbState.compareMode = !!(st && st.editedBlobUrl); lbState.cmpPercent = 50; renderLightbox(); };
-$('#lbNext').onclick = () => { stopAutoPlay(); lbState.pos = (lbState.pos + 1) % lbState.photoIdxs.length; lbState.zoom = 1; lbState.rot = 0; const st = editState[lbState.photoIdxs[lbState.pos]]; lbState.compareMode = !!(st && st.editedBlobUrl); lbState.cmpPercent = 50; renderLightbox(); };
+$('#lbPrev').onclick = () => { stopAutoPlay(); lbState.pos = (lbState.pos - 1 + lbState.photoIdxs.length) % lbState.photoIdxs.length; lbState.zoom = LB_ZOOM_DEFAULT; lbState.rot = 0; const st = editState[lbState.photoIdxs[lbState.pos]]; lbState.compareMode = !!(st && st.editedBlobUrl); lbState.cmpPercent = 50; renderLightbox(); };
+$('#lbNext').onclick = () => { stopAutoPlay(); lbState.pos = (lbState.pos + 1) % lbState.photoIdxs.length; lbState.zoom = LB_ZOOM_DEFAULT; lbState.rot = 0; const st = editState[lbState.photoIdxs[lbState.pos]]; lbState.compareMode = !!(st && st.editedBlobUrl); lbState.cmpPercent = 50; renderLightbox(); };
 $('#lbZoomIn').onclick = () => { lbState.zoom = Math.min(8, lbState.zoom * 1.4); renderLightbox(); };
 $('#lbZoomOut').onclick = () => { lbState.zoom = Math.max(0.2, lbState.zoom / 1.4); renderLightbox(); };
-$('#lbZoomReset').onclick = () => { lbState.zoom = 1; lbState.rot = 0; lbState.cmpPercent = 50; renderLightbox(); };
+$('#lbZoomReset').onclick = () => { lbState.zoom = (Math.abs(lbState.zoom - 1) < 0.01) ? LB_ZOOM_DEFAULT : 1; lbState.rot = 0; lbState.cmpPercent = 50; renderLightbox(); };
 $('#lbRotate').onclick = () => { lbState.rot = (lbState.rot + 90) % 360; renderLightbox(); };
 $('#lbToggleSide').onclick = () => { stopAutoPlay(); lbState.showEdited = !lbState.showEdited; renderLightbox(); };
 $('#lbCmpMode').onclick = () => {
