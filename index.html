@@ -307,8 +307,13 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 /* ===== ライトボックス ===== */
 .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:1000;display:flex;align-items:center;justify-content:center}
 .lightbox.hidden{display:none !important}
-.lb-stage{max-width:96vw;max-height:80vh;overflow:auto;display:grid;place-items:center;cursor:grab}
-.lb-stage:active{cursor:grabbing}
+/* はみ出した分をドラッグで動かせるように。
+   place-items:center だと左上のはみ出し分がスクロールで到達できなくなるため、
+   flex + 子に margin:auto で中央寄せする(この形なら両方向にスクロールできる) */
+.lb-stage{max-width:96vw;max-height:80vh;overflow:auto;display:flex;cursor:grab;overscroll-behavior:contain}
+.lb-stage > *{margin:auto}
+.lb-stage.panning{cursor:grabbing}
+.lb-stage.panning img{transition:none}
 /* 原寸だと一眼レフの写真が巨大すぎるので、画面に収まる大きさを基準にして
    その倍率(既定150%)で表示する。はみ出す分は .lb-stage のスクロールで見る */
 .lb-stage img{max-width:96vw;max-height:78vh;width:auto;height:auto;display:block;transform-origin:center center;transition:transform .15s,max-width .15s,max-height .15s}
@@ -3420,6 +3425,32 @@ function setCmpPercentFromEvent(e){
 }
 
 // スライダーのドラッグ(マウス + タッチ)
+// 拡大した画像をドラッグで動かす(手のカーソルどおりに掴んで移動できるように)
+(function bindStagePan(){
+  const stage = $('#lbStage');
+  let dragging = false, sx = 0, sy = 0, sl = 0, stp = 0;
+  stage.addEventListener('pointerdown', (e) => {
+    if(e.target.closest && e.target.closest('.lb-cmp-handle')) return;   // 比較スライダーのつまみは除外
+    if(stage.scrollWidth <= stage.clientWidth && stage.scrollHeight <= stage.clientHeight) return;  // はみ出していなければ何もしない
+    dragging = true;
+    stage.classList.add('panning');
+    sx = e.clientX; sy = e.clientY;
+    sl = stage.scrollLeft; stp = stage.scrollTop;
+    try { stage.setPointerCapture(e.pointerId); } catch(err){}
+    e.preventDefault();
+  });
+  stage.addEventListener('pointermove', (e) => {
+    if(!dragging) return;
+    stage.scrollLeft = sl - (e.clientX - sx);
+    stage.scrollTop  = stp - (e.clientY - sy);
+    e.preventDefault();
+  });
+  const end = () => { dragging = false; stage.classList.remove('panning'); };
+  stage.addEventListener('pointerup', end);
+  stage.addEventListener('pointercancel', end);
+  stage.addEventListener('pointerleave', end);
+})();
+
 (function bindCompareDrag(){
   const handle = $('#lbCmpHandle');
   const cmp = $('#lbCompare');
