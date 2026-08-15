@@ -528,18 +528,14 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
           <div class="ai-head">
             <div class="ai-title">🤖 ChatGPTで整える <span class="ai-model" id="aiModelBadge">gpt-image-2</span></div>
             <div class="ai-actions">
-              <select id="aiQuality" class="lst-select" title="品質。費用を抑えるため現在は low に固定しています">
-                <option value="low" selected>低品質 low（固定中）</option>
-                <option value="medium">標準 medium</option>
-                <option value="high">高品質 high</option>
-              </select>
+              <select id="aiQuality" class="lst-select" title="品質。高いほど綺麗ですが1枚あたりの料金が上がります"></select>
               <button id="btnAiAll" class="btn btn-primary btn-mini" title="全商品の個体写真をまとめて「いい感じに」します">🤖 全部を「いい感じに」</button>
               <button id="btnAiDiscardAll" class="btn btn-ghost btn-mini" title="AIで作った画像を全部消して元画像に戻します（キャッシュも消えます）">🗑 AI結果を全部消す</button>
             </div>
           </div>
           <div class="ai-opts">
             <label class="chip-toggle" title="黒で余白を足して正方形にしてから渡します。引き伸ばさないのでヒレの長さが変わりません"><input type="checkbox" id="aiSquare" checked><span>⬛ 正方形(1:1)にする</span></label>
-            <label class="chip-toggle" title="背景を完全な黒に統一します"><input type="checkbox" id="aiBlackBg" checked><span>🌑 背景を真っ黒に</span></label>
+            <label class="chip-toggle" title="黒背景の写真は純黒に締めます。白やグレーの背景は色を変えずに整えるだけにします"><input type="checkbox" id="aiBlackBg" checked><span>🌑 背景を整える（黒は締める / 白・グレーはそのまま）</span></label>
             <label class="chip-toggle" title="商品写真として見栄えの良い向きにChatGPTが揃えます（左右反転あり）"><input type="checkbox" id="aiAutoOrient" checked><span>🔄 向きはAIにおまかせ</span></label>
             <label class="chip-toggle" title="レタッチしたと分からない、撮ったままに近い自然な仕上がりにします"><input type="checkbox" id="aiNatural" checked><span>📷 加工感を出さない</span></label>
             <span class="ai-manual-hint">向きが気に入らなければ ⇄ ⇅ ↻ で手動修正できます</span>
@@ -2381,12 +2377,22 @@ function onPhotoBrightnessInput(photoIdx, value, immediate){
 const AI_CFG_KEY   = 'medaka_openai_cfg';    // {model, quality, square, blackBg, autoOrient}
 const AI_NOTES_KEY = 'medaka_ai_notes';      // ダメ出しを貯めて毎回守らせる指示
 const AI_MODEL_DEFAULT = 'gpt-image-2';
-// 画質ロック: 費用を抑えるため low 固定。
-// medium/high を使いたくなったら、この定数を false にすれば選べるようになる。
-const AI_QUALITY_LOCKED = true;
-const AI_QUALITY_LOCK_TO = 'low';
-// 品質ごとのおおよその単価(2026年8月時点の公開情報からの目安。実額はOpenAIの請求で確認)
-const AI_COST_YEN = { low: 1, medium: 5, high: 25 };
+// 画質は自由に選べる(既定 medium)。固定したいときは LOCKED を true にする
+const AI_QUALITY_LOCKED = false;
+const AI_QUALITY_LOCK_TO = 'medium';
+// 1枚(1024x1024)あたりのおおよその単価。$1=155円換算・2026年8月時点の公開情報からの目安。
+// 実額は加工のたびに usage から計算して「💰 実際に使った額」に出る。
+const AI_COST_TABLE = {
+  'gpt-image-2':      { low: 3, medium: 6, high: 21 },
+  'gpt-image-1.5':    { low: 3, medium: 7, high: 22 },
+  'gpt-image-1':      { low: 4, medium: 8, high: 28 },
+  'gpt-image-1-mini': { low: 1, medium: 2, high: 6  }
+};
+function aiCostTable(model){
+  return AI_COST_TABLE[model || AI_MODEL_DEFAULT] || AI_COST_TABLE['gpt-image-2'];
+}
+// 旧名互換(既定モデルの単価)
+const AI_COST_YEN = AI_COST_TABLE['gpt-image-2'];
 
 // 「モデル名」欄にAPIキーを貼ってしまう事故を防ぐ
 function looksLikeApiKey(s){
@@ -2441,14 +2447,24 @@ const AI_BASE_PROMPT = [
   '・実物と違って見える誇張はしない（生体販売なのでクレームに直結します）'
 ].join('\n');
 
-function buildAiPrompt(extra){
+function buildAiPrompt(extra, bg){
   const cfg = aiCfg();
   const lines = [AI_BASE_PROMPT];
   const opt = [];
-  if(cfg.square)    opt.push('・仕上がりは正方形(1:1)。メダカを中央に置き、ヒレが切れないようにする。すでに黒い余白が足してある場合はその黒をそのまま活かし、被写体を引き伸ばさない');
-  if(cfg.blackBg)   opt.push('・背景は完全な黒（#000000）に統一する。水面・容器の縁・底床が写っている場合も自然に黒へなじませる。\n'
-                           + '  灰色がかった黒・紫がかった黒・グラデーション・模様・光の帯を入れない。\n'
-                           + '  すでに真っ黒な部分は、そのまま真っ黒のまま変えないこと');
+  if(cfg.square)    opt.push('・仕上がりは正方形(1:1)。メダカを中央に置き、ヒレが切れないようにする。すでに足してある余白はその色のまま活かし、被写体を引き伸ばさない');
+  if(cfg.blackBg){
+    if(!bg || bg.isDark){
+      // 黒背景の写真 → より締まった黒にする
+      opt.push('・背景は完全な黒（#000000）に統一し、コントラストを濃くして締める。\n'
+             + '  水面・容器の縁・底床が写っている場合も自然に黒へなじませる。\n'
+             + '  灰色がかった黒・紫がかった黒・グラデーション・模様・光の帯を入れない。\n'
+             + '  すでに真っ黒な部分は、そのまま真っ黒のまま変えないこと');
+    } else {
+      // 白やグレーの背景 → 色は変えずに整えるだけ
+      opt.push('・背景の色は変えないこと。白なら白、グレーならグレーのまま、元の明るさと色みを保つ。\n'
+             + '  黒くしたり暗くしたりしない。ムラ・影・写り込み・ゴミだけを消して、均一で清潔な背景に整える');
+    }
+  }
   if(cfg.autoOrient)opt.push('・メダカの向きは、商品写真として最も見栄えが良いと思う向きに整える（必要なら左右反転してよい）。ただし体型・ヒレの形は変えないこと');
   if(cfg.natural)   opt.push('・**加工したと分からない、撮ったままの写真に見える自然な仕上がりにすること**。\n'
                            + '  絵・イラスト・CG・3Dレンダリングのような質感にしない。\n'
@@ -2487,14 +2503,35 @@ function updateAiCostHint(){
   const cfg = aiCfg();
   let specCount = 0;
   products.forEach(p => specCount += p.specimenIdxs.length);
-  const yen = AI_COST_YEN[cfg.quality] || AI_COST_YEN.medium;
+  const t = aiCostTable(cfg.model);
+  const yen = t[cfg.quality] || t.medium;
   $('#aiModelBadge').textContent = cfg.model;
   $('#aiCostHint').textContent =
     `${cfg.model} / ${cfg.quality}${AI_QUALITY_LOCKED ? '（固定中）' : ''} … 1枚あたり約${yen}円（目安）。個体写真 ${specCount}枚すべてなら約${yen * specCount}円。` +
-    (cfg.square ? ' 黒で余白を足して正方形にしてから渡すので、ヒレが伸び縮みしません。' : '');
+    (cfg.square ? ' 背景と同じ色で余白を足して正方形にしてから渡すので、ヒレが伸び縮みしません。' : '');
 }
 
-// 送信前の下ごしらえ: EXIF回転を反映し、長辺1024に縮小。正方形指定なら黒で余白を足す
+// 写真の四辺(外周)をサンプリングして背景色を推定する。
+// 黒背景なら締める / 白・グレーならその色のままにする、の判断に使う
+function detectBgColor(bmp){
+  const N = 64;
+  const c = document.createElement('canvas');
+  c.width = N; c.height = N;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(bmp, 0, 0, N, N);
+  const d = ctx.getImageData(0, 0, N, N).data;
+  const rs = [], gs = [], bs = [];
+  const push = (x, y) => { const i = (y*N + x) * 4; rs.push(d[i]); gs.push(d[i+1]); bs.push(d[i+2]); };
+  for(let x = 0; x < N; x++){ push(x, 0); push(x, 1); push(x, N-1); push(x, N-2); }
+  for(let y = 0; y < N; y++){ push(0, y); push(1, y); push(N-1, y); push(N-2, y); }
+  const med = arr => { arr.sort((a,b) => a-b); return arr[Math.floor(arr.length/2)]; };
+  const r = med(rs), g = med(gs), b = med(bs);
+  const lum = 0.299*r + 0.587*g + 0.114*b;
+  return { r, g, b, lum: Math.round(lum), isDark: lum < 70 };
+}
+function rgbCss(c){ return `rgb(${c.r},${c.g},${c.b})`; }
+
+// 送信前の下ごしらえ: EXIF回転を反映し、長辺1024に縮小。正方形指定なら背景と同じ色で余白を足す
 async function prepareAiInput(file, square){
   const MAX = 1024;
   let bmp;
@@ -2509,19 +2546,22 @@ async function prepareAiInput(file, square){
   c.height = square ? side : h;
   const ctx = c.getContext('2d');
   ctx.imageSmoothingQuality = 'high';
-  if(square){ ctx.fillStyle = '#000'; ctx.fillRect(0, 0, side, side); }
+  const bg = detectBgColor(bmp);
+  // 余白は背景と同じ色で埋める(黒背景なら黒、白背景なら白)
+  if(square){ ctx.fillStyle = rgbCss(bg); ctx.fillRect(0, 0, side, side); }
   const dx = square ? (side - w) / 2 : 0;
   const dy = square ? (side - h) / 2 : 0;
   ctx.drawImage(bmp, dx, dy, w, h);
   if(bmp.close) bmp.close();
-  // 写真そのものが入っている範囲(=黒帯でない範囲)も返す。AI結果の黒帯を戻すのに使う
-  return { dataUrl: c.toDataURL('image/png'), rect: { x: dx, y: dy, w: w, h: h, side: c.width } };
+  // 写真そのものが入っている範囲(=余白でない範囲)と背景色も返す
+  return { dataUrl: c.toDataURL('image/png'), rect: { x: dx, y: dy, w: w, h: h, side: c.width }, bg: bg };
 }
 
-// AI結果の背景を確実に黒へ戻す(Canvas・無料)
-// ① 自分で足した黒帯の部分は必ず純黒に塗り直す
-// ② 暗い画素をなだらかに純黒へ落とす(メダカ本体の暗部を潰さないよう弱めのしきい値)
-function enforceBlackBackground(blob, rect){
+// AI結果の背景をCanvasで仕上げる(無料)
+//  ・黒背景の写真 → 余白と背景を純黒に締める(コントラストを濃く)
+//  ・白やグレーの背景 → 色は一切変えず、足した余白だけ元の背景色に戻す
+function enforceBackground(blob, rect, bg){
+  const dark = !bg || bg.isDark;
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(blob);
@@ -2529,33 +2569,39 @@ function enforceBlackBackground(blob, rect){
       URL.revokeObjectURL(url);
       const c = document.createElement('canvas');
       c.width = img.naturalWidth; c.height = img.naturalHeight;
-      const ctx = c.getContext('2d');
+      const ctx = c.getContext('2d', { willReadFrequently: true });
       ctx.drawImage(img, 0, 0);
 
-      // ① 黒帯を塗り直す(送った画像と返ってきた画像でサイズが違っても比率で合わせる)
+      // ① 足した余白を元の色(黒背景なら純黒)で塗り直す
       if(rect && rect.side){
         const k = c.width / rect.side;
         const x = Math.round(rect.x * k), y = Math.round(rect.y * k);
         const w = Math.round(rect.w * k), h = Math.round(rect.h * k);
-        ctx.fillStyle = '#000';
+        ctx.fillStyle = dark ? '#000' : rgbCss(bg);
         if(y > 0){ ctx.fillRect(0, 0, c.width, y); ctx.fillRect(0, y + h, c.width, c.height - (y + h)); }
         if(x > 0){ ctx.fillRect(0, 0, x, c.height); ctx.fillRect(x + w, 0, c.width - (x + w), c.height); }
       }
 
-      // ② 暗部を純黒へ(しきい値未満は0、そこから少し上はなだらかに落とす)
-      const HARD = 24, SOFT = 44;
-      const d = ctx.getImageData(0, 0, c.width, c.height);
-      const p = d.data;
-      for(let i = 0; i < p.length; i += 4){
-        const lum = 0.299*p[i] + 0.587*p[i+1] + 0.114*p[i+2];
-        if(lum >= SOFT) continue;
-        const k = lum <= HARD ? 0 : (lum - HARD) / (SOFT - HARD);
-        p[i] = Math.round(p[i] * k);
-        p[i+1] = Math.round(p[i+1] * k);
-        p[i+2] = Math.round(p[i+2] * k);
+      // ② 黒背景のときだけ、暗部を純黒へ落として締める(白・グレー背景では何もしない)
+      //   HARD以下は完全な黒。HARD〜SOFT は二乗カーブで強めに落とす
+      //   (AIが返しがちな「中途半端に浮いた黒」をしっかり沈める)
+      //   SOFTより明るい画素＝メダカ本体やヒレには一切触れない
+      if(dark){
+        const HARD = 28, SOFT = 58;
+        const d = ctx.getImageData(0, 0, c.width, c.height);
+        const p = d.data;
+        for(let i = 0; i < p.length; i += 4){
+          const lum = 0.299*p[i] + 0.587*p[i+1] + 0.114*p[i+2];
+          if(lum >= SOFT) continue;
+          const t = lum <= HARD ? 0 : (lum - HARD) / (SOFT - HARD);
+          const k = t * t;
+          p[i] = Math.round(p[i] * k);
+          p[i+1] = Math.round(p[i+1] * k);
+          p[i+2] = Math.round(p[i+2] * k);
+        }
+        ctx.putImageData(d, 0, 0);
       }
-      ctx.putImageData(d, 0, 0);
-      c.toBlob(b => b ? resolve(b) : reject(new Error('黒背景の処理に失敗しました')), 'image/png');
+      c.toBlob(b => b ? resolve(b) : reject(new Error('背景の処理に失敗しました')), 'image/png');
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('画像を読み込めませんでした')); };
     img.src = url;
@@ -2607,7 +2653,8 @@ async function runOpenAiEdit(photoIdxs, extraNote, opts){
 
   const cfg = aiCfg();
   const useMask = !!(opts && opts.mask);
-  const prompt = useMask ? buildMaskPrompt(extraNote) : buildAiPrompt(extraNote);
+  // 通常加工のプロンプトは写真ごとに背景を見て作る(下のループ内)
+  const maskPrompt = useMask ? buildMaskPrompt(extraNote) : null;
   const prog = $('#editProgress'), fill = $('#editProgressFill'), text = $('#editProgressText');
   prog.classList.remove('hidden'); fill.style.width = '0%';
   $('#btnAiAll').disabled = true;
@@ -2620,7 +2667,7 @@ async function runOpenAiEdit(photoIdxs, extraNote, opts){
     fill.style.width = (n / photoIdxs.length * 100).toFixed(1) + '%';
     try {
       // 部分修正のときは「今の加工後画像」を入力にする(マスクと同じ絵・同じサイズでないと合わない)
-      let dataUrl, padRect = null;
+      let dataUrl, padRect = null, bgInfo = null;
       if(opts && opts.fromEdited && editState[i] && editState[i].editedBlobUrl){
         dataUrl = await blobToPngDataUrl(await (await fetch(editState[i].editedBlobUrl)).blob());
       } else {
@@ -2629,7 +2676,9 @@ async function runOpenAiEdit(photoIdxs, extraNote, opts){
         const prep = await prepareAiInput(await ph.handle.getFile(), !!cfg.square);
         dataUrl = prep.dataUrl;
         padRect = cfg.square ? prep.rect : null;
+        bgInfo = prep.bg;
       }
+      const prompt = useMask ? maskPrompt : buildAiPrompt(extraNote, bgInfo);
       const body = {
         action: 'openai_edit', image: dataUrl, prompt: prompt,
         model: cfg.model, quality: cfg.quality,
@@ -2640,10 +2689,11 @@ async function runOpenAiEdit(photoIdxs, extraNote, opts){
       if(!json || !json.ok || !json.image) throw new Error(friendlyGasError((json && json.error) || 'OpenAI応答が不正です'));
       let blob = await (await fetch(json.image)).blob();
 
-      // 「背景を真っ黒に」がONなら、AI任せにせずCanvasで確実に黒へ戻す(無料)
+      // 「背景を整える」がONなら、AI任せにせずCanvasで仕上げる(無料)
+      //   黒背景 → 純黒に締める / 白・グレー背景 → 色を変えず余白だけ元の色に戻す
       if(cfg.blackBg){
-        try { blob = await enforceBlackBackground(blob, padRect); }
-        catch(bgErr){ console.warn('黒背景の後処理をスキップ', bgErr); }
+        try { blob = await enforceBackground(blob, padRect, bgInfo); }
+        catch(bgErr){ console.warn('背景の後処理をスキップ', bgErr); }
       }
 
       const prev = editState[i];
@@ -2701,7 +2751,8 @@ function yenFromUsage(usage, quality){
     const usd = (textIn * r.textIn + imgIn * r.imgIn + out * r.imgOut) / 1e6;
     return Math.round(usd * r.jpy * 100) / 100;
   }
-  return AI_COST_YEN[quality] || AI_COST_YEN.medium;
+  const t = aiCostTable((aiCfg && aiCfg().model) || AI_MODEL_DEFAULT);
+  return t[quality] || t.medium;
 }
 function aiUsageLog(){
   try { return JSON.parse(localStorage.getItem(AI_USAGE_KEY) || '[]'); } catch(e){ return []; }
@@ -2767,7 +2818,7 @@ function openMaskModal(i){
   $('#maskRemember').checked = false;
   $('#btnMaskErase').classList.remove('on-erase');
   const cfg = aiCfg();
-  $('#maskCost').textContent = `1回あたり約${AI_COST_YEN[cfg.quality] || 5}円（${cfg.quality}品質・目安）`;
+  $('#maskCost').textContent = `1回あたり約${aiCostTable(cfg.model)[cfg.quality] || 6}円（${cfg.quality}品質・目安）`;
   $('#maskModal').classList.remove('hidden');
 }
 function closeMaskModal(){ $('#maskModal').classList.add('hidden'); }
@@ -2896,7 +2947,7 @@ $('#btnAiAll').onclick = () => {
   const idxs = [];
   products.forEach(p => p.specimenIdxs.forEach(i => idxs.push(i)));
   const cfg = aiCfg();
-  const yen = (AI_COST_YEN[cfg.quality] || 5) * idxs.length;
+  const yen = (aiCostTable(cfg.model)[cfg.quality] || 6) * idxs.length;
   if(!confirm(`${idxs.length}枚を ChatGPT で「いい感じに」します。\n目安 約${yen}円（${cfg.quality}品質）\n\n実行しますか？`)) return;
   runOpenAiEdit(idxs, '');
 };
@@ -2915,6 +2966,16 @@ $('#btnAiNoteAdd').onclick = () => {
   else toast('空か、すでに同じ指示があります', 'err');
 };
 $('#aiNoteInput').addEventListener('keydown', e => { if(e.key === 'Enter') $('#btnAiNoteAdd').click(); });
+// 品質セレクトの選択肢を「ロー（約○円/枚）」の形で作り直す
+function renderAiQualityOptions(){
+  const cfg = aiCfg();
+  const t = aiCostTable(cfg.model);
+  const label = { low:'ロー low', medium:'ミドル medium', high:'ハイ high' };
+  $('#aiQuality').innerHTML = ['low','medium','high'].map(q =>
+    `<option value="${q}"${cfg.quality === q ? ' selected' : ''}>${label[q]}（約${t[q]}円/枚）${AI_QUALITY_LOCKED && q !== AI_QUALITY_LOCK_TO ? ' ※固定中' : ''}</option>`
+  ).join('');
+  $('#aiQuality').value = cfg.quality;
+}
 $('#aiQuality').addEventListener('change', () => {
   if(AI_QUALITY_LOCKED){
     $('#aiQuality').value = AI_QUALITY_LOCK_TO;
@@ -2922,6 +2983,7 @@ $('#aiQuality').addEventListener('change', () => {
     return;
   }
   saveAiCfg({ quality: $('#aiQuality').value });
+  renderAiQualityOptions();
   updateAiCostHint();
 });
 ['#aiSquare','#aiBlackBg','#aiAutoOrient','#aiNatural'].forEach(sel => {
@@ -2977,6 +3039,7 @@ $('#btnSaveOpenaiModel').onclick = () => {
   }
   saveAiCfg({ model: m });
   $('#openaiModel').value = m;
+  renderAiQualityOptions();
   updateAiCostHint();
   toast('モデル名を保存しました: ' + m, 'ok');
 };
@@ -3010,10 +3073,18 @@ $('#btnTestOpenai').onclick = async () => {
   btn.disabled = false; btn.textContent = orig;
 };
 
+// 画質の既定を medium に一度だけ移行する
+(function migrateQuality(){
+  try {
+    const o = JSON.parse(localStorage.getItem(AI_CFG_KEY) || '{}');
+    if(!o.qualityV2){ o.quality = AI_QUALITY_LOCK_TO; o.qualityV2 = true; localStorage.setItem(AI_CFG_KEY, JSON.stringify(o)); }
+  } catch(e){}
+})();
+
 (function restoreAiCfg(){
   const cfg = aiCfg();
   $('#openaiModel').value = cfg.model;
-  $('#aiQuality').value = cfg.quality;
+  renderAiQualityOptions();
   $('#aiSquare').checked = !!cfg.square;
   $('#aiBlackBg').checked = !!cfg.blackBg;
   $('#aiAutoOrient').checked = !!cfg.autoOrient;
