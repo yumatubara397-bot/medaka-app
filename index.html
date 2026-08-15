@@ -218,7 +218,6 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .ai-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .ai-opts{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
 .ai-manual-hint{font-size:10px;color:var(--ink-dim)}
-.ai-color{width:38px;height:30px;padding:0;border:1px solid var(--line);border-radius:8px;background:var(--bg-2);cursor:pointer}
 .ai-hint{font-size:11px;color:var(--ink-dim);margin-top:8px;line-height:1.6}
 .ai-notes-label{font-size:11px;font-weight:700;margin-top:12px}
 .ai-notes-label small{font-weight:400;color:var(--ink-dim);font-size:10px;margin-left:6px}
@@ -539,9 +538,6 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
             <label class="chip-toggle" title="黒背景の写真は純黒に締めます。白やグレーの背景は色を変えずに整えるだけにします"><input type="checkbox" id="aiBlackBg" checked><span>🌑 背景を整える（黒は締める / 白・グレーはそのまま）</span></label>
             <label class="chip-toggle" title="商品写真として見栄えの良い向きにChatGPTが揃えます（左右反転あり）"><input type="checkbox" id="aiAutoOrient" checked><span>🔄 向きはAIにおまかせ</span></label>
             <label class="chip-toggle" title="レタッチしたと分からない、撮ったままに近い自然な仕上がりにします"><input type="checkbox" id="aiNatural" checked><span>📷 加工感を出さない</span></label>
-            <select id="aiStrength" class="lst-select" title="編集の強さ"></select>
-            <select id="aiBgMode" class="lst-select" title="背景色。自動なら写真から判定します"></select>
-            <input type="color" id="aiBgCustom" class="ai-color hidden" value="#000000" title="カスタム背景色">
             <span class="ai-manual-hint">向きが気に入らなければ ⇄ ⇅ ↻ で手動修正できます</span>
           </div>
           <div class="ai-hint" id="aiCostHint"></div>
@@ -853,8 +849,7 @@ const $ = s => document.querySelector(s);
 const $$ = s => Array.from(document.querySelectorAll(s));
 
 const API_URL_KEY = 'medaka_gas_url';
-// 配布用の既定のGAS URL(設定タブで変更可)。
-// これがあるので、渡された人は何も設定せずにOCR・AI加工まで使える。
+// 配布用の既定のGAS URL(設定タブで変更可)。渡された人は設定なしで使える
 const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbxYVuLJr-UJlHDN3VvIiV85ufZfGwaudS_NesxdbvJcUJ6Oa67Wjrwj3PB3aY7Us-QJNQ/exec';
 function gasUrl(){
   const saved = (localStorage.getItem(API_URL_KEY) || '').trim();
@@ -2390,7 +2385,7 @@ const AI_NOTES_KEY = 'medaka_ai_notes';      // ダメ出しを貯めて毎回�
 const AI_MODEL_DEFAULT = 'gpt-image-2';
 // 画質は自由に選べる(既定 medium)。固定したいときは LOCKED を true にする
 const AI_QUALITY_LOCKED = false;
-const AI_QUALITY_LOCK_TO = 'medium';
+const AI_QUALITY_LOCK_TO = 'low';
 // 1枚(1024x1024)あたりのおおよその単価。$1=155円換算・2026年8月時点の公開情報からの目安。
 // 実額は加工のたびに usage から計算して「💰 実際に使った額」に出る。
 const AI_COST_TABLE = {
@@ -2413,7 +2408,7 @@ function looksLikeApiKey(s){
 function aiCfg(){
   let o = {};
   try { o = JSON.parse(localStorage.getItem(AI_CFG_KEY) || '{}'); } catch(e){ o = {}; }
-  const cfg = Object.assign({ model: AI_MODEL_DEFAULT, quality: AI_QUALITY_LOCK_TO, square:true, blackBg:true, autoOrient:false, natural:true, strength:'standard', bgMode:'auto', bgCustom:'#000000' }, o);
+  const cfg = Object.assign({ model: AI_MODEL_DEFAULT, quality: AI_QUALITY_LOCK_TO, square:true, blackBg:true, autoOrient:true, natural:true }, o);
   // 誤ってAPIキーが保存されていたら既定のモデル名に戻す(画面に出さない)
   if(looksLikeApiKey(cfg.model)) cfg.model = AI_MODEL_DEFAULT;
   if(AI_QUALITY_LOCKED) cfg.quality = AI_QUALITY_LOCK_TO;
@@ -2443,158 +2438,58 @@ function removeAiNote(idx){
   renderAiNotes();
 }
 
-// 編集強度(自然 / 標準 / 強め)
-const AI_STRENGTH = {
-  natural:  { label:'自然（ほぼ変えない）', lines:[
-    '【編集強度: 自然】',
-    '・元画像をほぼ変更しない。明るさの調整、ゴミ除去、軽いシャープネスのみ。',
-    '・ラメや色の強調は最小限にとどめ、撮ったままの印象を保つ。' ] },
-  standard: { label:'標準（推奨）', lines:[
-    '【編集強度: 標準】',
-    '・ラメ、色、コントラスト、シャープネスを適度に強調する。',
-    '・やりすぎず、実物を見たときの印象と一致する範囲に収める。' ] },
-  strong:   { label:'強め（ラメを強調）', lines:[
-    '【編集強度: 強め】',
-    '・ラメと色をはっきり見せる。光の反射を強めに出す。',
-    '・ただし魚の模様・体型・ヒレの形そのものは絶対に変更しない。' ] }
-};
-// 背景色の指定
-const AI_BG_MODES = {
-  auto:   { label:'自動（写真から判定）' },
-  black:  { label:'黒',     css:'#000000', word:'深く均一な黒色' },
-  white:  { label:'白',     css:'#ffffff', word:'均一な白' },
-  blue:   { label:'青',     css:'#0b2a5b', word:'均一な濃い青' },
-  gray:   { label:'グレー', css:'#8a8a8a', word:'均一なグレー' },
-  custom: { label:'カスタム' }
-};
+const AI_BASE_PROMPT = [
+  'あなたは日本のメダカ（観賞魚）をネット販売するための商品写真を仕上げるレタッチャーです。',
+  'この写真を、そのまま出品できる状態に「いい感じ」に仕上げてください。',
+  '',
+  '【やること】',
+  '・水面の浮遊物、餌の食べ残し、糞、白い浮遊ゴミ、気泡、容器の汚れ、映り込みや強い反射を自然に取り除く',
+  '・メダカがはっきり見えるように明るさとコントラストを整え、色かぶりを補正する',
+  '',
+  '【絶対に守ること】',
+  '・メダカの体色、模様、ラメの入り方、ヒレの長さと形、体型を変えない。引き伸ばしたり縮めたりしない',
+  '・画像を縦横に歪ませない（アスペクト比を変えてヒレが伸び縮みするのは厳禁）',
+  '・匹数を増減させない。新しい生き物・水草・小物を描き足さない',
+  '・実物と違って見える誇張はしない（生体販売なのでクレームに直結します）',
+  '・白色や半透明のヒレ（尾びれ・背びれ・胸びれ・腹びれ・尻びれ）は必ず残す。背景に溶け込ませて消さない',
+  '・ヒレの透け感と、筋（軟条）の線が見えるように輪郭を保つ。先端の細い部分まで途切れさせない'
+].join('\n');
 
-// メダカ販売用の仕上げプロンプト。
-// 背景色・編集強度・向きの扱いを設定に応じて出し分ける。
 function buildAiPrompt(extra, bg){
   const cfg = aiCfg();
-  const bgSel = resolveBgTarget(bg);        // {mode, word, css, isDark}
-  const keepOrient = !cfg.autoOrient;
-  const st = AI_STRENGTH[cfg.strength] || AI_STRENGTH.standard;
-  const L = [];
-
-  L.push('この画像を、高品質なメダカ販売・紹介用の商品写真として自然に仕上げてください。');
-  L.push('');
-  L.push('【最重要】');
-  L.push('元画像に写っているメダカそのものを維持してください。');
-  L.push('魚の数、体型、模様、色の配置、ヒレの形、目、' + (keepOrient ? '向き、' : '') + '位置関係を可能な限り変更しないでください。');
-  L.push('新しい魚を追加したり、魚を削除したりしないでください。');
-  L.push('');
-
-  L.push('【背景】');
-  L.push('・背景は' + bgSel.word + 'にする');
-  if(bgSel.isDark){
-    L.push('・黒つぶれさせすぎず、水中で撮影した自然な質感はわずかに残す');
-  } else {
-    L.push('・明るさや色みを大きく変えず、均一で清潔な背景にする');
+  const lines = [AI_BASE_PROMPT];
+  const opt = [];
+  if(cfg.square)    opt.push('・仕上がりは正方形(1:1)。メダカを中央に置き、ヒレが切れないようにする。すでに足してある余白はその色のまま活かし、被写体を引き伸ばさない');
+  if(cfg.blackBg){
+    if(!bg || bg.isDark){
+      // 黒背景の写真 → より締まった黒にする
+      opt.push('・背景は完全な黒（#000000）に統一し、コントラストを濃くして締める。\n'
+             + '  水面・容器の縁・底床が写っている場合も自然に黒へなじませる。\n'
+             + '  灰色がかった黒・紫がかった黒・グラデーション・模様・光の帯を入れない。\n'
+             + '  すでに真っ黒な部分は、そのまま真っ黒のまま変えないこと');
+    } else {
+      // 白やグレーの背景 → 色は変えずに整えるだけ
+      opt.push('・背景の色は変えないこと。白なら白、グレーならグレーのまま、元の明るさと色みを保つ。\n'
+             + '  黒くしたり暗くしたりしない。ムラ・影・写り込み・ゴミだけを消して、均一で清潔な背景に整える');
+    }
   }
-  L.push('・背景の汚れ、ゴミ、白い点、不要な反射を目立たなくする');
-  L.push('・メダカが背景からはっきり浮き上がるようにする');
-  L.push('');
-
-  L.push('【メダカ】');
-  L.push('・メダカ全体のピント感と細部を自然に強調する');
-  L.push('・鱗、ラメ、目、ヒレを自然に鮮明にする');
-  L.push('・元々存在する金色、オレンジ色、青色、緑色、シルバー系のラメを美しく強調する');
-  L.push('・特にラメ部分には光が当たったような自然な輝きを出す');
-  L.push('・人工的なラメを大量に追加しない');
-  L.push('・元の魚が持っていない模様や色を新しく作らない');
-  L.push('・魚の表面を過度に滑らかにしない');
-  L.push('・魚の形を変形させない');
-  L.push('・**白色や半透明のヒレ（尾びれ・背びれ・胸びれ・腹びれ・尻びれ）は必ず残すこと**');
-  L.push('・ヒレを背景に溶け込ませて消したり、短く切ったりしない');
-  L.push('・ヒレの透け感と、筋（軟条）の線が見えるように、わずかに明るくして輪郭を保つ');
-  L.push('・ヒレの先端の細い部分まで、途中で途切れさせない');
-  L.push('');
-
-  L.push('【明るさ・色】');
-  L.push('・魚を背景より明るくする');
-  L.push('・金色・オレンジ色を美しく鮮やかにする');
-  L.push('・青・緑・シルバーのラメを自然に反射させる');
-  L.push('・' + (bgSel.isDark ? '黒背景' : '背景') + 'とのコントラストを高める');
-  L.push('・ハイライトを自然に強調する');
-  L.push('・白飛びしないようにする');
-  L.push('・彩度を上げすぎない');
-  L.push('');
-
-  L.push('【シャープネス】');
-  L.push('・目、鱗、ラメ、ヒレに自然なシャープネスを与える');
-  L.push('・ピントが合っている高級な一眼レフのマクロ写真のように仕上げる');
-  L.push('・過剰なHDR処理や不自然な輪郭強調はしない');
-  L.push('');
-
-  L.push('【撮影表現】');
-  L.push('・真上から撮影した高品質なメダカ写真');
-  L.push('・一眼レフ＋マクロレンズで撮影したような質感');
-  L.push('・プロの商品撮影');
-  L.push('・自然でリアル');
-  L.push('・高精細');
-  if(bgSel.isDark) L.push('・黒背景');
-  L.push('・メダカのラメが美しく反射している');
-  L.push('');
-
-  L.push('【構図】');
-  L.push('元画像の構図と魚の位置関係を基本的に維持する。');
-  L.push('魚全体、特に尾びれ・背びれ・胸びれが見切れないようにする。');
-  if(cfg.square) L.push('すでに足してある余白はその色のまま活かし、被写体を引き伸ばさない。');
-  if(cfg.autoOrient) L.push('メダカの向きは、商品写真として見栄えが良い向きに整えてよい（左右反転可）。ただし体型・ヒレの形は変えないこと。');
-  L.push('');
-
-  L.push.apply(L, st.lines);
-  L.push('');
-
-  L.push('最終的には、');
-  L.push('「元写真を忠実に維持しながら、照明・ラメ・コントラスト・鮮明度だけをプロの商品写真レベルへ改善する」');
-  L.push('ことを最優先にしてください。');
-  if(cfg.natural){
-    L.push('');
-    L.push('イラスト化、CG化、絵画化はしないでください。');
-    L.push('実物を撮影した写真として自然に見えることを最優先してください。');
-  }
+  if(cfg.autoOrient)opt.push('・メダカの向きは、商品写真として最も見栄えが良いと思う向きに整える（必要なら左右反転してよい）。ただし体型・ヒレの形は変えないこと');
+  if(cfg.natural)   opt.push('・**加工したと分からない、撮ったままの写真に見える自然な仕上がりにすること**。\n'
+                           + '  絵・イラスト・CG・3Dレンダリングのような質感にしない。\n'
+                           + '  彩度やコントラストを上げすぎない。輪郭を強調しすぎない。\n'
+                           + '  体表をつるつるに均さず、鱗の質感や自然な写真のざらつきを残す。\n'
+                           + '  不自然な光沢・後光・作り物めいた反射を足さない。ピントの合っていない部分はそのままぼけたままにする');
+  if(opt.length) lines.push('', '【仕上げの指定】', opt.join('\n'));
 
   const notes = aiNotes();
   if(notes.length){
-    L.push('', '【毎回必ず守ること（過去のダメ出しから）】',
-      notes.map((n, i) => (i + 1) + '. ' + n.text).join('\n'));
+    lines.push('', '【毎回必ず守ること（過去のダメ出しから）】',
+      notes.map((n, i) => `${i + 1}. ${n.text}`).join('\n'));
   }
   if(extra && String(extra).trim()){
-    L.push('', '【今回の修正指示（最優先）】', String(extra).trim());
+    lines.push('', '【今回の修正指示（最優先）】', String(extra).trim());
   }
-  return L.join('\n');
-}
-
-// 設定と写真から、実際に使う背景色を決める
-function resolveBgTarget(detected){
-  const cfg = aiCfg();
-  const mode = cfg.bgMode || 'auto';
-  if(mode === 'auto'){
-    const isDark = !detected || detected.isDark;
-    return { mode:'auto', isDark: isDark, crush: isDark,
-             word: isDark ? '深く均一な黒色' : '元の色のまま（白なら白、グレーならグレー）',
-             css: detected ? rgbCss(detected) : '#000000',
-             keepOriginal: !isDark };
-  }
-  if(mode === 'custom'){
-    const hex = cfg.bgCustom || '#000000';
-    const rgb = hexToRgb(hex);
-    const lum = 0.299*rgb.r + 0.587*rgb.g + 0.114*rgb.b;
-    // 指定色がほぼ黒のときだけ「締める」処理をする
-    return { mode:'custom', isDark: lum < 70, crush: lum < 20, word: '均一な指定色(' + hex + ')', css: hex };
-  }
-  const m = AI_BG_MODES[mode] || AI_BG_MODES.black;
-  const rgb = hexToRgb(m.css);
-  const lum = 0.299*rgb.r + 0.587*rgb.g + 0.114*rgb.b;
-  // 黒を指定したときだけ暗部を締める(青・グレー・白は色をそのまま保つ)
-  return { mode: mode, isDark: lum < 70, crush: mode === 'black', word: m.word, css: m.css };
-}
-function hexToRgb(hex){
-  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex || '').trim());
-  if(!m) return { r:0, g:0, b:0 };
-  return { r: parseInt(m[1],16), g: parseInt(m[2],16), b: parseInt(m[3],16) };
+  return lines.join('\n');
 }
 
 function renderAiNotes(){
@@ -2645,70 +2540,36 @@ function detectBgColor(bmp){
 function rgbCss(c){ return `rgb(${c.r},${c.g},${c.b})`; }
 
 // 送信前の下ごしらえ: EXIF回転を反映し、長辺1024に縮小。正方形指定なら背景と同じ色で余白を足す
-// OpenAI が受け付けるサイズ。元画像の縦横比に一番近いものを選ぶ
-const AI_SIZES = [
-  { w:1536, h:1024, ratio: 1536/1024 },   // 横長
-  { w:1024, h:1024, ratio: 1 },           // 正方形
-  { w:1024, h:1536, ratio: 1024/1536 }    // 縦長
-];
-function pickAiSize(srcW, srcH, forceSquare){
-  if(forceSquare) return AI_SIZES[1];
-  const r = srcW / srcH;
-  let best = AI_SIZES[0], diff = Infinity;
-  AI_SIZES.forEach(sz => {
-    const d = Math.abs(Math.log(r / sz.ratio));
-    if(d < diff){ diff = d; best = sz; }
-  });
-  return best;
-}
-
-// 送信前の下ごしらえ:
-//  ・EXIF回転を反映
-//  ・元画像の比率に近い送信サイズ(1536x1024 / 1024x1024 / 1024x1536)を選ぶ
-//  ・はみ出す分は「背景と同じ色」で余白を足す(引き伸ばさないのでヒレが変形しない)
 async function prepareAiInput(file, square){
+  const MAX = 1024;
   let bmp;
   try { bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
   catch(e){ bmp = await createImageBitmap(file); }
-
-  const bg = detectBgColor(bmp);
-  const target = pickAiSize(bmp.width, bmp.height, !!square);
-  const scale = Math.min(target.w / bmp.width, target.h / bmp.height);
-  const w = Math.max(1, Math.round(bmp.width * scale));
-  const h = Math.max(1, Math.round(bmp.height * scale));
-
+  let w = bmp.width, h = bmp.height;
+  const s = Math.min(1, MAX / Math.max(w, h));
+  w = Math.max(1, Math.round(w * s)); h = Math.max(1, Math.round(h * s));
+  const side = Math.max(w, h);
   const c = document.createElement('canvas');
-  c.width = target.w; c.height = target.h;
+  c.width  = square ? side : w;
+  c.height = square ? side : h;
   const ctx = c.getContext('2d');
   ctx.imageSmoothingQuality = 'high';
-
-  // 余白の色: 背景の指定に従う(自動なら写真から判定した色)
-  const bgSel = resolveBgTarget(bg);
-  ctx.fillStyle = (bgSel.mode === 'auto') ? rgbCss(bg) : bgSel.css;
-  ctx.fillRect(0, 0, c.width, c.height);
-
-  const dx = Math.round((target.w - w) / 2);
-  const dy = Math.round((target.h - h) / 2);
+  const bg = detectBgColor(bmp);
+  // 余白は背景と同じ色で埋める(黒背景なら黒、白背景なら白)
+  if(square){ ctx.fillStyle = rgbCss(bg); ctx.fillRect(0, 0, side, side); }
+  const dx = square ? (side - w) / 2 : 0;
+  const dy = square ? (side - h) / 2 : 0;
   ctx.drawImage(bmp, dx, dy, w, h);
   if(bmp.close) bmp.close();
-
-  return {
-    dataUrl: c.toDataURL('image/png'),
-    rect: { x: dx, y: dy, w: w, h: h, side: c.width, sideH: c.height },
-    bg: bg,
-    size: target.w + 'x' + target.h
-  };
+  // 写真そのものが入っている範囲(=余白でない範囲)と背景色も返す
+  return { dataUrl: c.toDataURL('image/png'), rect: { x: dx, y: dy, w: w, h: h, side: c.width }, bg: bg };
 }
-
 
 // AI結果の背景をCanvasで仕上げる(無料)
 //  ・黒背景の写真 → 余白と背景を純黒に締める(コントラストを濃く)
 //  ・白やグレーの背景 → 色は一切変えず、足した余白だけ元の背景色に戻す
-function enforceBackground(blob, rect, bg, target){
-  const t = target || resolveBgTarget(bg);
-  const dark = !!t.crush;      // 暗部を純黒へ締めるのは黒背景のときだけ
-  // 余白を塗る色: 自動判定なら写真から拾った色、指定があればその色
-  const padCss = (t.mode === 'auto') ? (dark ? '#000' : rgbCss(bg)) : t.css;
+function enforceBackground(blob, rect, bg){
+  const dark = !bg || bg.isDark;
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(blob);
@@ -2722,20 +2583,21 @@ function enforceBackground(blob, rect, bg, target){
       // ① 足した余白を元の色(黒背景なら純黒)で塗り直す
       if(rect && rect.side){
         const k = c.width / rect.side;
-        const kh = rect.sideH ? (c.height / rect.sideH) : k;
-        const x = Math.round(rect.x * k), y = Math.round(rect.y * kh);
-        const w = Math.round(rect.w * k), h = Math.round(rect.h * kh);
-        ctx.fillStyle = padCss;
+        const x = Math.round(rect.x * k), y = Math.round(rect.y * k);
+        const w = Math.round(rect.w * k), h = Math.round(rect.h * k);
+        ctx.fillStyle = dark ? '#000' : rgbCss(bg);
         if(y > 0){ ctx.fillRect(0, 0, c.width, y); ctx.fillRect(0, y + h, c.width, c.height - (y + h)); }
         if(x > 0){ ctx.fillRect(0, 0, x, c.height); ctx.fillRect(x + w, 0, c.width - (x + w), c.height); }
       }
 
-      // ② 黒背景のときだけ暗部を純黒へ締める(白・グレー背景では何もしない)
-      //   ただし「画面の外周からつながっている暗い部分」だけを対象にする。
-      //   こうすると、白や半透明のヒレ(周りより明るい)がせき止めになって守られ、
-      //   ヒレの内側や向こう側だけが黒く沈む。ヒレが黒背景に溶けて消えない。
+      // ② 黒背景のときだけ、暗部を純黒へ落として締める(白・グレー背景では何もしない)
+      //   HARD以下は完全な黒。HARD〜SOFT は二乗カーブで強めに落とす
+      //   (AIが返しがちな「中途半端に浮いた黒」をしっかり沈める)
+      //   SOFTより明るい画素＝メダカ本体やヒレには一切触れない
+      //   締めるのは「画面の外周からつながっている暗い部分」だけ。
+      //   白や半透明のヒレ(周りより明るい)がせき止めになるので、ヒレは一切触らない
       if(dark){
-        const HARD = 30, SOFT = 64;   // SOFT以上の明るさ(=ヒレ)は探索が届かず守られる
+        const HARD = 30, SOFT = 64;
         const W = c.width, H = c.height;
         const d = ctx.getImageData(0, 0, W, H);
         const p = d.data;
@@ -2743,7 +2605,6 @@ function enforceBackground(blob, rect, bg, target){
         for(let i = 0, q = 0; i < p.length; i += 4, q++){
           lum[q] = 0.299*p[i] + 0.587*p[i+1] + 0.114*p[i+2];
         }
-        // 外周の暗い画素から塗りつぶし探索(4近傍)
         const seen = new Uint8Array(W * H);
         const stack = new Int32Array(W * H);
         let sp = 0;
@@ -2759,7 +2620,7 @@ function enforceBackground(blob, rect, bg, target){
           if(y < H - 1) push(q + W);
         }
         for(let q = 0, i = 0; q < seen.length; q++, i += 4){
-          if(!seen[q]) continue;                 // ヒレや魚体は対象外
+          if(!seen[q]) continue;
           const L = lum[q];
           const t = L <= HARD ? 0 : (L - HARD) / (SOFT - HARD);
           const k = t * t;
@@ -2835,7 +2696,7 @@ async function runOpenAiEdit(photoIdxs, extraNote, opts){
     fill.style.width = (n / photoIdxs.length * 100).toFixed(1) + '%';
     try {
       // 部分修正のときは「今の加工後画像」を入力にする(マスクと同じ絵・同じサイズでないと合わない)
-      let dataUrl, padRect = null, bgInfo = null, sendSize = null;
+      let dataUrl, padRect = null, bgInfo = null;
       if(opts && opts.fromEdited && editState[i] && editState[i].editedBlobUrl){
         dataUrl = await blobToPngDataUrl(await (await fetch(editState[i].editedBlobUrl)).blob());
       } else {
@@ -2843,17 +2704,14 @@ async function runOpenAiEdit(photoIdxs, extraNote, opts){
         await clearAiResult(i, { skipRender: true });
         const prep = await prepareAiInput(await ph.handle.getFile(), !!cfg.square);
         dataUrl = prep.dataUrl;
-        padRect = prep.rect;
+        padRect = cfg.square ? prep.rect : null;
         bgInfo = prep.bg;
-        sendSize = prep.size;
       }
       const prompt = useMask ? maskPrompt : buildAiPrompt(extraNote, bgInfo);
       const body = {
         action: 'openai_edit', image: dataUrl, prompt: prompt,
         model: cfg.model, quality: cfg.quality,
-        size: (opts && opts.fromEdited) ? 'auto' : (sendSize || 'auto'),
-        background: 'opaque',
-        output_format: 'png'
+        size: (opts && opts.fromEdited) ? 'auto' : (cfg.square ? '1024x1024' : 'auto')
       };
       if(useMask) body.mask = opts.mask;
       const json = await postGas(body);
@@ -2863,7 +2721,7 @@ async function runOpenAiEdit(photoIdxs, extraNote, opts){
       // 「背景を整える」がONなら、AI任せにせずCanvasで仕上げる(無料)
       //   黒背景 → 純黒に締める / 白・グレー背景 → 色を変えず余白だけ元の色に戻す
       if(cfg.blackBg){
-        try { blob = await enforceBackground(blob, padRect, bgInfo, resolveBgTarget(bgInfo)); }
+        try { blob = await enforceBackground(blob, padRect, bgInfo); }
         catch(bgErr){ console.warn('背景の後処理をスキップ', bgErr); }
       }
 
@@ -3137,23 +2995,6 @@ $('#btnAiNoteAdd').onclick = () => {
   else toast('空か、すでに同じ指示があります', 'err');
 };
 $('#aiNoteInput').addEventListener('keydown', e => { if(e.key === 'Enter') $('#btnAiNoteAdd').click(); });
-function renderAiStrengthOptions(){
-  const cfg = aiCfg();
-  $('#aiStrength').innerHTML = Object.keys(AI_STRENGTH).map(k =>
-    `<option value="${k}"${cfg.strength === k ? ' selected' : ''}>強度: ${AI_STRENGTH[k].label}</option>`).join('');
-  $('#aiBgMode').innerHTML = Object.keys(AI_BG_MODES).map(k =>
-    `<option value="${k}"${cfg.bgMode === k ? ' selected' : ''}>背景: ${AI_BG_MODES[k].label}</option>`).join('');
-  $('#aiBgCustom').value = cfg.bgCustom || '#000000';
-  $('#aiBgCustom').classList.toggle('hidden', cfg.bgMode !== 'custom');
-}
-$('#aiStrength').addEventListener('change', () => { saveAiCfg({ strength: $('#aiStrength').value }); });
-$('#aiBgMode').addEventListener('change', () => {
-  saveAiCfg({ bgMode: $('#aiBgMode').value });
-  renderAiStrengthOptions();
-  updateAiCostHint();
-});
-$('#aiBgCustom').addEventListener('change', () => { saveAiCfg({ bgCustom: $('#aiBgCustom').value }); });
-
 // 品質セレクトの選択肢を「ロー（約○円/枚）」の形で作り直す
 function renderAiQualityOptions(){
   const cfg = aiCfg();
@@ -3183,11 +3024,11 @@ $('#aiQuality').addEventListener('change', () => {
 });
 // GASへPOSTしてJSONを受け取る。HTMLが返ってきたら原因を切り分けて教える
 async function postGas(body){
-  const url = gasUrl();
-  if(!url.startsWith('https://script.google.com/')){
+  const gasUrlValue = gasUrl();
+  if(!gasUrlValue.startsWith('https://script.google.com/')){
     throw new Error('設定タブでGAS URLを設定してください');
   }
-  const res = await fetch(url, { method: 'POST', body: JSON.stringify(body) });
+  const res = await fetch(gasUrlValue, { method: 'POST', body: JSON.stringify(body) });
   const text = await res.text();
   const head = text.trim().slice(0, 1);
   if(head === '<'){
@@ -3265,7 +3106,7 @@ $('#btnTestOpenai').onclick = async () => {
 (function migrateQuality(){
   try {
     const o = JSON.parse(localStorage.getItem(AI_CFG_KEY) || '{}');
-    if(!o.qualityV2){ o.quality = AI_QUALITY_LOCK_TO; o.qualityV2 = true; localStorage.setItem(AI_CFG_KEY, JSON.stringify(o)); }
+    if(!o.qualityV3){ o.quality = AI_QUALITY_LOCK_TO; o.qualityV3 = true; localStorage.setItem(AI_CFG_KEY, JSON.stringify(o)); }
   } catch(e){}
 })();
 
@@ -3273,7 +3114,6 @@ $('#btnTestOpenai').onclick = async () => {
   const cfg = aiCfg();
   $('#openaiModel').value = cfg.model;
   renderAiQualityOptions();
-  renderAiStrengthOptions();
   $('#aiSquare').checked = !!cfg.square;
   $('#aiBlackBg').checked = !!cfg.blackBg;
   $('#aiAutoOrient').checked = !!cfg.autoOrient;
