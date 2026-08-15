@@ -324,6 +324,16 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .lb-prev{left:14px}.lb-next{right:14px}
 .lb-caption{position:absolute;bottom:60px;left:50%;transform:translateX(-50%);color:#fff;font-size:12px;font-family:'JetBrains Mono',monospace;background:rgba(0,0,0,.6);padding:6px 14px;border-radius:99px}
 .lb-tools{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);display:flex;gap:6px;background:rgba(0,0,0,.6);border-radius:99px;padding:5px 8px}
+/* 拡大したまま調整するパネル */
+.lb-edit{position:absolute;right:14px;top:60px;width:290px;max-height:76vh;overflow:auto;background:rgba(10,14,39,.92);border:1px solid var(--line);border-radius:12px;padding:12px;backdrop-filter:blur(6px);z-index:2}
+.lb-edit.hidden{display:none !important}
+.lb-edit-rows{display:flex;flex-direction:column;gap:7px}
+.lb-edit .adj-row{gap:6px}
+.lb-edit .adj-label{width:64px;font-size:9px}
+.lb-edit .bright-range{width:auto;flex:1;min-width:40px}
+.lb-edit .bright-val{min-width:28px;font-size:10px}
+.lb-edit-btns{display:flex;gap:4px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+@media (max-width:900px){.lb-edit{right:8px;left:8px;width:auto;top:auto;bottom:60px;max-height:38vh}}
 .lb-tool{background:transparent;border:none;color:#fff;font-size:18px;font-weight:700;width:36px;height:36px;border-radius:50%;cursor:pointer;font-family:'JetBrains Mono',monospace}
 .lb-tool:hover{background:rgba(255,255,255,.15)}
 .lb-tool.active{background:var(--accent);color:#000}
@@ -531,6 +541,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
             <label class="chip-toggle" title="黒で余白を足して正方形にしてから渡します。引き伸ばさないのでヒレの長さが変わりません"><input type="checkbox" id="aiSquare" checked><span>⬛ 正方形(1:1)にする</span></label>
             <label class="chip-toggle" title="背景を完全な黒に統一します"><input type="checkbox" id="aiBlackBg" checked><span>🌑 背景を真っ黒に</span></label>
             <label class="chip-toggle" title="商品写真として見栄えの良い向きにChatGPTが揃えます（左右反転あり）"><input type="checkbox" id="aiAutoOrient" checked><span>🔄 向きはAIにおまかせ</span></label>
+            <label class="chip-toggle" title="レタッチしたと分からない、撮ったままに近い自然な仕上がりにします"><input type="checkbox" id="aiNatural" checked><span>📷 加工感を出さない</span></label>
             <span class="ai-manual-hint">向きが気に入らなければ ⇄ ⇅ ↻ で手動修正できます</span>
           </div>
           <div class="ai-hint" id="aiCostHint"></div>
@@ -648,6 +659,18 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
           <div class="lb-cmp-label lb-cmp-label-r">加工後</div>
         </div>
       </div>
+      <!-- 拡大したまま調整できるパネル -->
+      <div class="lb-edit hidden" id="lbEdit">
+        <div class="lb-edit-rows" id="lbEditRows"></div>
+        <div class="lb-edit-btns">
+          <button class="spec-tile-flip" data-lb="ai-good" title="この1枚をChatGPTで「いい感じに」">🤖 いい感じに</button>
+          <button class="spec-tile-flip" data-lb="ai-mask" title="直したい場所を塗って部分修正">🖌 部分修正</button>
+          <button class="spec-tile-flip" data-lb="flip-h" title="左右反転">⇄</button>
+          <button class="spec-tile-flip" data-lb="flip-v" title="上下反転">⇅</button>
+          <button class="spec-tile-flip" data-lb="rot" title="90°回転">↻</button>
+          <button class="spec-tile-flip" data-lb="reset" title="この写真の調整をすべて元に戻す">↺ リセット</button>
+        </div>
+      </div>
       <div class="lb-caption" id="lbCaption"></div>
       <div class="lb-tools">
         <button class="lb-tool" id="lbZoomOut" title="縮小">−</button>
@@ -657,6 +680,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
         <button class="lb-tool" id="lbCmpMode" title="比較スライダーを表示/非表示">⇔</button>
         <button class="lb-tool" id="lbAutoPlay" title="加工前/後を自動で交互表示">▶</button>
         <button class="lb-tool" id="lbToggleSide" title="元/加工後を切替">A/B</button>
+        <button class="lb-tool" id="lbEditToggle" title="拡大したまま明るさ・コントラスト等を調整する">🎛</button>
       </div>
     </div>
 
@@ -2187,6 +2211,7 @@ function refreshSpecTile(i){
   }
   const sum = el.querySelector('.tile-adj > summary');
   if(sum) sum.innerHTML = '🎛 この1枚を調整' + (isAdjNeutral(adj) ? '' : ' <span class="adj-dot">●</span>');
+  syncLightbox(i);
   return true;
 }
 
@@ -2371,7 +2396,7 @@ function looksLikeApiKey(s){
 function aiCfg(){
   let o = {};
   try { o = JSON.parse(localStorage.getItem(AI_CFG_KEY) || '{}'); } catch(e){ o = {}; }
-  const cfg = Object.assign({ model: AI_MODEL_DEFAULT, quality: AI_QUALITY_LOCK_TO, square:true, blackBg:true, autoOrient:true }, o);
+  const cfg = Object.assign({ model: AI_MODEL_DEFAULT, quality: AI_QUALITY_LOCK_TO, square:true, blackBg:true, autoOrient:true, natural:true }, o);
   // 誤ってAPIキーが保存されていたら既定のモデル名に戻す(画面に出さない)
   if(looksLikeApiKey(cfg.model)) cfg.model = AI_MODEL_DEFAULT;
   if(AI_QUALITY_LOCKED) cfg.quality = AI_QUALITY_LOCK_TO;
@@ -2425,6 +2450,11 @@ function buildAiPrompt(extra){
                            + '  灰色がかった黒・紫がかった黒・グラデーション・模様・光の帯を入れない。\n'
                            + '  すでに真っ黒な部分は、そのまま真っ黒のまま変えないこと');
   if(cfg.autoOrient)opt.push('・メダカの向きは、商品写真として最も見栄えが良いと思う向きに整える（必要なら左右反転してよい）。ただし体型・ヒレの形は変えないこと');
+  if(cfg.natural)   opt.push('・**加工したと分からない、撮ったままの写真に見える自然な仕上がりにすること**。\n'
+                           + '  絵・イラスト・CG・3Dレンダリングのような質感にしない。\n'
+                           + '  彩度やコントラストを上げすぎない。輪郭を強調しすぎない。\n'
+                           + '  体表をつるつるに均さず、鱗の質感や自然な写真のざらつきを残す。\n'
+                           + '  不自然な光沢・後光・作り物めいた反射を足さない。ピントの合っていない部分はそのままぼけたままにする');
   if(opt.length) lines.push('', '【仕上げの指定】', opt.join('\n'));
 
   const notes = aiNotes();
@@ -2894,9 +2924,10 @@ $('#aiQuality').addEventListener('change', () => {
   saveAiCfg({ quality: $('#aiQuality').value });
   updateAiCostHint();
 });
-['#aiSquare','#aiBlackBg','#aiAutoOrient'].forEach(sel => {
+['#aiSquare','#aiBlackBg','#aiAutoOrient','#aiNatural'].forEach(sel => {
   $(sel).addEventListener('change', () => {
-    saveAiCfg({ square: $('#aiSquare').checked, blackBg: $('#aiBlackBg').checked, autoOrient: $('#aiAutoOrient').checked });
+    saveAiCfg({ square: $('#aiSquare').checked, blackBg: $('#aiBlackBg').checked,
+                autoOrient: $('#aiAutoOrient').checked, natural: $('#aiNatural').checked });
     updateAiCostHint();
   });
 });
@@ -2986,6 +3017,7 @@ $('#btnTestOpenai').onclick = async () => {
   $('#aiSquare').checked = !!cfg.square;
   $('#aiBlackBg').checked = !!cfg.blackBg;
   $('#aiAutoOrient').checked = !!cfg.autoOrient;
+  $('#aiNatural').checked = !!cfg.natural;
   renderAiNotes();
   updateAiCostHint();
   renderAiSpend();
@@ -3361,7 +3393,11 @@ function openLightbox(photoIdx, side){
   stopAutoPlay();
   $('#lightbox').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
+  const openEdit = localStorage.getItem(LB_EDIT_KEY) === '1';
+  $('#lbEdit').classList.toggle('hidden', !openEdit);
+  $('#lbEditToggle').classList.toggle('active', openEdit);
   renderLightbox();
+  renderLbEdit();
 }
 function closeLightbox(){
   stopAutoPlay();
@@ -3425,6 +3461,84 @@ function setCmpPercentFromEvent(e){
 }
 
 // スライダーのドラッグ(マウス + タッチ)
+// ===== 拡大したまま調整する =====
+const LB_EDIT_KEY = 'medaka_lb_edit_open';
+function lbCurrentPhotoIdx(){ return lbState.photoIdxs[lbState.pos]; }
+function renderLbEdit(){
+  const box = $('#lbEdit');
+  if(box.classList.contains('hidden')) return;
+  const i = lbCurrentPhotoIdx();
+  if(i == null) return;
+  const adj = getAdj(i);
+  const f = getFlip(i);
+  const row = (label, key, min, max, val, action) => `
+    <div class="adj-row${min < 0 ? ' bipolar' : ''}">
+      <span class="adj-label">${label}</span>
+      <input type="range" class="bright-range" min="${min}" max="${max}" step="5" value="${val}"
+             data-lb-adj="${key}" data-lb-action="${action}">
+      <span class="bright-val" data-lb-val="${key}">${(min < 0 && val > 0) ? '+' + val : val}</span>
+    </div>`;
+  $('#lbEditRows').innerHTML =
+    row('明るさ', 'bright', 0, 100, adj.bright, 'bright') +
+    ADJ_SLIDERS.map(s => row(s.label, s.k, s.min, s.max, adj[s.k], 'adj')).join('');
+
+  $('#lbEditRows').querySelectorAll('[data-lb-adj]').forEach(el => {
+    const key = el.dataset.lbAdj;
+    const upd = (immediate) => {
+      const v = +el.value;
+      const lbl = $('#lbEdit').querySelector(`[data-lb-val="${key}"]`);
+      if(lbl) lbl.textContent = (key !== 'bright' && v > 0) ? '+' + v : v;
+      if(el.dataset.lbAction === 'bright') onPhotoBrightnessInput(i, v, immediate);
+      else onPhotoAdjInput(i, key, v, immediate);
+    };
+    el.oninput  = () => upd(false);
+    el.onchange = () => upd(true);
+  });
+  const fh = $('#lbEdit').querySelector('[data-lb="flip-h"]');
+  const fv = $('#lbEdit').querySelector('[data-lb="flip-v"]');
+  if(fh) fh.classList.toggle('on', f.h);
+  if(fv) fv.classList.toggle('on', f.v);
+  const rt = $('#lbEdit').querySelector('[data-lb="rot"]');
+  if(rt) rt.classList.toggle('on', !!adj.rot);
+}
+$('#lbEditToggle').onclick = () => {
+  const box = $('#lbEdit');
+  box.classList.toggle('hidden');
+  $('#lbEditToggle').classList.toggle('active', !box.classList.contains('hidden'));
+  localStorage.setItem(LB_EDIT_KEY, box.classList.contains('hidden') ? '0' : '1');
+  renderLbEdit();
+};
+$$('#lbEdit [data-lb]').forEach(b => {
+  b.onclick = async () => {
+    const i = lbCurrentPhotoIdx();
+    if(i == null) return;
+    switch(b.dataset.lb){
+      case 'ai-good': await runOpenAiEdit([i], ''); break;
+      case 'ai-mask': closeLightbox(); openMaskModal(i); break;
+      case 'flip-h': await toggleFlip(i, 'h'); break;
+      case 'flip-v': await toggleFlip(i, 'v'); break;
+      case 'rot': rotatePhoto(i); break;
+      case 'reset': resetPhotoAdj(i); break;
+    }
+    renderLbEdit();
+  };
+});
+// 調整結果をライトボックスにも反映する(スクロール位置と倍率は保つ)
+function syncLightbox(i){
+  const lb = $('#lightbox');
+  if(!lb || lb.classList.contains('hidden')) return;
+  if(lbCurrentPhotoIdx() !== i) return;
+  const st = editState[i];
+  const img = $('#lbImg');
+  const stage = $('#lbStage');
+  const sl = stage.scrollLeft, stp = stage.scrollTop;
+  if(lbState.showEdited && !(st && st.editedBlobUrl)) lbState.showEdited = false;
+  const src = (lbState.showEdited && st && st.editedBlobUrl) ? st.editedBlobUrl : photos[i].blobUrl;
+  if(img.src !== src) img.src = src;
+  requestAnimationFrame(() => { stage.scrollLeft = sl; stage.scrollTop = stp; });
+  renderLbEdit();
+}
+
 // 拡大した画像をドラッグで動かす(手のカーソルどおりに掴んで移動できるように)
 (function bindStagePan(){
   const stage = $('#lbStage');
@@ -3486,11 +3600,11 @@ function stopAutoPlay(){
 
 $('#lbClose').onclick = closeLightbox;
 $('#lightbox').addEventListener('click', (e) => { if(e.target.id === 'lightbox') closeLightbox(); });
-$('#lbPrev').onclick = () => { stopAutoPlay(); lbState.pos = (lbState.pos - 1 + lbState.photoIdxs.length) % lbState.photoIdxs.length; lbState.zoom = LB_ZOOM_DEFAULT; lbState.rot = 0; const st = editState[lbState.photoIdxs[lbState.pos]]; lbState.showEdited = !!(st && st.editedBlobUrl); lbState.compareMode = false; lbState.cmpPercent = 50; renderLightbox(); };
-$('#lbNext').onclick = () => { stopAutoPlay(); lbState.pos = (lbState.pos + 1) % lbState.photoIdxs.length; lbState.zoom = LB_ZOOM_DEFAULT; lbState.rot = 0; const st = editState[lbState.photoIdxs[lbState.pos]]; lbState.showEdited = !!(st && st.editedBlobUrl); lbState.compareMode = false; lbState.cmpPercent = 50; renderLightbox(); };
+$('#lbPrev').onclick = () => { stopAutoPlay(); lbState.pos = (lbState.pos - 1 + lbState.photoIdxs.length) % lbState.photoIdxs.length; lbState.zoom = LB_ZOOM_DEFAULT; lbState.rot = 0; const st = editState[lbState.photoIdxs[lbState.pos]]; lbState.showEdited = !!(st && st.editedBlobUrl); lbState.compareMode = false; lbState.cmpPercent = 50; renderLightbox(); renderLbEdit(); };
+$('#lbNext').onclick = () => { stopAutoPlay(); lbState.pos = (lbState.pos + 1) % lbState.photoIdxs.length; lbState.zoom = LB_ZOOM_DEFAULT; lbState.rot = 0; const st = editState[lbState.photoIdxs[lbState.pos]]; lbState.showEdited = !!(st && st.editedBlobUrl); lbState.compareMode = false; lbState.cmpPercent = 50; renderLightbox(); renderLbEdit(); };
 $('#lbZoomIn').onclick = () => { lbState.zoom = Math.min(8, lbState.zoom * 1.4); renderLightbox(); };
 $('#lbZoomOut').onclick = () => { lbState.zoom = Math.max(0.2, lbState.zoom / 1.4); renderLightbox(); };
-$('#lbZoomReset').onclick = () => { lbState.zoom = (Math.abs(lbState.zoom - 1) < 0.01) ? LB_ZOOM_DEFAULT : 1; lbState.rot = 0; lbState.cmpPercent = 50; renderLightbox(); };
+$('#lbZoomReset').onclick = () => { lbState.zoom = (Math.abs(lbState.zoom - 1) < 0.01) ? LB_ZOOM_DEFAULT : 1; lbState.rot = 0; lbState.cmpPercent = 50; renderLightbox(); renderLbEdit(); };
 $('#lbRotate').onclick = () => { lbState.rot = (lbState.rot + 90) % 360; renderLightbox(); };
 $('#lbToggleSide').onclick = () => { stopAutoPlay(); lbState.showEdited = !lbState.showEdited; renderLightbox(); };
 $('#lbCmpMode').onclick = () => {
