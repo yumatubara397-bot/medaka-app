@@ -853,6 +853,13 @@ const $ = s => document.querySelector(s);
 const $$ = s => Array.from(document.querySelectorAll(s));
 
 const API_URL_KEY = 'medaka_gas_url';
+// 配布用の既定のGAS URL(設定タブで変更可)。
+// これがあるので、渡された人は何も設定せずにOCR・AI加工まで使える。
+const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbxYVuLJr-UJlHDN3VvIiV85ufZfGwaudS_NesxdbvJcUJ6Oa67Wjrwj3PB3aY7Us-QJNQ/exec';
+function gasUrl(){
+  const saved = (localStorage.getItem(API_URL_KEY) || '').trim();
+  return saved || DEFAULT_GAS_URL;
+}
 
 // 状態
 let folderHandle = null;
@@ -1084,8 +1091,8 @@ function renderProductList(){
 // ===== OCR =====
 $('#btnOcrAll').onclick = async () => {
   if(products.length === 0){ toast('商品グループがありません', 'err'); return; }
-  const gasUrl = (localStorage.getItem(API_URL_KEY) || '').trim();
-  if(!gasUrl.startsWith('https://script.google.com/')){
+  const gasUrlValue = gasUrl();
+  if(!gasUrlValue.startsWith('https://script.google.com/')){
     toast('設定タブでGAS URLを設定してください', 'err'); switchTab('settings'); return;
   }
   const btn = $('#btnOcrAll'); const orig = btn.textContent;
@@ -1097,7 +1104,7 @@ $('#btnOcrAll').onclick = async () => {
     try {
       const file = await photos[p.labelIdx].handle.getFile();
       const dataUrl = await fileToResizedDataUrl(file, 1024, 0.85);
-      const res = await fetch(gasUrl, {
+      const res = await fetch(gasUrlValue, {
         method: 'POST',
         body: JSON.stringify({ action:'label_ocr', labelPhoto: dataUrl })
       });
@@ -1511,7 +1518,7 @@ $('#btnTestOcr').onclick = async () => {
 
 function loadSettings(){
   const saved = localStorage.getItem(API_URL_KEY);
-  if(saved) $('#apiUrl').value = saved;
+  $('#apiUrl').value = saved || DEFAULT_GAS_URL;
   updateApiStatus();
 }
 loadSettings();
@@ -2498,6 +2505,10 @@ function buildAiPrompt(extra, bg){
   L.push('・元の魚が持っていない模様や色を新しく作らない');
   L.push('・魚の表面を過度に滑らかにしない');
   L.push('・魚の形を変形させない');
+  L.push('・**白色や半透明のヒレ（尾びれ・背びれ・胸びれ・腹びれ・尻びれ）は必ず残すこと**');
+  L.push('・ヒレを背景に溶け込ませて消したり、短く切ったりしない');
+  L.push('・ヒレの透け感と、筋（軟条）の線が見えるように、わずかに明るくして輪郭を保つ');
+  L.push('・ヒレの先端の細い部分まで、途中で途切れさせない');
   L.push('');
 
   L.push('【明るさ・色】');
@@ -2719,18 +2730,38 @@ function enforceBackground(blob, rect, bg, target){
         if(x > 0){ ctx.fillRect(0, 0, x, c.height); ctx.fillRect(x + w, 0, c.width - (x + w), c.height); }
       }
 
-      // ② 黒背景のときだけ、暗部を純黒へ落として締める(白・グレー背景では何もしない)
-      //   HARD以下は完全な黒。HARD〜SOFT は二乗カーブで強めに落とす
-      //   (AIが返しがちな「中途半端に浮いた黒」をしっかり沈める)
-      //   SOFTより明るい画素＝メダカ本体やヒレには一切触れない
+      // ② 黒背景のときだけ暗部を純黒へ締める(白・グレー背景では何もしない)
+      //   ただし「画面の外周からつながっている暗い部分」だけを対象にする。
+      //   こうすると、白や半透明のヒレ(周りより明るい)がせき止めになって守られ、
+      //   ヒレの内側や向こう側だけが黒く沈む。ヒレが黒背景に溶けて消えない。
       if(dark){
-        const HARD = 28, SOFT = 58;
-        const d = ctx.getImageData(0, 0, c.width, c.height);
+        const HARD = 30, SOFT = 64;   // SOFT以上の明るさ(=ヒレ)は探索が届かず守られる
+        const W = c.width, H = c.height;
+        const d = ctx.getImageData(0, 0, W, H);
         const p = d.data;
-        for(let i = 0; i < p.length; i += 4){
-          const lum = 0.299*p[i] + 0.587*p[i+1] + 0.114*p[i+2];
-          if(lum >= SOFT) continue;
-          const t = lum <= HARD ? 0 : (lum - HARD) / (SOFT - HARD);
+        const lum = new Float32Array(W * H);
+        for(let i = 0, q = 0; i < p.length; i += 4, q++){
+          lum[q] = 0.299*p[i] + 0.587*p[i+1] + 0.114*p[i+2];
+        }
+        // 外周の暗い画素から塗りつぶし探索(4近傍)
+        const seen = new Uint8Array(W * H);
+        const stack = new Int32Array(W * H);
+        let sp = 0;
+        const push = q => { if(!seen[q] && lum[q] < SOFT){ seen[q] = 1; stack[sp++] = q; } };
+        for(let x = 0; x < W; x++){ push(x); push((H-1)*W + x); }
+        for(let y = 0; y < H; y++){ push(y*W); push(y*W + W - 1); }
+        while(sp > 0){
+          const q = stack[--sp];
+          const x = q % W, y = (q / W) | 0;
+          if(x > 0)     push(q - 1);
+          if(x < W - 1) push(q + 1);
+          if(y > 0)     push(q - W);
+          if(y < H - 1) push(q + W);
+        }
+        for(let q = 0, i = 0; q < seen.length; q++, i += 4){
+          if(!seen[q]) continue;                 // ヒレや魚体は対象外
+          const L = lum[q];
+          const t = L <= HARD ? 0 : (L - HARD) / (SOFT - HARD);
           const k = t * t;
           p[i] = Math.round(p[i] * k);
           p[i+1] = Math.round(p[i+1] * k);
@@ -2782,8 +2813,8 @@ async function blobToPngDataUrl(blob){
 // 実行本体: photoIdxs を ChatGPT で加工する。
 // extraNote = その場のダメ出し / opts.mask = 部分修正のマスク / opts.fromEdited = 加工後画像を入力に使う
 async function runOpenAiEdit(photoIdxs, extraNote, opts){
-  const gasUrl = (localStorage.getItem(API_URL_KEY) || '').trim();
-  if(!gasUrl.startsWith('https://script.google.com/')){
+  const gasUrlValue = gasUrl();
+  if(!gasUrlValue.startsWith('https://script.google.com/')){
     toast('設定タブでGAS URLを設定してください', 'err'); switchTab('settings'); return;
   }
   if(!photoIdxs || photoIdxs.length === 0){ toast('対象がありません', 'err'); return; }
@@ -3152,11 +3183,11 @@ $('#aiQuality').addEventListener('change', () => {
 });
 // GASへPOSTしてJSONを受け取る。HTMLが返ってきたら原因を切り分けて教える
 async function postGas(body){
-  const gasUrl = (localStorage.getItem(API_URL_KEY) || '').trim();
-  if(!gasUrl.startsWith('https://script.google.com/')){
+  const url = gasUrl();
+  if(!url.startsWith('https://script.google.com/')){
     throw new Error('設定タブでGAS URLを設定してください');
   }
-  const res = await fetch(gasUrl, { method: 'POST', body: JSON.stringify(body) });
+  const res = await fetch(url, { method: 'POST', body: JSON.stringify(body) });
   const text = await res.text();
   const head = text.trim().slice(0, 1);
   if(head === '<'){
@@ -3201,8 +3232,8 @@ $('#btnSaveOpenaiModel').onclick = () => {
   toast('モデル名を保存しました: ' + m, 'ok');
 };
 $('#btnTestOpenai').onclick = async () => {
-  const gasUrl = (localStorage.getItem(API_URL_KEY) || '').trim();
-  if(!gasUrl.startsWith('https://script.google.com/')){ toast('先にGAS URLを保存してください', 'err'); return; }
+  const gasUrlValue = gasUrl();
+  if(!gasUrlValue.startsWith('https://script.google.com/')){ toast('先にGAS URLを保存してください', 'err'); return; }
   const btn = $('#btnTestOpenai'); const orig = btn.textContent;
   btn.disabled = true; btn.textContent = '確認中...';
   const badge = $('#openaiStatus');
@@ -3422,7 +3453,7 @@ async function runEditForProducts(productIdxs){
 // override: {geminiModes, upscale, sqcrop} を渡すと画面のチェックボックスではなくこちらを使う
 //           (「この1枚だけAIゴミ取り」用)
 async function runEditTasks(tasks, override){
-  const gasUrl = (localStorage.getItem(API_URL_KEY) || '').trim();
+  const gasUrlValue = gasUrl();
   const geminiModes = override ? (override.geminiModes || []) : getSelectedGeminiModes();
   const upscale = override ? !!override.upscale : isUpscaleEnabled();
   const sqcrop = override ? !!override.sqcrop : isSquareCropEnabled();
@@ -3440,7 +3471,7 @@ async function runEditTasks(tasks, override){
   if(geminiModes.length === 0 && !upscale && !sqcrop && !useRefStyle){
     toast('加工モードが1つも選ばれていません', 'err'); return;
   }
-  if(needsGas && !gasUrl.startsWith('https://script.google.com/')){
+  if(needsGas && !gasUrlValue.startsWith('https://script.google.com/')){
     toast('設定タブでGAS URLを設定してください', 'err'); switchTab('settings'); return;
   }
 
@@ -3493,7 +3524,7 @@ async function runEditTasks(tasks, override){
           } else if(useRefStyle && refStyle && refStyle.sampleDataUrls && refStyle.sampleDataUrls.length > 0){
             reqBody.refSamples = refStyle.sampleDataUrls;
           }
-          const res = await fetch(gasUrl, { method: 'POST', body: JSON.stringify(reqBody) });
+          const res = await fetch(gasUrlValue, { method: 'POST', body: JSON.stringify(reqBody) });
           if(!res.ok) throw new Error('Gemini HTTP '+res.status);
           const json = await res.json();
           if(!json || !json.ok || !json.image) throw new Error(json && json.error || 'Gemini API応答不正');
@@ -3521,7 +3552,7 @@ async function runEditTasks(tasks, override){
           try {
             text.textContent = `📈 解像度UP ${i+1}/${tasks.length}: ${ph.name}`;
             const dataUrl = await blobToDataUrl(curBlob);
-            const res = await fetch(gasUrl, {
+            const res = await fetch(gasUrlValue, {
               method: 'POST',
               body: JSON.stringify({ action:'upscale_image', image: dataUrl, scale: 2 })
             });
