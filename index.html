@@ -697,52 +697,12 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
       </div>
 
       <div id="listingLoaded" class="hidden">
-        <details class="lst-fold" id="lstConfigFold">
-          <summary>⚙ オークタウン共通設定 <small>カテゴリ / 開催期間 / 発送元 / 配送方法など（全商品に適用）</small></summary>
-          <div class="lst-fold-body">
-            <div class="lst-grid" id="lstConfigGrid"></div>
-            <div class="btn-row">
-              <button id="btnLstConfigSave" class="btn btn-ghost btn-mini">💾 設定を保存</button>
-              <button id="btnLstConfigReset" class="btn btn-ghost btn-mini">初期値に戻す</button>
-            </div>
+        <div class="bar-row" style="margin-bottom:10px">
+          <div class="bar-info">タイトル・説明文・オークタウンの各項目は <b>⚙設定タブ</b> でまとめて管理します</div>
+          <div class="lst-toolbar">
+            <button id="btnGotoListingSettings" class="btn btn-ghost btn-mini">⚙ 出品設定を開く</button>
           </div>
-        </details>
-
-        <details class="lst-fold" id="lstTemplateFold">
-          <summary>📝 説明文テンプレート <small>{品種} {ランク} {数量} {管理番号} {備考} {タイトル} {送料} が使えます</small></summary>
-          <div class="lst-fold-body">
-            <textarea id="lstTemplate" class="lst-ta" spellcheck="false"></textarea>
-            <div class="hint" style="font-size:11px;color:var(--ink-dim);margin-top:6px;line-height:1.7">
-              値が空のプレースホルダだけの行（例: 【備考】）は自動で削除されます。<br>
-              「HTMLとして出力」ONのとき、改行は &lt;br&gt; に変換されてヤフオク説明文に反映されます。
-            </div>
-            <div class="btn-row">
-              <label class="chip-toggle"><input type="checkbox" id="lstHtmlDesc" checked><span>HTMLとして出力（改行→&lt;br&gt;）</span></label>
-              <button id="btnLstTemplateSave" class="btn btn-ghost btn-mini">💾 テンプレを保存</button>
-              <button id="btnLstTemplateReset" class="btn btn-ghost btn-mini">初期値に戻す</button>
-            </div>
-          </div>
-        </details>
-
-        <details class="lst-fold" id="lstImgFold">
-          <summary>🖼 出品画像の書き出し <small>一眼レフの大きなJPEG・加工後PNGを、ヤフオクに通るJPEGへ自動変換</small></summary>
-          <div class="lst-fold-body">
-            <label class="chip-toggle" style="margin-bottom:10px"><input type="checkbox" id="lstImgConvert" checked><span>JPEG化してリサイズする（推奨）</span></label>
-            <div class="lst-grid">
-              <div class="field"><label>長辺の最大px</label><input type="number" id="lstImgMaxEdge" min="400" max="4000" step="100"></div>
-              <div class="field"><label>1枚の上限MB</label><input type="number" id="lstImgMaxMB" min="0.3" max="10" step="0.1"></div>
-              <div class="field"><label>JPEG画質 (0.4〜1)</label><input type="number" id="lstImgQuality" min="0.4" max="1" step="0.02"></div>
-            </div>
-            <div class="hint" style="font-size:11px;color:var(--ink-dim);margin-top:8px;line-height:1.7">
-              EXIFの回転情報を反映してから書き出すので、縦位置で撮った写真が横倒しになりません。<br>
-              上限MBを超える場合は「画質を下げる → それでも超えれば縮小」の順に自動調整します。OFFにすると元ファイルをそのまま同梱します。
-            </div>
-            <div class="btn-row">
-              <button id="btnLstImgSave" class="btn btn-ghost btn-mini">💾 画像設定を保存</button>
-              <button id="btnLstImgReset" class="btn btn-ghost btn-mini">初期値に戻す</button>
-            </div>
-          </div>
-        </details>
+        </div>
 
         <div class="bar-row">
           <div class="bar-info"><span id="lstSelCount">0</span> / <span id="lstTotalCount">0</span> 件を出品 <span class="hist-meta" id="lstImgInfo"></span></div>
@@ -825,6 +785,76 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
         <div class="btn-row">
           <button id="btnSaveOpenaiModel" class="btn btn-ghost">モデル名を保存</button>
           <button id="btnTestOpenai" class="btn btn-ghost" title="/v1/models を見るだけなので画像生成の課金は発生しません">🤖 ChatGPT接続テスト（無料）</button>
+        </div>
+      </div>
+
+      <h3>🛒 出品設定（オークタウン）</h3>
+      <div class="settings-card">
+        <details class="lst-fold" id="lstTitleFold" open>
+          <summary>🏷 タイトルの作り方 <small>{品種} {ランク} {数量} {管理番号} {備考} が使えます</small></summary>
+          <div class="lst-fold-body">
+            <input type="text" id="lstTitleTemplate" class="ai-fb-input" placeholder="【メダカ】{品種} {ランク} {数量} 管理番号{管理番号}">
+            <div class="hint" style="font-size:11px;color:var(--ink-dim);margin-top:6px;line-height:1.7">
+              値が空のプレースホルダは自動で詰められます。全角65文字を超える分は、管理番号を残して前を切り詰めます。<br>
+              <span id="lstTitlePreview" class="hist-meta"></span>
+            </div>
+            <div class="btn-row">
+              <button id="btnLstTitleSave" class="btn btn-ghost btn-mini">💾 保存</button>
+              <button id="btnLstTitleReset" class="btn btn-ghost btn-mini">初期値に戻す</button>
+            </div>
+          </div>
+        </details>
+        <details class="lst-fold" id="lstConfigFold">
+          <summary>⚙ オークタウン共通設定 <small>カテゴリ / 開催期間 / 発送元 / 配送方法など（全商品に適用）</small></summary>
+          <div class="lst-fold-body">
+            <div class="lst-grid" id="lstConfigGrid"></div>
+            <div class="btn-row">
+              <button id="btnLstConfigSave" class="btn btn-ghost btn-mini">💾 設定を保存</button>
+              <button id="btnLstConfigReset" class="btn btn-ghost btn-mini">初期値に戻す</button>
+            </div>
+          </div>
+        </details>
+
+        <details class="lst-fold" id="lstTemplateFold">
+          <summary>📝 説明文テンプレート <small>{品種} {ランク} {数量} {管理番号} {備考} {タイトル} {送料} が使えます</small></summary>
+          <div class="lst-fold-body">
+            <textarea id="lstTemplate" class="lst-ta" spellcheck="false"></textarea>
+            <div class="hint" style="font-size:11px;color:var(--ink-dim);margin-top:6px;line-height:1.7">
+              値が空のプレースホルダだけの行（例: 【備考】）は自動で削除されます。<br>
+              「HTMLとして出力」ONのとき、改行は &lt;br&gt; に変換されてヤフオク説明文に反映されます。
+            </div>
+            <div class="btn-row">
+              <label class="chip-toggle"><input type="checkbox" id="lstHtmlDesc" checked><span>HTMLとして出力（改行→&lt;br&gt;）</span></label>
+              <button id="btnLstTemplateSave" class="btn btn-ghost btn-mini">💾 テンプレを保存</button>
+              <button id="btnLstTemplateReset" class="btn btn-ghost btn-mini">初期値に戻す</button>
+            </div>
+          </div>
+        </details>
+
+        <details class="lst-fold" id="lstImgFold">
+          <summary>🖼 出品画像の書き出し <small>一眼レフの大きなJPEG・加工後PNGを、ヤフオクに通るJPEGへ自動変換</small></summary>
+          <div class="lst-fold-body">
+            <label class="chip-toggle" style="margin-bottom:10px"><input type="checkbox" id="lstImgConvert" checked><span>JPEG化してリサイズする（推奨）</span></label>
+            <div class="lst-grid">
+              <div class="field"><label>長辺の最大px</label><input type="number" id="lstImgMaxEdge" min="400" max="4000" step="100"></div>
+              <div class="field"><label>1枚の上限MB</label><input type="number" id="lstImgMaxMB" min="0.3" max="10" step="0.1"></div>
+              <div class="field"><label>JPEG画質 (0.4〜1)</label><input type="number" id="lstImgQuality" min="0.4" max="1" step="0.02"></div>
+            </div>
+            <div class="hint" style="font-size:11px;color:var(--ink-dim);margin-top:8px;line-height:1.7">
+              EXIFの回転情報を反映してから書き出すので、縦位置で撮った写真が横倒しになりません。<br>
+              上限MBを超える場合は「画質を下げる → それでも超えれば縮小」の順に自動調整します。OFFにすると元ファイルをそのまま同梱します。
+            </div>
+            <div class="btn-row">
+              <button id="btnLstImgSave" class="btn btn-ghost btn-mini">💾 画像設定を保存</button>
+              <button id="btnLstImgReset" class="btn btn-ghost btn-mini">初期値に戻す</button>
+            </div>
+          </div>
+        </details>
+        <div class="btn-row" style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">
+          <button id="btnSettingsExport" class="btn btn-ghost btn-mini" title="この端末の設定をファイルに書き出します">📤 設定を書き出す</button>
+          <button id="btnSettingsImport" class="btn btn-ghost btn-mini" title="書き出した設定ファイルを読み込みます">📥 設定を読み込む</button>
+          <input type="file" id="settingsFile" accept="application/json,.json" hidden>
+          <span class="hist-meta">別のPCに同じ設定を配るときに使います</span>
         </div>
       </div>
 
@@ -3956,17 +3986,42 @@ function quantityPhrase(p){
   return String(p.quantityText || '').trim();
 }
 
-function buildTitle(p){
-  const parts = ['【メダカ】' + (String(p.variety || '').trim() || 'メダカ')];
-  if(p.rank) parts.push(String(p.rank).trim());
-  const q = quantityPhrase(p);
-  if(q) parts.push(q);
-  const tail = p.controlNo ? ' 管理番号' + String(p.controlNo).trim() : '';
-  let head = parts.join(' ').replace(/\s+/g, ' ').trim();
-  if(textWidth(head + tail) > 65){
-    head = truncateToWidth(head, 65 - textWidth(tail));
+const LST_TITLE_KEY = 'medaka_title_template';
+const TITLE_TEMPLATE_DEFAULT = '【メダカ】{品種} {ランク} {数量} 管理番号{管理番号}';
+function lstTitleTemplate(){
+  const t = localStorage.getItem(LST_TITLE_KEY);
+  return (t === null || t === '') ? TITLE_TEMPLATE_DEFAULT : t;
+}
+// テンプレートからタイトルを作る。
+// 全角65文字を超えるときは「管理番号…」の部分を残して前を切り詰める。
+function buildTitle(p, st){
+  const map = {
+    '品種':   String(p.variety || '').trim() || 'メダカ',
+    'ランク': String(p.rank || '').trim(),
+    '数量':   quantityPhrase(p),
+    '管理番号': String(p.controlNo || '').trim(),
+    '備考':   String((st && st.note) || '').trim()
+  };
+  const tpl = lstTitleTemplate();
+  // 管理番号が空なら、その周辺の文言(例「管理番号{管理番号}」)ごと落とす
+  let text = tpl.replace(/([^\s{}]*)\{([^}\n]+)\}/g, (m, prefix, key) => {
+    if(!(key in map)) return m;
+    const v = map[key];
+    return v ? (prefix + v) : '';
+  });
+  text = text.replace(/\s+/g, ' ').trim();
+  if(textWidth(text) <= 65) return text;
+
+  // 超過分は、管理番号を含む末尾のかたまりを守って前を削る
+  const ctrl = map['管理番号'];
+  const idx = ctrl ? text.lastIndexOf(ctrl) : -1;
+  if(idx > 0){
+    const cut = text.lastIndexOf(' ', idx);
+    const tail = cut > 0 ? text.slice(cut) : '';
+    const head = cut > 0 ? text.slice(0, cut) : text;
+    return (truncateToWidth(head, 65 - textWidth(tail)) + tail).trim();
   }
-  return (head + tail).trim();
+  return truncateToWidth(text, 65);
 }
 
 // ===== 説明文 =====
@@ -4152,10 +4207,68 @@ $('#btnLstImgReset').onclick = () => {
   toast('初期値に戻しました', 'ok');
 };
 $('#btnGotoImport2').onclick = () => switchTab('import');
+$('#btnGotoListingSettings').onclick = () => { switchTab('settings'); $('#lstTitleFold').scrollIntoView({ behavior:'smooth', block:'start' }); };
+
+// ===== タイトルテンプレート =====
+function updateTitlePreview(){
+  const sample = { variety:'幹之フルボディ', rank:'極上', male:'1', female:'2', quantityText:'', controlNo:'0523A2' };
+  $('#lstTitlePreview').textContent = '例: ' + buildTitle(sample, { note:'' });
+}
+$('#lstTitleTemplate').addEventListener('input', () => {
+  const prev = localStorage.getItem(LST_TITLE_KEY);
+  localStorage.setItem(LST_TITLE_KEY, $('#lstTitleTemplate').value);
+  updateTitlePreview();
+  if(prev === null) localStorage.removeItem(LST_TITLE_KEY); else localStorage.setItem(LST_TITLE_KEY, prev);
+});
+$('#btnLstTitleSave').onclick = () => {
+  localStorage.setItem(LST_TITLE_KEY, $('#lstTitleTemplate').value);
+  updateTitlePreview();
+  renderListingList();
+  toast('タイトルの作り方を保存しました', 'ok');
+};
+$('#btnLstTitleReset').onclick = () => {
+  localStorage.removeItem(LST_TITLE_KEY);
+  $('#lstTitleTemplate').value = TITLE_TEMPLATE_DEFAULT;
+  updateTitlePreview();
+  renderListingList();
+  toast('初期値に戻しました', 'ok');
+};
+
+function reloadApp(){ location.reload(); }
+// ===== 設定の書き出し / 読み込み(別PCへ配る用) =====
+const SETTINGS_KEYS = [
+  API_URL_KEY, LST_CONFIG_KEY, LST_TEMPLATE_KEY, LST_TITLE_KEY, LST_OPTS_KEY, LST_IMG_KEY,
+  AI_CFG_KEY, AI_NOTES_KEY, AI_CRUSH_KEY, SPEC_SIZE_KEY, ADJ_OPEN_KEY, LB_EDIT_KEY
+];
+$('#btnSettingsExport').onclick = () => {
+  const data = {};
+  SETTINGS_KEYS.forEach(k => { const v = localStorage.getItem(k); if(v != null) data[k] = v; });
+  const blob = new Blob([JSON.stringify({ app:'medaka-app', savedAt:new Date().toISOString(), data }, null, 2)],
+                        { type:'application/json' });
+  downloadBlob(blob, 'medaka_settings_' + tsStamp(new Date()) + '.json');
+  toast('設定を書き出しました', 'ok');
+};
+$('#btnSettingsImport').onclick = () => $('#settingsFile').click();
+$('#settingsFile').addEventListener('change', async (e) => {
+  const f = e.target.files && e.target.files[0];
+  if(!f) return;
+  try {
+    const json = JSON.parse(await f.text());
+    const data = json && json.data;
+    if(!data) throw new Error('設定ファイルの形式が違います');
+    let n = 0;
+    Object.keys(data).forEach(k => { if(SETTINGS_KEYS.includes(k)){ localStorage.setItem(k, data[k]); n++; } });
+    toast(n + '件の設定を読み込みました。画面を再読み込みします', 'ok');
+    setTimeout(() => reloadApp(), 1200);
+  } catch(err){
+    toast('読み込み失敗: ' + (err.message || err), 'err');
+  }
+  e.target.value = '';
+});
 $('#btnLstSelectAll').onclick = () => { products.forEach(p => lstGet(p).include = true); renderListingList(); };
 $('#btnLstSelectNone').onclick = () => { products.forEach(p => lstGet(p).include = false); renderListingList(); };
 $('#btnLstRetitle').onclick = () => {
-  products.forEach(p => { const st = lstGet(p); st.title = buildTitle(p); st.titleEdited = false; });
+  products.forEach(p => { const st = lstGet(p); st.title = buildTitle(p, st); st.titleEdited = false; });
   renderListingList();
   toast('タイトルを再生成しました', 'ok');
 };
@@ -4174,6 +4287,7 @@ function renderListingPanel(){
   $('#listingLoaded').classList.remove('hidden');
   if(!$('#lstConfigGrid').children.length) buildConfigForm();
   if(!$('#lstTemplate').value) $('#lstTemplate').value = lstTemplateText();
+  if(!$('#lstTitleTemplate').value){ $('#lstTitleTemplate').value = lstTitleTemplate(); updateTitlePreview(); }
   renderListingList();
 }
 
@@ -4185,7 +4299,7 @@ function renderListingList(){
 
   list.innerHTML = products.map((p, idx) => {
     const st = lstGet(p);
-    if(!st.titleEdited || !st.title) st.title = buildTitle(p);
+    if(!st.titleEdited || !st.title) st.title = buildTitle(p, st);
     const imgs = planImages(p);
     const base = lstBaseName(p, idx, usedNames);
     const width = textWidth(st.title);
@@ -4811,6 +4925,8 @@ $('#btnHistExport').onclick = async () => {
   if(typeof o.htmlDesc === 'boolean') $('#lstHtmlDesc').checked = o.htmlDesc;
   if(o.encoding) $('#lstEncoding').value = o.encoding;
   $('#lstTemplate').value = lstTemplateText();
+  $('#lstTitleTemplate').value = lstTitleTemplate();
+  updateTitlePreview();
   fillImgForm();
 })();
 
