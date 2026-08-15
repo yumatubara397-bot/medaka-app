@@ -218,6 +218,8 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .ai-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .ai-opts{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
 .ai-manual-hint{font-size:10px;color:var(--ink-dim)}
+.ai-crush-wrap{display:inline-flex;align-items:center;gap:6px}
+.ai-crush-wrap .bright-range{width:90px}
 .ai-hint{font-size:11px;color:var(--ink-dim);margin-top:8px;line-height:1.6}
 .ai-notes-label{font-size:11px;font-weight:700;margin-top:12px}
 .ai-notes-label small{font-weight:400;color:var(--ink-dim);font-size:10px;margin-left:6px}
@@ -538,6 +540,11 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
             <label class="chip-toggle" title="黒背景の写真は純黒に締めます。白やグレーの背景は色を変えずに整えるだけにします"><input type="checkbox" id="aiBlackBg" checked><span>🌑 背景を整える（黒は締める / 白・グレーはそのまま）</span></label>
             <label class="chip-toggle" title="商品写真として見栄えの良い向きにChatGPTが揃えます（左右反転あり）"><input type="checkbox" id="aiAutoOrient" checked><span>🔄 向きはAIにおまかせ</span></label>
             <label class="chip-toggle" title="レタッチしたと分からない、撮ったままに近い自然な仕上がりにします"><input type="checkbox" id="aiNatural" checked><span>📷 加工感を出さない</span></label>
+            <span class="ai-crush-wrap" title="黒背景をどれだけ締めるか。0にすると背景に一切触りません（ヒレが消えるときは下げてください）">
+              <span class="ai-manual-hint">背景の締め</span>
+              <input type="range" id="aiCrush" class="bright-range" min="0" max="100" step="5" value="0">
+              <span class="bright-val" id="aiCrushVal">0</span>
+            </span>
             <span class="ai-manual-hint">向きが気に入らなければ ⇄ ⇅ ↻ で手動修正できます</span>
           </div>
           <div class="ai-hint" id="aiCostHint"></div>
@@ -2381,7 +2388,12 @@ function onPhotoBrightnessInput(photoIdx, value, immediate){
 // ===== 🤖 ChatGPT(OpenAI画像編集)で「いい感じにして」 =====
 // ============================================================
 const AI_CFG_KEY   = 'medaka_openai_cfg';    // {model, quality, square, blackBg, autoOrient}
-const AI_NOTES_KEY = 'medaka_ai_notes';      // ダメ出しを貯めて毎回守らせる指示
+const AI_NOTES_KEY = 'medaka_ai_notes';
+const AI_CRUSH_KEY = 'medaka_bg_crush';        // 背景の締めの強さ(0=何もしない)
+function bgCrushStrength(){
+  const v = localStorage.getItem(AI_CRUSH_KEY);
+  return v == null ? 0 : Math.max(0, Math.min(100, +v || 0));   // 既定は0=背景に一切触らない
+}      // ダメ出しを貯めて毎回守らせる指示
 const AI_MODEL_DEFAULT = 'gpt-image-2';
 // 画質は自由に選べる(既定 medium)。固定したいときは LOCKED を true にする
 const AI_QUALITY_LOCKED = false;
@@ -2595,16 +2607,21 @@ function enforceBackground(blob, rect, bg){
       //   (AIが返しがちな「中途半端に浮いた黒」をしっかり沈める)
       //   SOFTより明るい画素＝メダカ本体やヒレには一切触れない
       //   締めるのは「画面の外周からつながっている暗い部分」だけ。
-      //   白や半透明のヒレ(周りより明るい)がせき止めになるので、ヒレは一切触らない
-      if(dark){
-        const HARD = 30, SOFT = 64;
+      //   さらに、魚やヒレの周囲は余白(RADIUS px)を取って保護する。
+      //   ヒレの先はぼかしのグラデーションで消えていくので、そこを潰すと
+      //   「ヒレが切れた」ように見えてしまうため。
+      const strength = Math.max(0, Math.min(100, bgCrushStrength())) / 100;
+      if(dark && strength > 0){
+        const HARD = 22, SOFT = 52;
         const W = c.width, H = c.height;
+        const RADIUS = Math.max(6, Math.round(Math.min(W, H) * 0.015));   // 魚・ヒレの周りに取る余白
         const d = ctx.getImageData(0, 0, W, H);
         const p = d.data;
         const lum = new Float32Array(W * H);
         for(let i = 0, q = 0; i < p.length; i += 4, q++){
           lum[q] = 0.299*p[i] + 0.587*p[i+1] + 0.114*p[i+2];
         }
+        // ① 外周の暗い画素から塗りつぶし探索(4近傍)
         const seen = new Uint8Array(W * H);
         const stack = new Int32Array(W * H);
         let sp = 0;
@@ -2619,14 +2636,39 @@ function enforceBackground(blob, rect, bg){
           if(y > 0)     push(q - W);
           if(y < H - 1) push(q + W);
         }
+        // ② 被写体(=探索が届かなかった所)から RADIUS px 以内は保護する
+        //    → ヒレのぼかしがそのまま残る
+        const dist = new Int32Array(W * H).fill(-1);
+        let qh = 0, qt = 0;
+        const queue = new Int32Array(W * H);
+        for(let q = 0; q < seen.length; q++){
+          if(!seen[q]){ dist[q] = 0; queue[qt++] = q; }
+        }
+        while(qh < qt){
+          const q = queue[qh++];
+          const dv = dist[q];
+          if(dv >= RADIUS) continue;
+          const x = q % W, y = (q / W) | 0;
+          const nb = [];
+          if(x > 0) nb.push(q - 1);
+          if(x < W - 1) nb.push(q + 1);
+          if(y > 0) nb.push(q - W);
+          if(y < H - 1) nb.push(q + W);
+          for(const n of nb){
+            if(dist[n] === -1){ dist[n] = dv + 1; queue[qt++] = n; }
+          }
+        }
+        // ③ 保護されていない背景だけを、指定の強さで沈める
         for(let q = 0, i = 0; q < seen.length; q++, i += 4){
-          if(!seen[q]) continue;
+          if(!seen[q]) continue;                       // 魚・ヒレ本体
+          if(dist[q] >= 0 && dist[q] <= RADIUS) continue;  // その周囲の余白(ヒレのぼかし)
           const L = lum[q];
           const t = L <= HARD ? 0 : (L - HARD) / (SOFT - HARD);
           const k = t * t;
-          p[i] = Math.round(p[i] * k);
-          p[i+1] = Math.round(p[i+1] * k);
-          p[i+2] = Math.round(p[i+2] * k);
+          const kk = k + (1 - k) * (1 - strength);      // strength=1で完全に沈む
+          p[i] = Math.round(p[i] * kk);
+          p[i+1] = Math.round(p[i+1] * kk);
+          p[i+2] = Math.round(p[i+2] * kk);
         }
         ctx.putImageData(d, 0, 0);
       }
@@ -3110,7 +3152,14 @@ $('#btnTestOpenai').onclick = async () => {
   } catch(e){}
 })();
 
+$('#aiCrush').addEventListener('input', () => {
+  $('#aiCrushVal').textContent = $('#aiCrush').value;
+  localStorage.setItem(AI_CRUSH_KEY, $('#aiCrush').value);
+});
+
 (function restoreAiCfg(){
+  $('#aiCrush').value = bgCrushStrength();
+  $('#aiCrushVal').textContent = bgCrushStrength();
   const cfg = aiCfg();
   $('#openaiModel').value = cfg.model;
   renderAiQualityOptions();
