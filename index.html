@@ -450,7 +450,9 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
         <h2>写真フォルダを選択</h2>
         <p>一眼レフで撮影したフォルダを選んでください。<br>「ラベル → メダカ3枚 → ラベル → メダカ3枚 …」の順で構成されている前提です。</p>
         <button id="btnPickFolder" class="btn btn-primary">📂 フォルダを選ぶ</button>
-        <div class="hint">※ Chrome / Edge / Brave で動作（Safari不可）</div>
+        <button id="btnPickFiles" class="btn btn-ghost">🖼 写真を選ぶ（Safari・iPad用）</button>
+        <input type="file" id="filePicker" accept="image/jpeg,image/png" multiple hidden>
+        <div class="hint" id="pickerHint">※ フォルダ選択は Chrome / Edge のみ。Safari・iPad では「写真を選ぶ」をお使いください</div>
       </div>
 
       <div id="importLoaded" class="hidden">
@@ -458,6 +460,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
           <div class="bar-info"><span id="folderName"></span> / <span id="photoCount"></span>枚</div>
           <div class="bar-actions">
             <button id="btnReimport" class="btn btn-ghost">フォルダを変更</button>
+            <button id="btnReimportFiles" class="btn btn-ghost">写真を選び直す</button>
             <button id="btnClearImport" class="btn btn-ghost">クリア</button>
           </div>
         </div>
@@ -924,9 +927,48 @@ $('#btnPickFolder').onclick = pickFolder;
 $('#btnReimport').onclick = pickFolder;
 $('#btnClearImport').onclick = clearImport;
 
+// Safari など showDirectoryPicker が無いブラウザでも使えるようにする
+const supportsFolderPicker = typeof window.showDirectoryPicker === 'function';
+
+$('#btnPickFiles').onclick = () => $('#filePicker').click();
+$('#btnReimportFiles').onclick = () => $('#filePicker').click();
+$('#filePicker').addEventListener('change', async (e) => {
+  const files = Array.from(e.target.files || []);
+  e.target.value = '';                       // 同じ写真をもう一度選べるように
+  if(files.length === 0) return;
+  await loadPhotosFromFiles(files);
+});
+
+// 写真を直接選んだ場合の取込（フォルダ選択と同じ形に揃える）
+async function loadPhotosFromFiles(files){
+  const imgs = files
+    .filter(f => /\.(jpe?g|png)$/i.test(f.name))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  if(imgs.length === 0){ toast('画像ファイルが選ばれていません', 'err'); return; }
+
+  photos.forEach(p => p.blobUrl && URL.revokeObjectURL(p.blobUrl));
+  // handle.getFile() で読む作りに合わせておく（以降の処理はフォルダ選択と共通）
+  photos = imgs.map((f, i) => ({
+    name: f.name,
+    handle: { getFile: async () => f },
+    blobUrl: null,
+    isLabel: i % 4 === 0
+  }));
+  folderHandle = { name: '選択した写真' };   // 表示と編集キャッシュのキーに使う
+  $('#folderName').textContent = `${imgs.length}枚を選択`;
+  $('#photoCount').textContent = photos.length;
+  $('#emptyImport').classList.add('hidden');
+  $('#importLoaded').classList.remove('hidden');
+  toast(`${photos.length}枚を読込`, 'ok');
+  await renderPhotoGrid();
+  computeProductsAndRender();
+}
+
 async function pickFolder(){
-  if(!window.showDirectoryPicker){
-    toast('お使いのブラウザはフォルダ選択未対応です（Chrome/Edge推奨）', 'err');
+  if(!supportsFolderPicker){
+    // Safari では写真を直接選ぶ方式に切り替える
+    toast('このブラウザはフォルダ選択に未対応です。写真を選んでください', 'err');
+    $('#filePicker').click();
     return;
   }
   try {
@@ -1554,6 +1596,16 @@ function loadSettings(){
   updateApiStatus();
 }
 loadSettings();
+
+// フォルダ選択に未対応なら、そちらのボタンは目立たせない
+(function adjustPickerUI(){
+  if(supportsFolderPicker) return;
+  $('#btnPickFolder').classList.remove('btn-primary');
+  $('#btnPickFolder').classList.add('btn-ghost');
+  $('#btnPickFiles').classList.remove('btn-ghost');
+  $('#btnPickFiles').classList.add('btn-primary');
+  $('#pickerHint').textContent = 'このブラウザではフォルダ選択が使えません。「写真を選ぶ」から、ラベル→個体3枚…の順に並んだ写真をまとめて選んでください';
+})();
 
 // ============================================================
 // ===== 📚 お手本スタイル機能 — 廃止 =====
