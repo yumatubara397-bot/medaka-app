@@ -5610,6 +5610,16 @@ $('#btnHistExport').onclick = async () => {
   toast('履歴CSVをダウンロードしました', 'ok');
 };
 
+// 起動したとき、最初に開く「登録」タブを描いておく
+(function initRegisterPanel(){
+  try { renderRegisterPanel(); }
+  catch(e){
+    console.error('登録タブの表示に失敗:', e);
+    const box = document.getElementById('regStepBody');
+    if(box) box.innerHTML = '<div class="reg-empty">表示に失敗しました。ページを読み込み直してください。</div>';
+  }
+})();
+
 // 起動時に保存済みオプションを復元
 (function restoreListingOpts(){
   const o = lstOpts();
