@@ -498,6 +498,14 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .reg-csv-sub .btn{flex:1}
 .reg-item .tag{font-size:12px;opacity:.35}
 .reg-item .tag.on{opacity:1}
+.reg-tepra{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;
+  padding:10px 14px;border-radius:10px;background:var(--bg2,#141a2e);border:1px solid var(--line,#2a3350)}
+.reg-tepra .dot{width:10px;height:10px;border-radius:50%;background:#6b7280;flex:none}
+.reg-tepra .dot.on{background:#4ade80}
+.reg-tepra .txt{font-size:14px}
+.reg-tepra .err{font-size:12px;color:#f87171}
+.reg-tepra .btn{margin-left:auto}
+.reg-print-now{width:100%;margin-bottom:10px}
 </style>
 </head>
 <body>
@@ -520,6 +528,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
   <main>
     <!-- ===== 登録タブ ===== -->
     <section id="panel-register" class="panel">
+      <div id="regTepraBar" class="reg-tepra hidden"></div>
       <div class="reg-wrap">
         <div class="reg-main">
           <div class="card">
@@ -535,6 +544,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
               <button id="regClearAll" class="btn btn-ghost btn-sm">全部消す</button>
             </div>
             <div id="regItemList" class="reg-items"></div>
+            <button id="regTepraPrint" class="btn btn-primary reg-print-now hidden">🖨 まだ出していないぶんを印刷</button>
             <button id="regTepraCsv" class="btn btn-primary reg-next" disabled>🏷 テプラ用CSVを書き出す</button>
             <div class="hint" style="margin:6px 0 12px">
               「TEPRA LINK 2」の<b>流し込みフォーム</b>で読み込むと、まとめて印刷できます。<br>
@@ -5141,6 +5151,120 @@ function regItems(){
 }
 function saveRegItems(list){ localStorage.setItem(REG_ITEMS_KEY, JSON.stringify(list)); }
 
+// ===== テプラへの橋渡し =====
+// 端末によって経路が変わるが、呼び方は同じにしておく。
+//   android … Androidアプリの中で動いているとき（WebViewが窓口を用意している）
+//   local   … Windowsの印刷ヘルパーがこのページを配信しているとき
+//   none    … iPadなど。直接は印刷できないので、CSVに落とす
+const TepraLink = {
+  kind(){
+    if(window.TepraBridge && typeof window.TepraBridge.print === 'function') return 'android';
+    if(location.protocol === 'http:' && /^(127\.0\.0\.1|localhost)$/.test(location.hostname)) return 'local';
+    return 'none';
+  },
+  available(){ return this.kind() !== 'none'; },
+
+  async call(method, arg){
+    const kind = this.kind();
+    if(kind === 'android'){
+      // Android側は同期で返す（JSON文字列）
+      const raw = (arg === undefined) ? window.TepraBridge[method]() : window.TepraBridge[method](arg);
+      try { return JSON.parse(raw); } catch(e){ return { ok:false, error:'応答を読めませんでした: ' + raw }; }
+    }
+    if(kind === 'local'){
+      try {
+        const res = await fetch('/tepra/' + method, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(arg === undefined ? {} : { payload: arg })
+        });
+        return await res.json();
+      } catch(e){
+        return { ok:false, error:'印刷ヘルパーに繋がりません（起動していますか？）' };
+      }
+    }
+    return { ok:false, error:'この端末からは直接印刷できません' };
+  },
+
+  status(){ return this.call('status'); },
+  connect(){ return this.call('connect'); },
+
+  /** 登録した商品をラベルにして印刷する */
+  print(items){
+    const labels = items.map(it => ({
+      lines: [
+        it.variety || 'メダカ',
+        [it.rank, it.quantityText].filter(Boolean).join(' '),
+        it.controlNo || ''
+      ].filter(t => String(t).trim() !== '')
+    }));
+    return this.call('print', JSON.stringify(labels));
+  }
+};
+
+/** 登録タブの上に出すテプラの状態 */
+async function renderTepraBar(){
+  const box = $('#regTepraBar');
+  if(!box) return;
+  if(!TepraLink.available()){
+    box.classList.add('hidden');
+    return;
+  }
+  box.classList.remove('hidden');
+  box.innerHTML = '<span class="dot"></span><span class="txt">テプラの状態を確認しています…</span>';
+  const st = await TepraLink.status();
+  const on = st.ok && st.connected;
+  const msg = !st.ok ? (st.error || '確認できませんでした')
+            : !st.connected ? 'テプラ未接続'
+            : `テプラ接続済み（${st.printer || 'テプラ'}${st.tapeMM ? ' / テープ ' + st.tapeMM + 'mm' : ''}）`;
+  box.innerHTML = `<span class="dot ${on ? 'on' : ''}"></span>
+    <span class="txt">${escapeHtml(msg)}</span>
+    ${st.error && st.connected ? `<span class="err">${escapeHtml(st.error)}</span>` : ''}
+    <button id="regTepraConnect" class="btn btn-ghost btn-sm">${on ? '接続し直す' : '接続する'}</button>`;
+  $('#regTepraConnect').onclick = async () => {
+    toast('テプラを探しています…', 'ok');
+    const r = await TepraLink.connect();
+    if(!r.ok) toast(r.error || '接続できませんでした', 'err');
+    else toast('テプラにつながりました', 'ok');
+    renderTepraBar();
+  };
+}
+
+/** 登録した1件をその場で印刷する */
+async function tepraPrintOne(item){
+  const r = await TepraLink.print([item]);
+  if(r.ok){
+    const list = regItems();
+    const t = list.find(x => x.controlNo === item.controlNo);
+    if(t) t.tepraExportedAt = Date.now();       // 印刷済みとして扱う
+    saveRegItems(list);
+    toast(`${item.controlNo} をテプラから出しました`, 'ok');
+  } else {
+    toast(r.error || '印刷できませんでした', 'err');
+  }
+  renderRegisterPanel();
+  return r.ok;
+}
+
+/** まだ出していないぶんをまとめて印刷する */
+async function tepraPrintPending(){
+  const items = regUnprinted();
+  if(!items.length){ toast('まだ出していない商品はありません', 'err'); return; }
+  toast(`${items.length}枚 印刷しています…`, 'ok');
+  const r = await TepraLink.print(items);
+  if(r.ok){
+    const stamp = Date.now();
+    const list = regItems();
+    const target = new Set(items.map(x => x.controlNo));
+    list.forEach(x => { if(target.has(x.controlNo)) x.tepraExportedAt = stamp; });
+    saveRegItems(list);
+    toast(`${r.printed || items.length}枚 印刷しました`, 'ok');
+  } else {
+    toast(r.error || '印刷できませんでした', 'err');
+  }
+  renderRegisterPanel();
+}
+
 // ===== 登録タブの動き =====
 // 1つ選ぶと次の項目が出る、順番に進む形。
 // 各項目は「最初に設定した内容（マスター）」を全部並べて、押すだけで選べる。
@@ -5161,6 +5285,7 @@ function renderRegisterPanel(){
   renderRegStepBody();
   renderRegItems();
   renderRegDone();
+  renderTepraBar();
 }
 
 /** 上の進み具合。押すとそこまで戻れる */
@@ -5325,6 +5450,13 @@ function renderRegItems(){
   $('#regCount').textContent = items.length;
   $('#regToImport').disabled = items.length === 0;
   const yet = regUnprinted().length;
+  const direct = TepraLink.available();
+  // テプラに直接出せる端末では、CSVは補助にまわす
+  $('#regTepraPrint').classList.toggle('hidden', !direct);
+  $('#regTepraPrint').disabled = yet === 0;
+  $('#regTepraPrint').textContent = yet ? `🖨 まだ出していない${yet}枚を印刷` : '🖨 出していない商品はありません';
+  $('#regTepraCsv').classList.toggle('btn-primary', !direct);
+  $('#regTepraCsv').classList.toggle('btn-ghost', direct);
   $('#regTepraCsv').disabled = yet === 0;
   $('#regTepraCsv').textContent = yet ? `🏷 テプラ用CSVを書き出す（${yet}件）` : '🏷 出していない商品はありません';
   $('#regTepraCsvAll').disabled = items.length === 0;
@@ -5394,6 +5526,13 @@ function regDoRegister(){
   regSel.breed = null;                 // 次の魚に進みやすいよう品種だけ空にする
   renderRegisterPanel();
   $('#panel-register').scrollIntoView({ block: 'start', behavior: 'smooth' });
+
+  // テプラが使える端末なら、そのまま1枚出す
+  if(TepraLink.available()){
+    const item = list[list.length - 1];
+    toast('テプラから出しています…', 'ok');
+    tepraPrintOne(item);
+  }
 }
 
 $('#regClearAll').onclick = () => {
@@ -5454,6 +5593,7 @@ function exportTepraCsv(encoding, all){
   toast(`${items.length} 件を書き出しました（${encoding === 'utf8' ? 'UTF-8' : 'Shift_JIS'}）`, 'ok');
 }
 
+$('#regTepraPrint').onclick  = () => tepraPrintPending();
 $('#regTepraCsv').onclick    = () => exportTepraCsv('sjis', false);
 $('#regTepraCsvAll').onclick = () => {
   if(!confirm('すでに出したぶんも含めて、全部もう一度書き出しますか？')) return;
