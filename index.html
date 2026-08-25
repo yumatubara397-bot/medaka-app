@@ -529,7 +529,13 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
               <button id="regClearAll" class="btn btn-ghost btn-sm">全部消す</button>
             </div>
             <div id="regItemList" class="reg-items"></div>
-            <button id="regToImport" class="btn btn-primary reg-next" disabled>写真を割り当てる →</button>
+            <button id="regTepraCsv" class="btn btn-primary reg-next" disabled>🏷 テプラ用CSVを書き出す</button>
+            <div class="hint" style="margin:6px 0 12px">
+              「TEPRA LINK 2」アプリの<b>流し込みフォーム</b>で読み込むと、まとめて印刷できます。<br>
+              文字化けするときは、下の「UTF-8で書き出す」をお試しください。
+            </div>
+            <button id="regTepraCsvUtf8" class="btn btn-ghost btn-sm reg-next" disabled>UTF-8で書き出す</button>
+            <button id="regToImport" class="btn btn-ghost reg-next" style="margin-top:10px" disabled>写真を割り当てる →</button>
           </div>
         </div>
       </div>
@@ -5224,6 +5230,8 @@ function renderRegItems(){
   const items = regItems();
   $('#regCount').textContent = items.length;
   $('#regToImport').disabled = items.length === 0;
+  $('#regTepraCsv').disabled = items.length === 0;
+  $('#regTepraCsvUtf8').disabled = items.length === 0;
   const box = $('#regItemList');
   if(!items.length){
     box.innerHTML = '<div class="reg-empty">まだ登録がありません。</div>';
@@ -5315,6 +5323,44 @@ $('#regClearAll').onclick = () => {
   renderRegisterPanel();
 };
 $('#regToImport').onclick = () => switchTab('import');
+// ===== テプラ用CSVの書き出し =====
+// キングジムの「TEPRA LINK 2」の流し込みフォームは CSV / TXT を読み込める。
+// 1行目を列タイトルにしておくと、アプリ側でその列をラベルに差し込める。
+function buildTepraCsv(items){
+  const head = ['管理番号','品種','ランク','数量','ラベル'];
+  const esc = v => {
+    const t = String(v == null ? '' : v);
+    return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+  };
+  const rows = items.map(it => [
+    it.controlNo, it.variety, it.rank, it.quantityText,
+    [it.variety, it.rank, it.quantityText].filter(Boolean).join(' ')
+  ].map(esc).join(','));
+  return head.join(',') + '\r\n' + rows.join('\r\n') + '\r\n';
+}
+
+function exportTepraCsv(encoding){
+  const items = regItems();
+  if(!items.length){ toast('登録した商品がありません', 'err'); return; }
+  const csv = buildTepraCsv(items);
+  let blob;
+  if(encoding === 'utf8'){
+    blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });   // BOM付き
+  } else {
+    blob = new Blob([encodeSjis(csv)], { type: 'text/csv' });
+  }
+  const d = new Date(), p2 = n => String(n).padStart(2, '0');
+  const name = `テプラ_${d.getFullYear()}${p2(d.getMonth()+1)}${p2(d.getDate())}_${items.length}件.csv`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  toast(`${items.length} 件を書き出しました（${encoding === 'utf8' ? 'UTF-8' : 'Shift_JIS'}）`, 'ok');
+}
+
+$('#regTepraCsv').onclick = () => exportTepraCsv('sjis');
+$('#regTepraCsvUtf8').onclick = () => exportTepraCsv('utf8');
 
 // ===== 登録した商品に写真を割り当てる =====
 // ラベル写真で区切る従来のやり方の代わりに、登録済みの商品へ順番に配る。
