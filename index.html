@@ -472,6 +472,28 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .reg-done .sub{opacity:.7;margin:4px 0 14px}
 .reg-done .acts{display:flex;gap:10px;flex-wrap:wrap}
 .reg-done .acts .btn{flex:1;min-width:150px;min-height:52px}
+
+/* 登録タブ：ステップ表示 */
+.reg-steps{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+.reg-step{display:flex;align-items:center;gap:8px;padding:10px 14px;min-height:48px;border-radius:10px;
+  cursor:pointer;border:1px solid var(--line,#2a3350);background:var(--bg2,#141a2e);color:inherit;flex:1;min-width:130px}
+.reg-step .i{width:24px;height:24px;line-height:24px;text-align:center;border-radius:999px;
+  background:var(--line,#2a3350);font-size:13px;font-weight:700;flex:none}
+.reg-step .l{font-weight:700;opacity:.75}
+.reg-step .v{margin-left:auto;font-weight:700;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.reg-step.done{border-color:rgba(74,222,128,.45)}
+.reg-step.done .i{background:rgba(74,222,128,.25);color:#4ade80}
+.reg-step.done .l{opacity:.55}
+.reg-step.on{border-color:var(--accent,#39d0ff);box-shadow:0 0 0 2px rgba(57,208,255,.22)}
+.reg-step.on .i{background:var(--accent,#39d0ff);color:#05131d}
+.reg-step.on .l{opacity:1}
+/* ランク・数量の大きいボタン */
+.reg-bigs{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-bottom:14px}
+.reg-big{min-height:72px;font-size:20px;font-weight:700;border-radius:12px;cursor:pointer;
+  border:1px solid var(--line,#2a3350);background:var(--bg2,#141a2e);color:inherit}
+.reg-big.on{background:var(--accent,#39d0ff);color:#05131d;border-color:transparent}
+.reg-pick-acts{display:flex;gap:10px;flex-wrap:wrap}
+.reg-pick-acts .btn{flex:1;min-width:150px}
 </style>
 </head>
 <body>
@@ -497,28 +519,8 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
       <div class="reg-wrap">
         <div class="reg-main">
           <div class="card">
-            <h3 class="card-title">① 品種を選ぶ</h3>
-            <input type="search" id="regBreedSearch" class="reg-search" placeholder="品種名・ふりがな・コードで検索">
-            <div id="regKanaBar" class="reg-kana"></div>
-            <div id="regBreedList" class="reg-breeds"></div>
-            <button id="regAddBreed" class="btn btn-ghost reg-add">＋ 品種を追加する</button>
-          </div>
-
-          <div class="card">
-            <h3 class="card-title">② ランク・数量を選ぶ</h3>
-            <div class="reg-row"><span class="reg-label">ランク</span><div id="regRankChips" class="reg-chips"></div></div>
-            <div class="reg-row"><span class="reg-label">数量</span><div id="regQtyChips" class="reg-chips"></div></div>
-          </div>
-
-          <div class="card reg-confirm">
-            <div class="reg-summary">
-              <div class="reg-sum-line"><span>品種</span><b id="regSumBreed">—</b></div>
-              <div class="reg-sum-line"><span>ランク</span><b id="regSumRank">—</b></div>
-              <div class="reg-sum-line"><span>数量</span><b id="regSumQty">—</b></div>
-              <div class="reg-sum-line"><span>管理番号</span><b id="regSumNo" class="mono">—</b></div>
-            </div>
-            <div class="hint">「登録する」を押すまで管理番号は確定しません</div>
-            <button id="regDoRegister" class="btn btn-primary reg-go" disabled>登録する</button>
+            <div id="regSteps" class="reg-steps"></div>
+            <div id="regStepBody"></div>
           </div>
         </div>
 
@@ -5133,19 +5135,79 @@ function regItems(){
 function saveRegItems(list){ localStorage.setItem(REG_ITEMS_KEY, JSON.stringify(list)); }
 
 // ===== 登録タブの動き =====
-let regSel = { breed: null, rank: null, qty: null, group: '全部', search: '', lastNo: '' };
+// 1つ選ぶと次の項目が出る、順番に進む形。
+// 各項目は「最初に設定した内容（マスター）」を全部並べて、押すだけで選べる。
+let regSel = { breed: null, rank: null, qty: null, group: '全部', search: '', step: 1, lastNo: '' };
+
+const REG_STEPS = [
+  { n: 1, label: '品種' },
+  { n: 2, label: 'ランク' },
+  { n: 3, label: '数量' },
+  { n: 4, label: '確認' }
+];
 
 function renderRegisterPanel(){
   const m = regMasters();
-  if(!regSel.rank && m.ranks.length) regSel.rank = m.ranks[0];
-  if(!regSel.qty && m.quantities.length) regSel.qty = m.quantities[0];
-  renderRegKanaBar(); renderRegBreeds(); renderRegChips();
-  renderRegSummary(); renderRegItems(); renderRegDone();
+  if(!m.ranks.length) regSel.rank = '';
+  if(!m.quantities.length) regSel.qty = '';
+  renderRegSteps();
+  renderRegStepBody();
+  renderRegItems();
+  renderRegDone();
+}
+
+/** 上の進み具合。押すとそこまで戻れる */
+function renderRegSteps(){
+  const chosen = { 1: regSel.breed ? regSel.breed.name : '', 2: regSel.rank, 3: regSel.qty, 4: '' };
+  $('#regSteps').innerHTML = REG_STEPS.map(st => {
+    const cls = st.n === regSel.step ? 'on' : (chosen[st.n] ? 'done' : '');
+    const val = chosen[st.n] ? `<span class="v">${escapeHtml(chosen[st.n])}</span>` : '';
+    return `<button class="reg-step ${cls}" data-n="${st.n}">
+      <span class="i">${st.n}</span><span class="l">${escapeHtml(st.label)}</span>${val}</button>`;
+  }).join('');
+  $$('#regSteps .reg-step').forEach(b => {
+    b.onclick = () => { regSel.step = +b.dataset.n; renderRegisterPanel(); };
+  });
+}
+
+function renderRegStepBody(){
+  const box = $('#regStepBody');
+  if(regSel.step === 1){ box.innerHTML = regStep1Html(); bindRegStep1(); }
+  else if(regSel.step === 2){ box.innerHTML = regPickHtml('ランク', regMasters().ranks, regSel.rank); bindRegPick('ranks'); }
+  else if(regSel.step === 3){ box.innerHTML = regPickHtml('数量', regMasters().quantities, regSel.qty); bindRegPick('quantities'); }
+  else { box.innerHTML = regStep4Html(); bindRegStep4(); }
+}
+
+// --- ① 品種 ---
+function regStep1Html(){
+  return `<h3 class="card-title">品種を選ぶ</h3>
+    <input type="search" id="regBreedSearch" class="reg-search"
+           placeholder="品種名・ふりがな・コードで検索" value="${escapeAttr(regSel.search)}">
+    <div id="regKanaBar" class="reg-kana"></div>
+    <div id="regBreedList" class="reg-breeds"></div>
+    <button id="regAddBreed" class="btn btn-ghost reg-add">＋ 品種を追加する</button>`;
+}
+
+function bindRegStep1(){
+  renderRegKanaBar(); renderRegBreeds();
+  $('#regBreedSearch').addEventListener('input', (e) => {
+    regSel.search = e.target.value;
+    renderRegBreeds();
+  });
+  $('#regAddBreed').onclick = () => {
+    const name = prompt('追加する品種名を入力してください');
+    if(!name || !name.trim()) return;
+    let reading = estimateReading(name);
+    if(!reading){
+      reading = prompt('「' + name.trim() + '」のふりがなを入力してください\n（頭文字の絞り込みに使います。空でも登録できます）', '') || '';
+    }
+    const b = regAddBreed(name, reading, '');
+    if(b) regPickBreed(b);
+  };
 }
 
 function renderRegKanaBar(){
-  const m = regMasters();
-  const used = new Set(m.breeds.map(b => kanaGroupOf(b.name, b.reading)));
+  const used = new Set(regMasters().breeds.map(b => kanaGroupOf(b.name, b.reading)));
   const groups = ['全部'].concat(KANA_GROUPS.filter(g => used.has(g)));
   const bar = $('#regKanaBar');
   bar.innerHTML = groups.map(g =>
@@ -5160,7 +5222,7 @@ function renderRegKanaBar(){
 
 /** 検索用にそろえる：カタカナ→ひらがな、大文字→小文字 */
 function normKana(t){
-  return String(t || '').toLowerCase().replace(/[\u30A1-\u30F6]/g,
+  return String(t || '').toLowerCase().replace(/[ァ-ヶ]/g,
     ch => String.fromCharCode(ch.charCodeAt(0) - 0x60));
 }
 
@@ -5188,44 +5250,69 @@ function renderRegBreeds(){
   }).join('');
   box.querySelectorAll('button').forEach(btn => {
     btn.onclick = () => {
-      regSel.breed = regMasters().breeds.find(x => x.name === btn.dataset.n) || null;
-      renderRegBreeds(); renderRegSummary();
+      const b = regMasters().breeds.find(x => x.name === btn.dataset.n);
+      if(b) regPickBreed(b);
     };
   });
 }
 
-function renderRegChips(){
-  const m = regMasters();
-  const build = (el, items, cur, onPick, onAdd) => {
-    el.innerHTML = items.map(v =>
-      `<button data-v="${escapeAttr(v)}" class="${v === cur ? 'on' : ''}">${escapeHtml(v)}</button>`).join('')
-      + '<button class="add" data-add="1">＋ 追加</button>';
-    el.querySelectorAll('button').forEach(b => {
-      b.onclick = () => { if(b.dataset.add) onAdd(); else onPick(b.dataset.v); };
-    });
+/** 品種を選んだら、次の項目へ進む */
+function regPickBreed(b){
+  regSel.breed = b;
+  regSel.search = ''; regSel.group = '全部';
+  regSel.step = 2;
+  renderRegisterPanel();
+}
+
+// --- ② ランク / ③ 数量（どちらも同じ形）---
+function regPickHtml(title, items, current){
+  const body = items.length
+    ? items.map(v => `<button data-v="${escapeAttr(v)}" class="reg-big ${v === current ? 'on' : ''}">${escapeHtml(v)}</button>`).join('')
+    : '<div class="reg-empty">まだ登録がありません。「＋ 追加する」から登録してください。</div>';
+  return `<h3 class="card-title">${escapeHtml(title)}を選ぶ</h3>
+    <div class="reg-bigs">${body}</div>
+    <div class="reg-pick-acts">
+      <button class="btn btn-ghost" id="regPickAdd">＋ ${escapeHtml(title)}を追加する</button>
+      <button class="btn btn-ghost" id="regPickSkip">指定しない →</button>
+    </div>`;
+}
+
+function bindRegPick(kind){
+  const isRank = kind === 'ranks';
+  const set = (v) => {
+    if(isRank) regSel.rank = v; else regSel.qty = v;
+    regSel.step = isRank ? 3 : 4;
+    renderRegisterPanel();
   };
-  build($('#regRankChips'), m.ranks, regSel.rank,
-    v => { regSel.rank = v; renderRegChips(); renderRegSummary(); },
-    () => {
-      const v = prompt('追加するランクを入力してください（例：SS）');
-      if(v && regAddSimple('ranks', v)){ regSel.rank = v.trim(); renderRegChips(); renderRegSummary(); }
-    });
-  build($('#regQtyChips'), m.quantities, regSel.qty,
-    v => { regSel.qty = v; renderRegChips(); renderRegSummary(); },
-    () => {
-      const v = prompt('追加する数量表記を入力してください（例：3匹 / 1ペア）');
-      if(v && regAddSimple('quantities', v)){ regSel.qty = v.trim(); renderRegChips(); renderRegSummary(); }
-    });
+  $$('#regStepBody .reg-big').forEach(b => { b.onclick = () => set(b.dataset.v); });
+  $('#regPickSkip').onclick = () => set('');
+  $('#regPickAdd').onclick = () => {
+    const v = prompt(isRank ? '追加するランクを入力してください（例：SS）'
+                            : '追加する数量表記を入力してください（例：3匹 / 1ペア）');
+    if(!v || !v.trim()) return;
+    if(regAddSimple(kind, v)) set(v.trim());
+  };
 }
 
-function renderRegSummary(){
-  $('#regSumBreed').textContent = regSel.breed ? regSel.breed.name : '—';
-  $('#regSumRank').textContent  = regSel.rank || '—';
-  $('#regSumQty').textContent   = regSel.qty || '—';
-  $('#regSumNo').textContent    = regPreviewNumber().no;
-  $('#regDoRegister').disabled  = !regSel.breed;
+// --- ④ 確認 ---
+function regStep4Html(){
+  const b = regSel.breed;
+  return `<h3 class="card-title">この内容で登録する</h3>
+    <div class="reg-summary">
+      <div class="reg-sum-line"><span>品種</span><b>${escapeHtml(b ? b.name : '—')}</b></div>
+      <div class="reg-sum-line"><span>ランク</span><b>${escapeHtml(regSel.rank || 'なし')}</b></div>
+      <div class="reg-sum-line"><span>数量</span><b>${escapeHtml(regSel.qty || 'なし')}</b></div>
+      <div class="reg-sum-line"><span>管理番号</span><b class="mono">${escapeHtml(regPreviewNumber().no)}</b></div>
+    </div>
+    <div class="hint">「登録する」を押すまで管理番号は確定しません</div>
+    <button id="regDoRegister" class="btn btn-primary reg-go" ${b ? '' : 'disabled'}>登録する</button>`;
 }
 
+function bindRegStep4(){
+  $('#regDoRegister').onclick = regDoRegister;
+}
+
+// --- 登録した商品の一覧 ---
 function renderRegItems(){
   const items = regItems();
   $('#regCount').textContent = items.length;
@@ -5250,7 +5337,7 @@ function renderRegItems(){
     b.onclick = () => {
       if(!confirm(b.dataset.no + ' を削除しますか？')) return;
       saveRegItems(regItems().filter(x => x.controlNo !== b.dataset.no));
-      renderRegItems(); renderRegSummary();
+      renderRegisterPanel();
     };
   });
 }
@@ -5275,8 +5362,7 @@ function renderRegDone(){
   $('#panel-register').querySelector('.reg-main').prepend(div);
   $('#regGoPhotos').onclick = () => switchTab('import');
   $('#regGoNext').onclick = () => {
-    regSel.lastNo = ''; regSel.breed = null; regSel.search = '';
-    $('#regBreedSearch').value = '';
+    regSel.lastNo = ''; regSel.breed = null; regSel.step = 1;
     renderRegisterPanel();
   };
 }
@@ -5293,29 +5379,12 @@ function regDoRegister(){
   });
   saveRegItems(list);
   regSel.lastNo = pv.no;
+  regSel.step = 1;
+  regSel.breed = null;                 // 次の魚に進みやすいよう品種だけ空にする
   renderRegisterPanel();
   $('#panel-register').scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
 
-$('#regBreedSearch').addEventListener('input', (e) => {
-  regSel.search = e.target.value;
-  renderRegBreeds();
-});
-$('#regDoRegister').onclick = regDoRegister;
-$('#regAddBreed').onclick = () => {
-  const name = prompt('追加する品種名を入力してください');
-  if(!name || !name.trim()) return;
-  let reading = estimateReading(name);
-  if(!reading){
-    reading = prompt('「' + name.trim() + '」のふりがなを入力してください\n（頭文字の絞り込みに使います。空でも登録できます）', '') || '';
-  }
-  const b = regAddBreed(name, reading, '');
-  if(b){
-    regSel.breed = b; regSel.group = '全部'; regSel.search = '';
-    $('#regBreedSearch').value = '';
-    renderRegisterPanel();
-  }
-};
 $('#regClearAll').onclick = () => {
   if(!regItems().length) return;
   if(!confirm('登録した商品をすべて消しますか？（写真は消えません）')) return;
