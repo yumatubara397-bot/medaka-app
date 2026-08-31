@@ -1148,8 +1148,8 @@ $('#btnClearImport').onclick = clearImport;
 const supportsFolderPicker = typeof window.showDirectoryPicker === 'function';
 
 $('#btnAssign').onclick = assignPhotosToRegistered;
-$('#btnFsLoad').onclick = fsLoadFromFolders;
-$('#btnFsReload').onclick = fsLoadFromFolders;
+$('#btnFsLoad').onclick = fsLoadAuto;
+$('#btnFsReload').onclick = fsLoadAuto;
 $('#assignPerItem').oninput = refreshAssignBar;
 
 $('#btnPickFiles').onclick = () => $('#filePicker').click();
@@ -5894,7 +5894,7 @@ function regDoRegister(){
   $('#panel-register').scrollIntoView({ block: 'start', behavior: 'smooth' });
 
   // 保存先が決まっていれば、その商品のフォルダを用意しておく
-  if(FS_SUPPORTED) fsEnsureFolder(list[list.length - 1]);
+  if(FsLink.available()) FsLink.ensureFolder(list[list.length - 1]);
 
   // テプラが使える端末なら、そのまま1枚出す
   if(TepraLink.available()){
@@ -6145,36 +6145,184 @@ async function fsLoadFromFolders(){
         + (missing ? `（フォルダが無い商品 ${missing}件）` : ''), 'ok');
 }
 
+
+// ===== 保存先フォルダ（端末ごとの違いを吸収する） =====
+// pc      … パソコンのChrome / Edge。ブラウザの機能でフォルダを作る
+// android … Androidアプリ。アプリ側の窓口(FolderBridge)でフォルダを作る
+// none    … iPadなど。フォルダは作れない
+const FsLink = {
+  kind(){
+    if(window.FolderBridge && typeof window.FolderBridge.ensureFolder === 'function') return 'android';
+    if(FS_SUPPORTED) return 'pc';
+    return 'none';
+  },
+  available(){ return this.kind() !== 'none'; },
+
+  androidCall(method, ...args){
+    try { return JSON.parse(window.FolderBridge[method](...args)); }
+    catch(e){ return { ok:false, error:'応答を読めませんでした' }; }
+  },
+
+  /** いまの状態 { hasRoot, rootName } */
+  async status(){
+    const k = this.kind();
+    if(k === 'android') return this.androidCall('status');
+    if(k === 'pc'){
+      const root = await fsRestoreRoot();
+      return { ok:true, hasRoot:!!root, rootName: root ? root.name : (localStorage.getItem(FS_ROOT_NAME_KEY) || '') };
+    }
+    return { ok:false, error:'この端末ではフォルダを作れません' };
+  },
+
+  async chooseRoot(){
+    const k = this.kind();
+    if(k === 'android'){
+      const r = this.androidCall('chooseRoot');
+      if(r.ok) toast(`保存先を「${r.rootName}」にしました`, 'ok');
+      else toast(r.error || '選べませんでした', 'err');
+      renderFsBar();
+      return r;
+    }
+    if(k === 'pc'){ const h = await fsChooseRoot(); return { ok:!!h, rootName: h ? h.name : '' }; }
+    return { ok:false };
+  },
+
+  /** 商品のフォルダを用意する */
+  async ensureFolder(item){
+    const k = this.kind();
+    if(k === 'android') return this.androidCall('ensureFolder', fsFolderName(item));
+    if(k === 'pc'){ const d = await fsEnsureFolder(item); return { ok:!!d }; }
+    return { ok:false };
+  },
+
+  /** そのフォルダの写真の名前 */
+  async listPhotos(item){
+    if(this.kind() !== 'android') return [];   // パソコン側は fsLoadFromFolders がまとめて読む
+    const r = this.androidCall('listPhotos', fsFolderName(item));
+    return r.ok ? r.files : [];
+  },
+
+  /** 写真1枚を読んで Blob にする（Android用） */
+  async readPhoto(item, fileName, maxEdge){
+    const r = this.androidCall('readPhoto', fsFolderName(item), fileName, maxEdge || 1600);
+    if(!r.ok) return null;
+    const bin = atob(r.base64);
+    const buf = new Uint8Array(bin.length);
+    for(let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+    return new Blob([buf], { type: 'image/jpeg' });
+  },
+
+  /** その場でカメラ（Androidのみ） */
+  async takePhoto(item){
+    if(this.kind() !== 'android') return { ok:false, error:'この端末では使えません' };
+    const n = (await this.listPhotos(item)).length + 1;
+    const name = `${fsSafeName(item.controlNo)}_${String(n).padStart(2, '0')}.jpg`;
+    return this.androidCall('takePhoto', fsFolderName(item), name);
+  },
+
+  /** 端末の写真から選んで入れる（Androidのみ） */
+  async addFromGallery(item){
+    if(this.kind() !== 'android') return { ok:false, error:'この端末では使えません' };
+    return this.androidCall('addFromGallery', fsFolderName(item), fsSafeName(item.controlNo));
+  }
+};
+
+/** Android：各フォルダの写真を読み込んで商品に割り当てる */
+async function fsLoadFromFoldersAndroid(){
+  const items = regItems();
+  if(!items.length){ toast('登録した商品がありません', 'err'); return; }
+  const st = await FsLink.status();
+  if(!st.hasRoot){ toast('先に保存先フォルダを選んでください', 'err'); return; }
+
+  photos.forEach(p => p.blobUrl && URL.revokeObjectURL(p.blobUrl));
+  photos = [];
+  const built = [];
+
+  for(const it of items){
+    const names = await FsLink.listPhotos(it);
+    const idxs = [];
+    for(const n of names){
+      const blob = await FsLink.readPhoto(it, n, 1600);
+      if(!blob) continue;
+      idxs.push(photos.length);
+      photos.push({ name: n, blobUrl: URL.createObjectURL(blob),
+                    handle: { getFile: async () => blob }, isLabel: false });
+    }
+    built.push({
+      labelIdx: idxs.length ? idxs[0] : -1, specimenIdxs: idxs,
+      variety: it.variety, rank: it.rank, quantityText: it.quantityText,
+      male: '', female: '', controlNo: it.controlNo,
+      manualEdits: { variety:true, rank:true, quantityText:true, male:false, female:false, controlNo:true }
+    });
+  }
+
+  products = built;
+  assignMode = true;
+  leftoverIdxs = [];
+  folderHandle = { name: st.rootName || '保存先' };
+  $('#emptyImport').classList.add('hidden');
+  $('#importLoaded').classList.remove('hidden');
+  $('#folderName').textContent = folderHandle.name;
+  $('#photoCount').textContent = photos.length;
+  syncFolderPhotos();
+  renderFolders(); renderProductList(); renderWarnings(); renderPhotoGrid(); refreshAssignBar();
+  const withPhotos = built.filter(b => b.specimenIdxs.length).length;
+  toast(`${withPhotos}件 / ${photos.length}枚 を読み込みました`, 'ok');
+}
+
+/** 端末に合わせて読み込み方を選ぶ */
+function fsLoadAuto(){
+  return FsLink.kind() === 'android' ? fsLoadFromFoldersAndroid() : fsLoadFromFolders();
+}
+
 /** 保存先の案内バー */
-function renderFsBar(){
+async function renderFsBar(){
   const box = $('#regFsBar');
   if(!box) return;
-  if(!FS_SUPPORTED){
-    box.innerHTML = '<span class="txt">この端末ではフォルダの自動作成は使えません（パソコンのChrome / Edgeが必要です）</span>';
-    box.classList.remove('hidden');
+  const kind = FsLink.kind();
+  box.classList.remove('hidden');
+
+  if(kind === 'none'){
+    box.innerHTML = '<span class="txt">この端末ではフォルダの自動作成は使えません'
+      + '（パソコンのChrome / Edge、またはAndroidアプリが必要です）</span>';
     return;
   }
-  box.classList.remove('hidden');
-  const saved = localStorage.getItem(FS_ROOT_NAME_KEY);
-  if(fsRoot){
+
+  const st = await FsLink.status();
+  if(st.hasRoot){
     box.innerHTML = `<span class="dot on"></span>
-      <span class="txt">保存先「${escapeHtml(fsRoot.name)}」… 登録するとフォルダを自動で作ります</span>
+      <span class="txt">保存先「${escapeHtml(st.rootName || '')}」… 登録するとフォルダを自動で作ります</span>
       <button id="fsMake" class="btn btn-ghost btn-sm">足りないフォルダを作る</button>
       <button id="fsChange" class="btn btn-ghost btn-sm">変更</button>`;
-    $('#fsMake').onclick = fsCreateMissingFolders;
-    $('#fsChange').onclick = fsChooseRoot;
-  } else if(saved){
+    $('#fsMake').onclick = fsCreateMissingFoldersAuto;
+    $('#fsChange').onclick = () => FsLink.chooseRoot();
+  } else if(kind === 'pc' && localStorage.getItem(FS_ROOT_NAME_KEY)){
     box.innerHTML = `<span class="dot"></span>
-      <span class="txt">保存先「${escapeHtml(saved)}」を覚えています。使うには許可が要ります</span>
+      <span class="txt">保存先「${escapeHtml(localStorage.getItem(FS_ROOT_NAME_KEY))}」を覚えています。使うには許可が要ります</span>
       <button id="fsConnect" class="btn btn-primary btn-sm">つなぐ</button>`;
     $('#fsConnect').onclick = fsReconnect;
   } else {
     box.innerHTML = `<span class="dot"></span>
-      <span class="txt">写真の保存先フォルダ（例：デスクトップの「魚」）を決めると、登録のたびにフォルダを作ります</span>
+      <span class="txt">写真の保存先フォルダ（例：「魚」）を決めると、登録のたびにフォルダを作ります</span>
       <button id="fsPick" class="btn btn-primary btn-sm">保存先を選ぶ</button>`;
-    $('#fsPick').onclick = fsChooseRoot;
+    $('#fsPick').onclick = () => FsLink.chooseRoot();
   }
 }
+
+/** 登録済みのぶんで、まだ無いフォルダをまとめて作る（端末共通） */
+async function fsCreateMissingFoldersAuto(){
+  const st = await FsLink.status();
+  if(!st.hasRoot){ toast('先に保存先フォルダを選んでください', 'err'); return; }
+  const items = regItems();
+  let made = 0;
+  for(const it of items){
+    const r = await FsLink.ensureFolder(it);
+    if(r && r.ok) made++;
+  }
+  toast(`${made}件のフォルダを用意しました`, 'ok');
+  renderFsBar();
+}
+
 
 // ===== 管理番号ごとのフォルダ表示 =====
 // 登録した順に写真を配り、ズレていたら区切りを1枚ずつ動かして直せるようにする。
@@ -6203,6 +6351,7 @@ function renderFolders(){
   }
 
   const used = products.reduce((n, p) => n + p.specimenIdxs.length, 0);
+  const camera = FsLink.kind() === 'android';
   box.innerHTML = products.map((p, idx) => {
     const it = items.find(x => x.controlNo === p.controlNo) || {};
     const shots = p.specimenIdxs.map(i => {
@@ -6221,6 +6370,8 @@ function renderFolders(){
       </div>
       <div class="folder-shots">${shots || '<div class="none">写真がありません</div>'}</div>
       <div class="folder-acts">
+        ${camera ? `<button data-act="shoot" data-idx="${idx}">📷 撮る</button>
+                    <button data-act="gallery" data-idx="${idx}">🖼 写真から追加</button>` : ''}
         <button data-act="minus" data-idx="${idx}" ${p.specimenIdxs.length ? '' : 'disabled'}>◀ 1枚 手放す</button>
         <button data-act="plus" data-idx="${idx}" ${canTake ? '' : 'disabled'}>1枚 もらう ▶</button>
       </div>
@@ -6239,7 +6390,18 @@ function renderFolders(){
   }
 
   box.querySelectorAll('.folder-acts button').forEach(b => {
-    b.onclick = () => shiftBoundary(+b.dataset.idx, b.dataset.act);
+    b.onclick = async () => {
+      const act = b.dataset.act, idx = +b.dataset.idx;
+      if(act === 'minus' || act === 'plus') return shiftBoundary(idx, act);
+      const it = regItems().find(x => x.controlNo === products[idx].controlNo);
+      if(!it) return;
+      b.disabled = true;
+      const r = (act === 'shoot') ? await FsLink.takePhoto(it) : await FsLink.addFromGallery(it);
+      b.disabled = false;
+      if(!r.ok){ toast(r.error || 'できませんでした', 'err'); return; }
+      toast(act === 'shoot' ? '撮影しました' : `${r.added || 0}枚 追加しました`, 'ok');
+      fsLoadAuto();                 // 入れた写真を読み直す
+    };
   });
 }
 
