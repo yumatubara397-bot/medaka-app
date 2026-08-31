@@ -558,6 +558,30 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
   .wheel-band{top:66px}
   .wheel-box{min-width:96px}
 }
+
+/* 取込：管理番号ごとのフォルダ表示 */
+.folders{display:flex;flex-direction:column;gap:14px}
+.folder{border:1px solid var(--line,#2a3350);border-radius:14px;background:var(--bg2,#141a2e);overflow:hidden}
+.folder.empty{border-style:dashed;opacity:.7}
+.folder-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 16px;
+  background:rgba(255,255,255,.03);border-bottom:1px solid var(--line,#2a3350)}
+.folder-head .no{font-family:ui-monospace,monospace;font-weight:700;font-size:14px}
+.folder-head .nm{font-size:16px;font-weight:700}
+.folder-head .sub{font-size:12px;opacity:.6}
+.folder-head .cnt{margin-left:auto;font-size:13px;opacity:.7}
+.folder-shots{display:flex;gap:8px;flex-wrap:wrap;padding:12px 16px}
+.folder-shots .shot{position:relative;width:104px;height:104px;border-radius:8px;overflow:hidden;
+  background:#000;border:1px solid var(--line,#2a3350)}
+.folder-shots .shot img{width:100%;height:100%;object-fit:cover;display:block}
+.folder-shots .shot .fn{position:absolute;left:0;right:0;bottom:0;font-size:9px;padding:2px 4px;
+  background:rgba(0,0,0,.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.folder-shots .none{opacity:.5;font-size:13px;padding:8px 0}
+.folder-acts{display:flex;gap:8px;padding:0 16px 12px;flex-wrap:wrap}
+.folder-acts button{min-height:40px;padding:0 14px;border-radius:8px;cursor:pointer;font-size:13px;
+  border:1px solid var(--line,#2a3350);background:var(--bg,#0d1220);color:inherit}
+.folder-acts button:disabled{opacity:.35;cursor:default}
+.leftover{margin-top:14px;padding:12px 16px;border-radius:12px;
+  border:1px dashed var(--warn,#f59e0b);color:var(--warn,#f59e0b);font-size:13px}
 </style>
 </head>
 <body>
@@ -616,8 +640,9 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
     <section id="panel-import" class="panel hidden">
       <div id="emptyImport" class="empty-state">
         <div class="icon">📁</div>
-        <h2>写真フォルダを選択</h2>
-        <p>一眼レフで撮影したフォルダを選んでください。<br>「ラベル → メダカ3枚 → ラベル → メダカ3枚 …」の順で構成されている前提です。</p>
+        <h2>撮った写真を取り込む</h2>
+        <p id="importIntro">「① 登録」した順に、1商品あたり決まった枚数ずつ撮ってください。<br>
+        取り込むと、管理番号のフォルダへ自動で振り分けます。</p>
         <button id="btnPickFolder" class="btn btn-primary">📂 フォルダを選ぶ</button>
         <button id="btnPickFiles" class="btn btn-ghost">🖼 写真を選ぶ（Safari・iPad用）</button>
         <input type="file" id="filePicker" accept="image/jpeg,image/png" multiple hidden>
@@ -648,12 +673,17 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
           </div>
         </div>
 
-        <h3>商品グループ <span style="color:var(--ink-dim);font-family:inherit;text-transform:none;font-size:11px">（ラベル + 個体3枚 = 1商品）</span></h3>
-        <div class="group-actions">
-          <button id="btnOcrAll" class="btn btn-primary">🔍 OCR一括実行</button>
-          <span class="hint" id="ocrHint">ラベルから品種名・管理番号・数量を抽出します</span>
-        </div>
-        <div id="productList" class="product-list"></div>
+        <h3>管理番号ごとのフォルダ</h3>
+        <div id="folderList" class="folders"></div>
+
+        <details id="advancedImport" style="margin-top:20px">
+          <summary style="cursor:pointer;opacity:.7;font-size:13px">こまかい編集（品種名や管理番号を直す）</summary>
+          <div class="group-actions" style="margin-top:12px">
+            <button id="btnOcrAll" class="btn btn-ghost">🔍 ラベル写真から読み取る（使いません）</button>
+            <span class="hint" id="ocrHint">登録から作っているので、ふつうは不要です</span>
+          </div>
+          <div id="productList" class="product-list"></div>
+        </details>
 
         <h3>写真一覧 <span style="color:var(--ink-dim);font-family:inherit;text-transform:none;font-size:11px">（ラベル/個体の判定が違う場合はサムネ下のボタンで切替）</span></h3>
         <div id="photoGrid" class="photo-grid"></div>
@@ -1100,7 +1130,7 @@ function switchTab(name){
   $$('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   $$('.panel').forEach(p => p.classList.toggle('hidden', p.id !== 'panel-'+name));
   if(name === 'register') renderRegisterPanel();
-  if(name === 'import') refreshAssignBar();
+  if(name === 'import'){ refreshAssignBar(); renderFolders(); }
   if(name === 'edit') renderEditPanel();
   if(name === 'listing') renderListingPanel();
   if(name === 'history') renderHistoryPanel();
@@ -1249,7 +1279,7 @@ function newProduct(labelIdx){
 
 function computeProductsAndRender(){
   if(assignMode){            // 登録した商品に割り当て済みのときは組み直さない
-    renderProductList(); renderWarnings(); refreshAssignBar();
+    renderFolders(); renderProductList(); renderWarnings(); refreshAssignBar();
     return;
   }
   const newProducts = [];
@@ -5483,15 +5513,15 @@ async function tepraPrintPending(){
 // 各項目は「最初に設定した内容（マスター）」を全部並べて、押すだけで選べる。
 let regSel = {
   breed: null, rank: null, qty: null,
-  qtyMode: 'pair',           // pair=ペア / set=セット / sex=雄雌べつべつ
+  qtyMode: 'pair',           // pair=ペア / sex=雄雌べつべつ
   qtyN: 1, qtyMale: 1, qtyFemale: 1,
   group: '全部', search: '', step: 1, lastNo: ''
 };
 
 /** 選んだ数量を、ラベルや出品タイトルに載せる文字にする */
 function regQuantityText(){
+  if(regSel.qtyMode !== 'pair' && regSel.qtyMode !== 'sex') regSel.qtyMode = 'pair';
   if(regSel.qtyMode === 'pair') return regSel.qtyN + 'ペア';
-  if(regSel.qtyMode === 'set')  return regSel.qtyN + 'セット';
   const parts = [];
   if(regSel.qtyMale   > 0) parts.push('雄' + regSel.qtyMale);
   if(regSel.qtyFemale > 0) parts.push('雌' + regSel.qtyFemale);
@@ -5686,7 +5716,7 @@ function regStep2Html(){
   const qtyWheels = (mode === 'sex')
     ? wheelHtml('wheelMale', '雄', regRange(100), regSel.qtyMale)
       + wheelHtml('wheelFemale', '雌', regRange(100), regSel.qtyFemale)
-    : wheelHtml('wheelQty', mode === 'pair' ? 'ペア数' : 'セット数', regRange(100), regSel.qtyN);
+    : wheelHtml('wheelQty', 'ペア数', regRange(100), regSel.qtyN);
 
   return `<h3 class="card-title">ランクと数量を選ぶ</h3>
     <div class="reg-sub-title">ランク</div>
@@ -5695,7 +5725,7 @@ function regStep2Html(){
 
     <div class="reg-sub-title">数量</div>
     <div class="qty-modes">
-      ${modeBtn('pair', 'ペア')}${modeBtn('set', 'セット')}${modeBtn('sex', '雄・雌べつべつ')}
+      ${modeBtn('pair', 'ペア')}${modeBtn('sex', '雄・雌べつべつ')}
     </div>
     <div class="wheels">${qtyWheels}</div>
 
@@ -5927,6 +5957,111 @@ $('#regTepraCsvAll').onclick = () => {
 };
 $('#regTepraCsvUtf8').onclick = () => exportTepraCsv('utf8', false);
 
+// ===== 管理番号ごとのフォルダ表示 =====
+// 登録した順に写真を配り、ズレていたら区切りを1枚ずつ動かして直せるようにする。
+
+/** 写真のURLを用意する（まだ読み込んでいなければ読む） */
+async function ensureThumb(i){
+  const ph = photos[i];
+  if(!ph || ph.blobUrl) return;
+  try { ph.blobUrl = URL.createObjectURL(await ph.handle.getFile()); }
+  catch(e){ /* 読めない写真は飛ばす */ }
+}
+
+function renderFolders(){
+  const box = $('#folderList');
+  if(!box) return;
+  const items = regItems();
+
+  if(!items.length){
+    box.innerHTML = '<div class="placeholder">「① 登録」で商品を登録すると、ここに管理番号のフォルダが出ます。</div>';
+    $('#leftoverBox') && $('#leftoverBox').remove();
+    return;
+  }
+  if(!assignMode || !products.length){
+    box.innerHTML = '<div class="placeholder">写真を取り込むと、登録した順に振り分けます。</div>';
+    return;
+  }
+
+  const used = products.reduce((n, p) => n + p.specimenIdxs.length, 0);
+  box.innerHTML = products.map((p, idx) => {
+    const it = items.find(x => x.controlNo === p.controlNo) || {};
+    const shots = p.specimenIdxs.map(i => {
+      const ph = photos[i];
+      const src = ph && ph.blobUrl ? `<img src="${ph.blobUrl}" alt="">` : '';
+      return `<div class="shot" data-i="${i}">${src}<span class="fn">${escapeHtml(ph ? ph.name : '')}</span></div>`;
+    }).join('');
+    // 次のフォルダか、余りの写真があればもらえる
+    const canTake = (products[idx + 1] && products[idx + 1].specimenIdxs.length) || leftoverIdxs.length;
+    return `<div class="folder${p.specimenIdxs.length ? '' : ' empty'}" data-idx="${idx}">
+      <div class="folder-head">
+        <span class="no">${escapeHtml(p.controlNo)}</span>
+        <span class="nm">${escapeHtml(p.variety || '')}</span>
+        <span class="sub">${escapeHtml([p.rank, p.quantityText].filter(Boolean).join(' '))}</span>
+        <span class="cnt">${p.specimenIdxs.length}枚</span>
+      </div>
+      <div class="folder-shots">${shots || '<div class="none">写真がありません</div>'}</div>
+      <div class="folder-acts">
+        <button data-act="minus" data-idx="${idx}" ${p.specimenIdxs.length ? '' : 'disabled'}>◀ 1枚 手放す</button>
+        <button data-act="plus" data-idx="${idx}" ${canTake ? '' : 'disabled'}>1枚 もらう ▶</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  // 余った写真の案内
+  const old = $('#leftoverBox'); if(old) old.remove();
+  if(used < photos.length){
+    const div = document.createElement('div');
+    div.id = 'leftoverBox';
+    div.className = 'leftover';
+    div.textContent = `⚠ ${photos.length - used}枚 余っています。`
+      + `1商品あたりの枚数を変えるか、下のボタンで各フォルダに配ってください。`;
+    box.after(div);
+  }
+
+  box.querySelectorAll('.folder-acts button').forEach(b => {
+    b.onclick = () => shiftBoundary(+b.dataset.idx, b.dataset.act);
+  });
+}
+
+/** フォルダの区切りを1枚ぶん動かす */
+function shiftBoundary(idx, act){
+  const cur = products[idx];
+  if(!cur) return;
+  if(act === 'minus'){
+    // いちばん後ろの1枚を、次のフォルダの先頭へ渡す
+    const moved = cur.specimenIdxs.pop();
+    if(moved === undefined) return;
+    if(products[idx + 1]) products[idx + 1].specimenIdxs.unshift(moved);
+    else leftoverIdxs.unshift(moved);
+  } else {
+    // 次のフォルダ（無ければ余り）から1枚もらう
+    let taken;
+    if(products[idx + 1] && products[idx + 1].specimenIdxs.length) taken = products[idx + 1].specimenIdxs.shift();
+    else if(leftoverIdxs.length) taken = leftoverIdxs.shift();
+    if(taken === undefined){ toast('もらえる写真がありません', 'err'); return; }
+    cur.specimenIdxs.push(taken);
+  }
+  products.forEach(p => { p.labelIdx = p.specimenIdxs.length ? p.specimenIdxs[0] : -1; });
+  syncFolderPhotos();
+  renderFolders();
+  renderProductList();
+  renderWarnings();
+}
+
+/** 割り当て結果を、登録した商品側にも書き戻す */
+function syncFolderPhotos(){
+  const list = regItems();
+  products.forEach(p => {
+    const it = list.find(x => x.controlNo === p.controlNo);
+    if(it) it.photoNames = p.specimenIdxs.map(i => photos[i] ? photos[i].name : '');
+  });
+  saveRegItems(list);
+}
+
+/** どのフォルダにも入っていない写真 */
+let leftoverIdxs = [];
+
 // ===== 登録した商品に写真を割り当てる =====
 // ラベル写真で区切る従来のやり方の代わりに、登録済みの商品へ順番に配る。
 let assignMode = false;
@@ -5944,7 +6079,7 @@ function refreshAssignBar(){
     `登録 ${items.length} 件 / 写真 ${photos.length} 枚 → ${Math.min(canCover, items.length)} 件ぶん割り当てられます`;
 }
 
-function assignPhotosToRegistered(){
+async function assignPhotosToRegistered(){
   const items = regItems();
   const per = Math.max(1, +($('#assignPerItem').value || 3));
   if(!items.length){ toast('先に「① 登録」で商品を登録してください', 'err'); return; }
@@ -5966,6 +6101,11 @@ function assignPhotosToRegistered(){
   }
   products = built;
   assignMode = true;
+  leftoverIdxs = [];
+  // 写真がある以上、取込の画面は「読み込み済み」にしておく
+  $('#emptyImport').classList.add('hidden');
+  $('#importLoaded').classList.remove('hidden');
+  for(let i = cursor; i < photos.length; i++) leftoverIdxs.push(i);
 
   // 登録側にも「何枚ついたか」を残す
   const list = regItems();
@@ -5975,6 +6115,8 @@ function assignPhotosToRegistered(){
   });
   saveRegItems(list);
 
+  await Promise.all(built.flatMap(b => b.specimenIdxs).map(ensureThumb));
+  renderFolders();
   renderProductList();
   renderWarnings();
   renderPhotoGrid();
