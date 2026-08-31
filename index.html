@@ -74,11 +74,8 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:24px}
 .photo-tile{background:var(--bg-2);border:2px solid var(--line);border-radius:10px;overflow:hidden;position:relative;transition:.15s;cursor:default}
 .photo-tile img{width:100%;aspect-ratio:1;object-fit:cover;display:block;background:#000}
-.photo-tile.is-label{border-color:var(--accent-2);box-shadow:0 0 0 1px var(--accent-2)}
 .tile-info{padding:6px 8px;font-size:10px;color:var(--ink-dim);display:flex;align-items:center;justify-content:space-between;gap:6px;background:var(--bg-2)}
 .tile-name{font-family:'JetBrains Mono',monospace;font-size:9px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tile-toggle{background:var(--line);color:var(--ink);border:none;padding:3px 7px;border-radius:5px;font-size:9px;cursor:pointer;font-weight:700;flex:none}
-.photo-tile.is-label .tile-toggle{background:var(--accent-2);color:#fff}
 
 /* Product cards */
 .product-list{display:flex;flex-direction:column;gap:12px;margin-bottom:24px}
@@ -385,7 +382,6 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 @media (max-width:860px){.lst-imgs{width:auto}}
 .lst-img{position:relative;width:72px}
 .lst-img img{width:72px;height:72px;object-fit:cover;border-radius:6px;border:1px solid var(--line);display:block;background:#000;cursor:zoom-in}
-.lst-img.is-label img{border-color:var(--accent-2)}
 .lst-img-tag{position:absolute;top:3px;left:3px;background:rgba(0,0,0,.7);color:#fff;font-size:8px;font-weight:700;padding:1px 5px;border-radius:99px;font-family:'JetBrains Mono',monospace;pointer-events:none}
 .lst-img-tag.edited{background:var(--ok);color:#000}
 .lst-fields{display:grid;gap:8px;min-width:0}
@@ -666,7 +662,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
         <div id="assignBar" class="card hidden" style="margin-bottom:16px">
           <h3 class="card-title">登録した商品に写真を割り当てる</h3>
           <p class="hint" style="margin:4px 0 12px">
-            撮った順に上から割り当てます。ラベル写真の読み取り（OCR）は要りません。</p>
+            撮った順に上から割り当てます。</p>
           <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
             <label>1商品あたり
               <input type="number" id="assignPerItem" min="1" max="20" value="3"
@@ -681,14 +677,10 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 
         <details id="advancedImport" style="margin-top:20px">
           <summary style="cursor:pointer;opacity:.7;font-size:13px">こまかい編集（品種名や管理番号を直す）</summary>
-          <div class="group-actions" style="margin-top:12px">
-            <button id="btnOcrAll" class="btn btn-ghost">🔍 ラベル写真から読み取る（使いません）</button>
-            <span class="hint" id="ocrHint">登録から作っているので、ふつうは不要です</span>
-          </div>
           <div id="productList" class="product-list"></div>
         </details>
 
-        <h3>写真一覧 <span style="color:var(--ink-dim);font-family:inherit;text-transform:none;font-size:11px">（ラベル/個体の判定が違う場合はサムネ下のボタンで切替）</span></h3>
+        <h3>読み込んだ写真 <span style="color:var(--ink-dim);font-family:inherit;text-transform:none;font-size:11px">（取り込んだ順に並びます）</span></h3>
         <div id="photoGrid" class="photo-grid"></div>
       </div>
     </section>
@@ -926,7 +918,6 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
           <div class="bar-info"><span id="lstSelCount">0</span> / <span id="lstTotalCount">0</span> 件を出品 <span class="hist-meta" id="lstImgInfo"></span></div>
           <div class="lst-toolbar">
             <label class="chip-toggle" title="編集タブで加工した画像があればそちらを使います"><input type="checkbox" id="lstUseEdited" checked><span>✨ 加工後画像を優先</span></label>
-            <label class="chip-toggle" title="ラベル写真を1枚目の画像として含めます"><input type="checkbox" id="lstIncludeLabel" checked><span>📋 ラベルを1枚目に</span></label>
             <select id="lstEncoding" class="lst-select" title="オークタウンの取込文字コード">
               <option value="sjis">Shift_JIS</option>
               <option value="utf8">UTF-8 (BOM付)</option>
@@ -978,7 +969,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
           <input type="text" id="apiUrl" placeholder="https://script.google.com/macros/s/.../exec">
         </div>
         <div style="font-size:11px;color:var(--ink-dim);margin-top:6px;line-height:1.6">
-          OCR（ラベル解析）と画像加工（Gemini）のキー保管庫として使います。GAS側でスクリプトプロパティに <code>CLAUDE_API_KEY</code> と <code>GEMINI_API_KEY</code> を設定済みである必要があります。
+          画像加工のキー保管庫として使います。GAS側でスクリプトプロパティに <code>CLAUDE_API_KEY</code> と <code>GEMINI_API_KEY</code> を設定済みである必要があります。
         </div>
         <div class="btn-row">
           <button id="btnSaveApi" class="btn btn-ghost">保存</button>
@@ -1080,7 +1071,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
         <div style="font-size:12px;line-height:1.7;color:var(--ink-dim)">
           <strong style="color:var(--ink)">バージョン情報</strong><br>
           メダカ出品アシスタント v2.0 (Phase 1〜4)<br>
-          取込・ラベルOCR → AI画像加工 → オークタウンCSV+ZIP → 出品履歴
+          登録・テプラ印刷 → 写真の取込 → AI画像加工 → オークタウンCSV+ZIP → 出品履歴
         </div>
       </div>
     </section>
@@ -1113,7 +1104,7 @@ function gasUrl(){
 
 // 状態
 let folderHandle = null;
-let photos = [];   // [{name, handle, blobUrl, isLabel}]
+let photos = [];   // [{name, handle, blobUrl}]
 let products = []; // [{labelIdx, specimenIdxs, variety, controlNo, quantityLabel}]
 
 // ===== Toast =====
@@ -1174,7 +1165,6 @@ async function loadPhotosFromFiles(files){
     name: f.name,
     handle: { getFile: async () => f },
     blobUrl: null,
-    isLabel: i % 4 === 0
   }));
   folderHandle = { name: '選択した写真' };   // 表示と編集キャッシュのキーに使う
   $('#folderName').textContent = `${imgs.length}枚を選択`;
@@ -1214,7 +1204,6 @@ async function loadPhotosFromFolder(){
   photos.forEach(p => p.blobUrl && URL.revokeObjectURL(p.blobUrl));
   photos = entries.map((e, i) => ({
     name: e.name, handle: e, blobUrl: null,
-    isLabel: i % 4 === 0  // 自動仮判定: 0,4,8,... を「ラベル」と推定
   }));
   $('#folderName').textContent = folderHandle.name;
   $('#photoCount').textContent = photos.length;
@@ -1250,71 +1239,21 @@ async function renderPhotoGrid(){
       catch(e){ console.warn('blobUrl失敗', p.name, e); continue; }
     }
     const tile = document.createElement('div');
-    tile.className = 'photo-tile' + (p.isLabel ? ' is-label' : '');
+    tile.className = 'photo-tile';
     tile.innerHTML = `
       <img src="${p.blobUrl}" alt="${escapeHtml(p.name)}" loading="lazy">
       <div class="tile-info">
         <span class="tile-name" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>
-        <button class="tile-toggle" data-i="${i}">${p.isLabel ? '📋ラベル' : '🐟個体'}</button>
+
       </div>
     `;
     grid.appendChild(tile);
   }
-  grid.querySelectorAll('.tile-toggle').forEach(b => {
-    b.onclick = (e) => {
-      e.stopPropagation();
-      const i = +b.dataset.i;
-      photos[i].isLabel = !photos[i].isLabel;
-      b.textContent = photos[i].isLabel ? '📋ラベル' : '🐟個体';
-      b.closest('.photo-tile').classList.toggle('is-label', photos[i].isLabel);
-      computeProductsAndRender();
-    };
-  });
-}
-
-// ===== Grouping =====
-function newProduct(labelIdx){
-  return {
-    labelIdx, specimenIdxs: [],
-    variety:'', rank:'', quantityText:'', male:'', female:'', controlNo:'',
-    // どのフィールドを手動で編集したか(OCR再実行で上書きしない)
-    manualEdits: { variety:false, rank:false, quantityText:false, male:false, female:false, controlNo:false }
-  };
 }
 
 function computeProductsAndRender(){
-  if(assignMode){            // 登録した商品に割り当て済みのときは組み直さない
-    renderFolders(); renderProductList(); renderWarnings(); refreshAssignBar();
-    return;
-  }
-  const newProducts = [];
-  let curr = null;
-  for(let i = 0; i < photos.length; i++){
-    if(photos[i].isLabel){
-      if(curr) newProducts.push(curr);
-      curr = newProduct(i);
-    } else {
-      if(curr) curr.specimenIdxs.push(i);
-    }
-  }
-  if(curr) newProducts.push(curr);
-
-  // 既存のOCR結果と手動編集をlabelIdxで引き継ぐ
-  newProducts.forEach(np => {
-    const old = products.find(op => op.labelIdx === np.labelIdx);
-    if(old){
-      np.variety = old.variety;
-      np.rank = old.rank;
-      np.quantityText = old.quantityText;
-      np.male = old.male;
-      np.female = old.female;
-      np.controlNo = old.controlNo;
-      np.manualEdits = { ...old.manualEdits };
-    }
-  });
-  products = newProducts;
-  renderProductList();
-  renderWarnings();
+  // 商品は「① 登録」した内容から作る。写真は登録した商品へ割り当てる
+  renderFolders(); renderProductList(); renderWarnings(); refreshAssignBar();
 }
 
 function renderWarnings(){
@@ -1327,12 +1266,6 @@ function renderWarnings(){
     box.innerHTML = issues.map(t => '⚠ ' + escapeHtml(t)).join('<br>');
     return;
   }
-  // 先頭にラベルがない（orphan specimens at start）
-  if(photos.length > 0 && !photos.some(p => p.isLabel)){
-    issues.push('ラベルが1枚もありません。サムネで「ラベル」を指定してください');
-  } else if(photos.length > 0 && !photos[0].isLabel && photos.findIndex(p=>p.isLabel) > 0){
-    issues.push(`先頭${photos.findIndex(p=>p.isLabel)}枚にラベルがありません（先頭はラベルから始めてください）`);
-  }
   products.forEach((p, idx) => {
     if(p.specimenIdxs.length !== 3){
       issues.push(`商品 #${idx+1}: 個体${p.specimenIdxs.length}枚（期待は3枚）`);
@@ -1343,19 +1276,18 @@ function renderWarnings(){
     banner.classList.add('hidden');
   } else {
     banner.classList.remove('hidden');
-    banner.innerHTML = '⚠️ ' + issues.map(escapeHtml).join('<br>') + '<small>サムネ下の「ラベル / 個体」ボタンで切り替えてください</small>';
+    banner.innerHTML = '⚠️ ' + issues.map(escapeHtml).join('<br>');
   }
 }
 
 function renderProductList(){
   const list = $('#productList');
   if(products.length === 0){
-    list.innerHTML = '<div class="placeholder">ラベルがありません</div>';
+    list.innerHTML = '<div class="placeholder">「① 登録」で商品を登録してください</div>';
     return;
   }
   list.innerHTML = products.map((p, idx) => {
     const bad = p.specimenIdxs.length !== 3 ? ' bad' : '';
-    const labelImg = photos[p.labelIdx]?.blobUrl || '';
     const specImgs = p.specimenIdxs.map(i => `<img src="${photos[i].blobUrl}" alt="">`).join('');
     // AI入力(緑枠) / 手動編集(通常) を区別
     const cls = (field) => {
@@ -1367,11 +1299,10 @@ function renderProductList(){
       <div class="product-card${bad}">
         <div class="pc-header">
           <span class="pc-num">商品 #${idx+1}</span>
-          <span class="pc-counts">ラベル 1 + 個体 ${p.specimenIdxs.length}</span>
+          <span class="pc-counts">写真 ${p.specimenIdxs.length}枚</span>
         </div>
         <div class="pc-body">
           <div class="pc-thumbs">
-            <img src="${labelImg}" class="thumb-label" alt="label" title="${escapeHtml(photos[p.labelIdx].name)}">
             ${specImgs}
           </div>
           <div class="pc-fields">
@@ -1384,7 +1315,7 @@ function renderProductList(){
       </div>
     `;
   }).join('');
-  // 入力監視: 手動編集フラグを立てる(OCR再実行で上書きしない)
+  // 入力監視: 手動で直したことを覚えておく
   list.querySelectorAll('input.pc-input').forEach(el => {
     el.oninput = () => {
       const idx = +el.dataset.idx;
@@ -1395,56 +1326,6 @@ function renderProductList(){
     };
   });
 }
-
-// ===== OCR =====
-$('#btnOcrAll').onclick = async () => {
-  if(products.length === 0){ toast('商品グループがありません', 'err'); return; }
-  const gasUrlValue = gasUrl();
-  if(!gasUrlValue.startsWith('https://script.google.com/')){
-    toast('設定タブでGAS URLを設定してください', 'err'); switchTab('settings'); return;
-  }
-  const btn = $('#btnOcrAll'); const orig = btn.textContent;
-  btn.disabled = true;
-  let ok = 0, fail = 0;
-  for(let i = 0; i < products.length; i++){
-    const p = products[i];
-    btn.textContent = `OCR中 (${i+1}/${products.length})...`;
-    try {
-      const file = await photos[p.labelIdx].handle.getFile();
-      const dataUrl = await fileToResizedDataUrl(file, 1024, 0.85);
-      const res = await fetch(gasUrlValue, {
-        method: 'POST',
-        body: JSON.stringify({ action:'label_ocr', labelPhoto: dataUrl })
-      });
-      if(!res.ok) throw new Error('HTTP '+res.status);
-      const json = await res.json();
-      if(json && json.ok && json.result){
-        const r = json.result;
-        // 手動編集済みフィールドは上書きしない(間違った時の手入力を保護)
-        const setIf = (field, val) => {
-          if(!p.manualEdits[field] && val) p[field] = val;
-        };
-        setIf('variety',      r.variety);
-        setIf('rank',         r.rank);
-        setIf('quantityText', r.quantityText);
-        setIf('male',         r.male);
-        setIf('female',       r.female);
-        setIf('controlNo',    r.controlNo);
-        ok++;
-      } else {
-        fail++;
-        console.warn('OCR失敗', json);
-      }
-    } catch(e){
-      fail++;
-      console.warn(e);
-    }
-    renderProductList();
-  }
-  btn.textContent = orig;
-  btn.disabled = false;
-  toast(`OCR完了: 成功 ${ok} / 失敗 ${fail}`, fail ? 'err' : 'ok');
-};
 
 // ===== Canvas で Photoshop Camera Raw 相当の現像処理 =====
 // 暗い水中写真を明るく綺麗にするための処理パイプライン:
@@ -1747,7 +1628,7 @@ function squareCropBlob(blob){
   });
 }
 
-// ===== 画像リサイズ(OCR送信用に縮小) =====
+// ===== 画像リサイズ(送信用に縮小) =====
 function fileToResizedDataUrl(file, maxDim, quality){
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -1838,7 +1719,7 @@ loadSettings();
   $('#btnPickFolder').classList.add('btn-ghost');
   $('#btnPickFiles').classList.remove('btn-ghost');
   $('#btnPickFiles').classList.add('btn-primary');
-  $('#pickerHint').textContent = 'このブラウザではフォルダ選択が使えません。「写真を選ぶ」から、ラベル→個体3枚…の順に並んだ写真をまとめて選んでください';
+  $('#pickerHint').textContent = 'このブラウザではフォルダ選択が使えません。「写真を選ぶ」から、登録した順に並んだ写真をまとめて選んでください';
 })();
 
 // ============================================================
@@ -4232,7 +4113,6 @@ function lstOpts(){
 function lstSaveOpts(){
   const o = {
     useEdited: $('#lstUseEdited').checked,
-    includeLabel: $('#lstIncludeLabel').checked,
     encoding: $('#lstEncoding').value,
     htmlDesc: $('#lstHtmlDesc').checked
   };
@@ -4344,12 +4224,10 @@ function buildDescription(p, st, htmlMode){
 // ===== 画像プラン =====
 function planImages(p){
   const useEdited = $('#lstUseEdited') ? $('#lstUseEdited').checked : true;
-  const incLabel  = $('#lstIncludeLabel') ? $('#lstIncludeLabel').checked : true;
   const list = [];
-  if(incLabel && photos[p.labelIdx]) list.push({ photoIdx:p.labelIdx, isLabel:true, edited:false });
   p.specimenIdxs.forEach(i => {
     const stt = editState[i];
-    list.push({ photoIdx:i, isLabel:false, edited: !!(useEdited && stt && stt.editedBlobUrl) });
+    list.push({ photoIdx:i, edited: !!(useEdited && stt && stt.editedBlobUrl) });
   });
   return list.slice(0, 5);   // オークタウンCSVは画像5枚まで
 }
@@ -4562,7 +4440,7 @@ $('#btnLstRetitle').onclick = () => {
   renderListingList();
   toast('タイトルを再生成しました', 'ok');
 };
-['#lstUseEdited','#lstIncludeLabel','#lstHtmlDesc'].forEach(sel => {
+['#lstUseEdited','#lstHtmlDesc'].forEach(sel => {
   $(sel).addEventListener('change', () => { lstSaveOpts(); renderListingList(); });
 });
 $('#lstEncoding').addEventListener('change', lstSaveOpts);
@@ -4598,7 +4476,7 @@ function renderListingList(){
     const desc = buildDescription(p, st, htmlMode);
 
     const imgHtml = imgs.map((it, n) => `
-      <div class="lst-img${it.isLabel ? ' is-label' : ''}">
+      <div class="lst-img">
         <img src="${planImageSrc(it)}" alt="" data-action="lst-zoom" data-photo-idx="${it.photoIdx}">
         <span class="lst-img-tag${it.edited ? ' edited' : ''}">${String(n+1).padStart(2,'0')}${it.edited ? '✨' : ''}</span>
       </div>`).join('');
@@ -4848,7 +4726,6 @@ $('#btnBuildZip').onclick = buildAuctownExport;
 function validateForExport(targets){
   const errors = [], warnings = [];
   const cfg = lstConfig();
-  const incLabel = $('#lstIncludeLabel').checked;
   if(!String(cfg.CATEGORY_ID || '').trim()) errors.push('カテゴリIDが未設定です（⚙ オークタウン共通設定）');
   if(!/^\d+$/.test(String(cfg.DURATION || '').trim())) errors.push('開催期間は日数（数字）で入力してください');
   if(!/^\d+$/.test(String(cfg.END_HOUR || '').trim())) errors.push('終了時間は時（数字）で入力してください');
@@ -4865,7 +4742,7 @@ function validateForExport(targets){
 
     const imgs = planImages(p);
     if(imgs.length === 0) errors.push(`${label}: 出品画像が0枚です`);
-    const totalImgs = (incLabel ? 1 : 0) + p.specimenIdxs.length;
+    const totalImgs = p.specimenIdxs.length;
     if(totalImgs > 5) warnings.push(`${label}: 画像${totalImgs}枚のうち先頭5枚のみ出品します（オークタウンCSVは5枚まで）`);
     if(textWidth(st.title) > 65) warnings.push(`${label}: タイトルが全角65文字を超えるため切り捨てます`);
     const ctrl = String(p.controlNo || '').trim();
@@ -5085,7 +4962,7 @@ function statusClass(s){
 
 /* ==========================================================================
    登録タブ：品種を選んで管理番号を発番する（iPadアプリと同じ流れ）
-   ラベル写真の読み取り(OCR)なしで、先に商品を確定させる。
+   先に商品を確定させてから写真を撮る流れ。
    ========================================================================== */
 
 const REG_MASTER_KEY = 'medaka_reg_masters';
@@ -6116,7 +5993,7 @@ async function fsLoadFromFolders(){
       files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
       for(const f of files){
         idxs.push(photos.length);
-        photos.push({ name: f.name, handle: f.handle, blobUrl: null, isLabel: false });
+        photos.push({ name: f.name, handle: f.handle, blobUrl: null });
       }
     }
     built.push({
@@ -6246,7 +6123,7 @@ async function fsLoadFromFoldersAndroid(){
       if(!blob) continue;
       idxs.push(photos.length);
       photos.push({ name: n, blobUrl: URL.createObjectURL(blob),
-                    handle: { getFile: async () => blob }, isLabel: false });
+                    handle: { getFile: async () => blob } });
     }
     built.push({
       labelIdx: idxs.length ? idxs[0] : -1, specimenIdxs: idxs,
@@ -6444,7 +6321,7 @@ function syncFolderPhotos(){
 let leftoverIdxs = [];
 
 // ===== 登録した商品に写真を割り当てる =====
-// ラベル写真で区切る従来のやり方の代わりに、登録済みの商品へ順番に配る。
+// 登録済みの商品へ、撮った順に配る。
 let assignMode = false;
 
 function refreshAssignBar(){
@@ -6466,7 +6343,6 @@ async function assignPhotosToRegistered(){
   if(!items.length){ toast('先に「① 登録」で商品を登録してください', 'err'); return; }
   if(!photos.length){ toast('写真がありません', 'err'); return; }
 
-  photos.forEach(p => { p.isLabel = false; });      // ラベル区切りは使わない
   const built = [];
   let cursor = 0;
   for(const it of items){
@@ -6645,7 +6521,6 @@ fsRestoreRoot().then(() => renderFsBar()).catch(() => {});
 (function restoreListingOpts(){
   const o = lstOpts();
   if(typeof o.useEdited === 'boolean') $('#lstUseEdited').checked = o.useEdited;
-  if(typeof o.includeLabel === 'boolean') $('#lstIncludeLabel').checked = o.includeLabel;
   if(typeof o.htmlDesc === 'boolean') $('#lstHtmlDesc').checked = o.htmlDesc;
   if(o.encoding) $('#lstEncoding').value = o.encoding;
   $('#lstTemplate').value = lstTemplateText();
