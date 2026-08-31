@@ -620,6 +620,12 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .reg-breeds button.tidy.on{border-color:var(--accent-2,#f87171);
   box-shadow:0 0 0 2px rgba(248,113,113,.3);opacity:.65}
 .reg-breeds button.tidy .mark{position:absolute;top:6px;right:8px;font-size:14px}
+
+/* メダカ / 用品 の切り替え */
+.reg-mode{display:flex;gap:8px;margin-bottom:14px}
+.reg-mode button{flex:1;min-height:52px;font-size:16px;font-weight:700;border-radius:10px;cursor:pointer;
+  border:1px solid var(--line,#2a3350);background:var(--bg2,#141a2e);color:inherit}
+.reg-mode button.on{background:var(--accent,#39d0ff);color:#05131d;border-color:transparent}
 </style>
 </head>
 <body>
@@ -1055,6 +1061,8 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
           <summary>🏷 タイトルの作り方 <small>{品種} {ランク} {数量} {管理番号} {備考} が使えます</small></summary>
           <div class="lst-fold-body">
             <input type="text" id="lstTitleTemplate" class="ai-fb-input" placeholder="【メダカ】{品種} {ランク} {数量} 管理番号{管理番号}">
+            <div class="hint" style="font-size:11px;margin:10px 0 4px">用品（餌・容器・道具など）のタイトル</div>
+            <input type="text" id="lstTitleTemplateGoods" class="ai-fb-input" placeholder="【メダカ用品】{品種} {数量} 管理番号{管理番号}">
             <div class="hint" style="font-size:11px;color:var(--ink-dim);margin-top:6px;line-height:1.7">
               値が空のプレースホルダは自動で詰められます。全角65文字を超える分は、管理番号を残して前を切り詰めます。<br>
               <span id="lstTitlePreview" class="hist-meta"></span>
@@ -4219,9 +4227,21 @@ function quantityPhrase(p){
 
 const LST_TITLE_KEY = 'medaka_title_template';
 const TITLE_TEMPLATE_DEFAULT = '【メダカ】{品種} {ランク} {数量} 管理番号{管理番号}';
+// 用品（餌・容器・道具など）は魚と別のタイトルにする
+const LST_TITLE_GOODS_KEY = 'medaka_title_template_goods';
+const TITLE_TEMPLATE_GOODS_DEFAULT = '【メダカ用品】{品種} {数量} 管理番号{管理番号}';
 function lstTitleTemplate(){
   const t = localStorage.getItem(LST_TITLE_KEY);
   return (t === null || t === '') ? TITLE_TEMPLATE_DEFAULT : t;
+}
+function lstTitleTemplateGoods(){
+  const t = localStorage.getItem(LST_TITLE_GOODS_KEY);
+  return (t === null || t === '') ? TITLE_TEMPLATE_GOODS_DEFAULT : t;
+}
+/** その商品が用品かどうか（登録したときの種別を見る） */
+function isGoodsProduct(p){
+  const it = regItems().find(x => x.controlNo === p.controlNo);
+  return !!(it && it.kind === 'goods');
 }
 // テンプレートからタイトルを作る。
 // 全角65文字を超えるときは「管理番号…」の部分を残して前を切り詰める。
@@ -4233,7 +4253,7 @@ function buildTitle(p, st){
     '管理番号': String(p.controlNo || '').trim(),
     '備考':   String((st && st.note) || '').trim()
   };
-  const tpl = lstTitleTemplate();
+  const tpl = isGoodsProduct(p) ? lstTitleTemplateGoods() : lstTitleTemplate();
   // 管理番号が空なら、その周辺の文言(例「管理番号{管理番号}」)ごと落とす
   let text = tpl.replace(/([^\s{}]*)\{([^}\n]+)\}/g, (m, prefix, key) => {
     if(!(key in map)) return m;
@@ -4451,12 +4471,15 @@ $('#lstTitleTemplate').addEventListener('input', () => {
 });
 $('#btnLstTitleSave').onclick = () => {
   localStorage.setItem(LST_TITLE_KEY, $('#lstTitleTemplate').value);
+  localStorage.setItem(LST_TITLE_GOODS_KEY, $('#lstTitleTemplateGoods').value);
   updateTitlePreview();
   renderListingList();
   toast('タイトルの作り方を保存しました', 'ok');
 };
 $('#btnLstTitleReset').onclick = () => {
   localStorage.removeItem(LST_TITLE_KEY);
+  localStorage.removeItem(LST_TITLE_GOODS_KEY);
+  $('#lstTitleTemplateGoods').value = TITLE_TEMPLATE_GOODS_DEFAULT;
   $('#lstTitleTemplate').value = TITLE_TEMPLATE_DEFAULT;
   updateTitlePreview();
   renderListingList();
@@ -4517,6 +4540,7 @@ function renderListingPanel(){
   if(!$('#lstConfigGrid').children.length) buildConfigForm();
   if(!$('#lstTemplate').value) $('#lstTemplate').value = lstTemplateText();
   if(!$('#lstTitleTemplate').value){ $('#lstTitleTemplate').value = lstTitleTemplate(); updateTitlePreview(); }
+  if(!$('#lstTitleTemplateGoods').value){ $('#lstTitleTemplateGoods').value = lstTitleTemplateGoods(); }
   renderListingList();
 }
 
@@ -5032,6 +5056,9 @@ const REG_ITEMS_KEY  = 'medaka_reg_items';
 
 const REG_SEED_BREEDS = [{"name": "赤秋", "reading": "あかあき", "code": "AKA"}, {"name": "あけぼの", "reading": "あけぼの", "code": "AKE"}, {"name": "オロチ", "reading": "オロチ", "code": "ORC"}, {"name": "王妃", "reading": "おうひ", "code": "OUH"}, {"name": "煌", "reading": "きらめき", "code": "KRM"}, {"name": "カブキ", "reading": "カブキ", "code": "KBK"}, {"name": "紅白", "reading": "こうはく", "code": "KOH"}, {"name": "黄金", "reading": "おうごん", "code": "OUG"}, {"name": "極上ラメ", "reading": "ごくじょうらめ", "code": "GKJ"}, {"name": "銀河", "reading": "ぎんが", "code": "GIN"}, {"name": "小町", "reading": "こまち", "code": "KOM"}, {"name": "琥珀", "reading": "こはく", "code": "KHK"}, {"name": "紅帝", "reading": "こうてい", "code": "KOT"}, {"name": "三色ラメ", "reading": "さんしょくラメ", "code": "SAN"}, {"name": "サファイア", "reading": "サファイア", "code": "SAP"}, {"name": "錦鯉", "reading": "にしきごい", "code": "NSK"}, {"name": "深海", "reading": "しんかい", "code": "SNK"}, {"name": "白幹之", "reading": "しろみゆき", "code": "SMY"}, {"name": "スーパーブラック", "reading": "スーパーブラック", "code": "SBK"}, {"name": "蒼", "reading": "あお", "code": "AOI"}, {"name": "楊貴妃", "reading": "ようきひ", "code": "YOK"}, {"name": "垂水", "reading": "たるみ", "code": "TRM"}, {"name": "天女の舞", "reading": "てんにょのまい", "code": "TEN"}, {"name": "東天光", "reading": "とうてんこう", "code": "TOT"}, {"name": "夜桜", "reading": "よざくら", "code": "YOZ"}, {"name": "女雛", "reading": "めびな", "code": "MEB"}, {"name": "忘却の翼", "reading": "ぼうきゃくのつばさ", "code": "BOU"}, {"name": "マリンブルー", "reading": "マリンブルー", "code": "MRB"}, {"name": "幹之", "reading": "みゆき", "code": "MIY"}, {"name": "幹之ラメ", "reading": "みゆきラメ", "code": "MIYR"}, {"name": "松井ヒレ長", "reading": "まついひれちょう", "code": "MTI"}, {"name": "ラメ幹之", "reading": "らめみきの", "code": "RMY"}, {"name": "螺鈿光", "reading": "らでんこう", "code": "RDN"}, {"name": "ロングフィン", "reading": "ロングフィン", "code": "LNG"}, {"name": "五色", "reading": "ごしき", "code": "GSK"}, {"name": "月弓", "reading": "つきゆみ", "code": "TKY"}, {"name": "紅蓮", "reading": "ぐれん", "code": "GUR"}, {"name": "蜃気楼", "reading": "しんきろう", "code": "SKR"}, {"name": "翡翠", "reading": "ひすい", "code": "HIS"}, {"name": "ブラックリム", "reading": "ブラックリム", "code": "BLR"}];
 const REG_SEED_RANKS = ['特上', '上物', '通常', '若魚'];
+// 用品（魚以外の固定商品）。code はグループ分けに使う
+const REG_SEED_GOODS = [{"name": "舞めだかゴールドフード", "reading": "まいめだかごーるどふーど", "code": "えさ"}, {"name": "舞めだかオリジナルフード", "reading": "まいめだかおりじなるふーど", "code": "えさ"}, {"name": "ホテイソウ", "reading": "ほていそう", "code": "水草・生きもの"}, {"name": "ラムズホーン", "reading": "らむずほーん", "code": "水草・生きもの"}, {"name": "ミジンコ", "reading": "みじんこ", "code": "水草・生きもの"}, {"name": "岩塩", "reading": "がんえん", "code": "その他"}, {"name": "タモ(小)", "reading": "たも小", "code": "道具"}, {"name": "タモ(中)", "reading": "たも中", "code": "道具"}, {"name": "タモ(大)", "reading": "たも大", "code": "道具"}, {"name": "ウォーターフード", "reading": "うぉーたーふーど", "code": "えさ"}, {"name": "めだか稚魚のえさ", "reading": "めだかちぎょのえさ", "code": "えさ"}, {"name": "めだか成魚のえさ", "reading": "めだかせいぎょのえさ", "code": "えさ"}, {"name": "めだかのえさ", "reading": "めだかのえさ", "code": "えさ"}, {"name": "めだか飼料pro", "reading": "めだかしりょうぷろ", "code": "えさ"}, {"name": "めだかの黒発泡スチロール", "reading": "めだかのくろはっぽうすちろーる", "code": "容器"}, {"name": "サイコロルーム150", "reading": "さいころるーむ150", "code": "容器"}, {"name": "サイコロルーム205", "reading": "さいころるーむ205", "code": "容器"}, {"name": "サイコロルーム255", "reading": "さいころるーむ255", "code": "容器"}, {"name": "萩物語めだか MD-205", "reading": "はぎものがたりめだかMD205", "code": "容器"}, {"name": "萩物語めだか MD-180SQ", "reading": "はぎものがたりめだかMD180SQ", "code": "容器"}, {"name": "萩物語めだか MD-230SQ", "reading": "はぎものがたりめだかMD230SQ", "code": "容器"}, {"name": "萩物語めだか MD-250W", "reading": "はぎものがたりめだかMD250W", "code": "容器"}, {"name": "萩物語めだか スリム450Low", "reading": "はぎものがたりめだかすりむ450Low", "code": "容器"}];
+
 const REG_SEED_QTYS  = [];   // 数量はホイールで 1〜100 から選ぶので一覧は持たない
 const REG_MASTER_VERSION = 2;
 
@@ -5095,12 +5122,16 @@ function regMasters(){
   let m = null;
   try { m = JSON.parse(localStorage.getItem(REG_MASTER_KEY) || 'null'); } catch(e){ m = null; }
   if(!m || !Array.isArray(m.breeds) || !m.breeds.length){
-    m = { breeds: REG_SEED_BREEDS.slice(), ranks: REG_SEED_RANKS.slice(),
-          quantities: [], version: REG_MASTER_VERSION };
+    m = { breeds: REG_SEED_BREEDS.slice(), goods: REG_SEED_GOODS.slice(),
+          ranks: REG_SEED_RANKS.slice(), quantities: [], version: REG_MASTER_VERSION };
     localStorage.setItem(REG_MASTER_KEY, JSON.stringify(m));
   }
   m.ranks = m.ranks || REG_SEED_RANKS.slice();
   m.quantities = m.quantities || [];
+  if(!Array.isArray(m.goods) || !m.goods.length){   // 用品をあとから足した版への引き継ぎ
+    m.goods = REG_SEED_GOODS.slice();
+    localStorage.setItem(REG_MASTER_KEY, JSON.stringify(m));
+  }
   // 前の版のランク（SS/S/A/B/C）は、新しい4段階に入れ替える
   if(m.version !== REG_MASTER_VERSION){
     const old = ['SS','S','A','B','C'];
@@ -5112,15 +5143,24 @@ function regMasters(){
 }
 function saveRegMasters(m){ localStorage.setItem(REG_MASTER_KEY, JSON.stringify(m)); }
 
+/** いまの入力対象（'fish' = メダカ / 'goods' = 用品） */
+function regListKey(){ return regSel.mode === 'goods' ? 'goods' : 'breeds'; }
+function regList(){ return regMasters()[regListKey()] || []; }
+function regIsGoods(){ return regSel.mode === 'goods'; }
+/** 画面に出す呼び方 */
+function regThingName(){ return regIsGoods() ? '商品' : '品種'; }
+
 /** 品種を追加する。同じ名前があれば追加せず、それを返す */
 function regAddBreed(name, reading, code){
   const t = String(name||'').trim();
   if(!t) return null;
   const m = regMasters();
-  const found = m.breeds.find(b => b.name === t);
+  const key = regListKey();
+  m[key] = m[key] || [];
+  const found = m[key].find(b => b.name === t);
   if(found) return found;
   const b = { name: t, reading: String(reading||'').trim() || estimateReading(t), code: String(code||'').trim() };
-  m.breeds.push(b);
+  m[key].push(b);
   saveRegMasters(m);
   return b;
 }
@@ -5128,16 +5168,18 @@ function regAddBreed(name, reading, code){
 function regRemoveBreeds(names){
   const gone = new Set(names);
   const m = regMasters();
-  const before = m.breeds.length;
-  m.breeds = m.breeds.filter(b => !gone.has(b.name));
+  const key = regListKey();
+  const before = (m[key] || []).length;
+  m[key] = (m[key] || []).filter(b => !gone.has(b.name));
   saveRegMasters(m);
-  return before - m.breeds.length;
+  return before - m[key].length;
 }
 
 /** 最初に入っていた品種の一覧に戻す（自分で足したものは消える） */
 function regResetBreeds(){
   const m = regMasters();
-  m.breeds = REG_SEED_BREEDS.slice();
+  if(regIsGoods()) m.goods = REG_SEED_GOODS.slice();
+  else m.breeds = REG_SEED_BREEDS.slice();
   saveRegMasters(m);
 }
 
@@ -5480,11 +5522,13 @@ let regSel = {
   qtyMode: 'pair',           // pair=ペア / sex=雄雌べつべつ
   qtyN: 1, qtyMale: 1, qtyFemale: 1,
   group: '全部', search: '', step: 1, lastNo: '',
-  tidy: false, tidyPicked: new Set()
+  tidy: false, tidyPicked: new Set(),
+  mode: 'fish'          // fish = メダカ / goods = 用品
 };
 
 /** 選んだ数量を、ラベルや出品タイトルに載せる文字にする */
 function regQuantityText(){
+  if(regIsGoods()) return regSel.qtyN + '個';
   if(regSel.qtyMode !== 'pair' && regSel.qtyMode !== 'sex') regSel.qtyMode = 'pair';
   if(regSel.qtyMode === 'pair') return regSel.qtyN + 'ペア';
   const parts = [];
@@ -5493,11 +5537,11 @@ function regQuantityText(){
   return parts.join(' ');
 }
 
-const REG_STEPS = [
-  { n: 1, label: '品種' },
-  { n: 2, label: 'ランク・数量' },
-  { n: 3, label: '確認' }
-];
+function regSteps(){
+  return regIsGoods()
+    ? [{ n:1, label:'商品' }, { n:2, label:'数量' }, { n:3, label:'確認' }]
+    : [{ n:1, label:'品種' }, { n:2, label:'ランク・数量' }, { n:3, label:'確認' }];
+}
 
 function renderRegisterPanel(){
   const m = regMasters();
@@ -5513,9 +5557,9 @@ function renderRegisterPanel(){
 
 /** 上の進み具合。押すとそこまで戻れる */
 function renderRegSteps(){
-  const both = [regSel.rank, regSel.qty].filter(Boolean).join(' ');
+  const both = regIsGoods() ? regSel.qty : [regSel.rank, regSel.qty].filter(Boolean).join(' ');
   const chosen = { 1: regSel.breed ? regSel.breed.name : '', 2: both, 3: '' };
-  $('#regSteps').innerHTML = REG_STEPS.map(st => {
+  $('#regSteps').innerHTML = regSteps().map(st => {
     const cls = st.n === regSel.step ? 'on' : (chosen[st.n] ? 'done' : '');
     const val = chosen[st.n] ? `<span class="v">${escapeHtml(chosen[st.n])}</span>` : '';
     return `<button class="reg-step ${cls}" data-n="${st.n}">
@@ -5534,16 +5578,23 @@ function renderRegStepBody(){
 }
 
 // --- ① 品種 ---
+/** メダカ / 用品 の切り替え */
+function regModeBarHtml(){
+  const btn = (k, label) =>
+    `<button data-m="${k}" class="${regSel.mode === k ? 'on' : ''}">${label}</button>`;
+  return `<div class="reg-mode">${btn('fish', '🐟 メダカ')}${btn('goods', '📦 用品')}</div>`;
+}
+
 function regStep1Html(){
-  if(regSel.tidy) return regTidyHtml();
-  return `<h3 class="card-title">品種を選ぶ</h3>
+  if(regSel.tidy) return regModeBarHtml() + regTidyHtml();
+  return regModeBarHtml() + `<h3 class="card-title">${regThingName()}を選ぶ</h3>
     <input type="search" id="regBreedSearch" class="reg-search"
-           placeholder="品種名・ふりがな・コードで検索" value="${escapeAttr(regSel.search)}">
+           placeholder="${regThingName()}名・ふりがなで検索" value="${escapeAttr(regSel.search)}">
     <div id="regKanaBar" class="reg-kana"></div>
     <div id="regBreedList" class="reg-breeds"></div>
     <div class="reg-add-row">
-      <button id="regAddBreed" class="btn btn-ghost">＋ 品種を追加する</button>
-      <button id="regTidyStart" class="btn btn-ghost">🗑 品種を減らす</button>
+      <button id="regAddBreed" class="btn btn-ghost">＋ ${regThingName()}を追加する</button>
+      <button id="regTidyStart" class="btn btn-ghost">🗑 ${regThingName()}を減らす</button>
     </div>`;
 }
 
@@ -5551,11 +5602,11 @@ function regStep1Html(){
 function regTidyHtml(){
   const list = regFilteredBreeds();
   const n = regSel.tidyPicked.size;
-  return `<h3 class="card-title">品種を減らす</h3>
+  return `<h3 class="card-title">${regThingName()}を減らす</h3>
     <p class="hint" style="margin:0 0 12px">
-      消したい品種を押して選んでください。<b>登録ずみの商品はそのまま残ります。</b></p>
+      消したい${regThingName()}を押して選んでください。<b>登録ずみの商品はそのまま残ります。</b></p>
     <input type="search" id="regBreedSearch" class="reg-search"
-           placeholder="品種名・ふりがな・コードで検索" value="${escapeAttr(regSel.search)}">
+           placeholder="${regThingName()}名・ふりがなで検索" value="${escapeAttr(regSel.search)}">
     <div id="regKanaBar" class="reg-kana"></div>
     <div id="regBreedList" class="reg-breeds">
       ${list.map(b => {
@@ -5568,14 +5619,27 @@ function regTidyHtml(){
     </div>
     <div class="reg-add-row" style="margin-top:12px">
       <button id="regTidyDo" class="btn btn-primary" ${n ? '' : 'disabled'}>
-        ${n ? `選んだ ${n}件を消す` : '消す品種を選んでください'}</button>
+        ${n ? `選んだ ${n}件を消す` : `消す${regThingName()}を選んでください`}</button>
       <button id="regTidyEnd" class="btn btn-ghost">やめる</button>
     </div>
     <button id="regTidyReset" class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px">
-      最初の品種一覧に戻す</button>`;
+      最初の${regThingName()}一覧に戻す</button>`;
+}
+
+function bindRegModeBar(){
+  $$('#regStepBody .reg-mode button').forEach(b => {
+    b.onclick = () => {
+      if(regSel.mode === b.dataset.m) return;
+      regSel.mode = b.dataset.m;
+      regSel.breed = null; regSel.search = ''; regSel.group = '全部';
+      regSel.tidyPicked = new Set();
+      renderRegisterPanel();
+    };
+  });
 }
 
 function bindRegStep1(){
+  bindRegModeBar();
   if(regSel.tidy) return bindRegTidy();
   renderRegKanaBar(); renderRegBreeds();
   $('#regBreedSearch').addEventListener('input', (e) => {
@@ -5640,7 +5704,7 @@ function bindRegTidy(){
 }
 
 function renderRegKanaBar(){
-  const used = new Set(regMasters().breeds.map(b => kanaGroupOf(b.name, b.reading)));
+  const used = new Set(regList().map(b => kanaGroupOf(b.name, b.reading)));
   const groups = ['全部'].concat(KANA_GROUPS.filter(g => used.has(g)));
   const bar = $('#regKanaBar');
   bar.innerHTML = groups.map(g =>
@@ -5661,7 +5725,7 @@ function normKana(t){
 
 function regFilteredBreeds(){
   const q = normKana(regSel.search.trim());
-  return regMasters().breeds.filter(b => {
+  return regList().filter(b => {
     if(regSel.group !== '全部' && kanaGroupOf(b.name, b.reading) !== regSel.group) return false;
     if(!q) return true;
     return normKana(b.name + ' ' + (b.reading||'') + ' ' + (b.code||'')).includes(q);
@@ -5683,7 +5747,7 @@ function renderRegBreeds(){
   }).join('');
   box.querySelectorAll('button').forEach(btn => {
     btn.onclick = () => {
-      const b = regMasters().breeds.find(x => x.name === btn.dataset.n);
+      const b = regList().find(x => x.name === btn.dataset.n);
       if(b) regPickBreed(b);
     };
   });
@@ -5752,6 +5816,15 @@ function bindWheel(id, items, current, onPick){
 }
 
 function regStep2Html(){
+  if(regIsGoods()){
+    return `<h3 class="card-title">個数を選ぶ</h3>
+      <div class="wheels">${wheelHtml('wheelQty', '個数', regRange(100), regSel.qtyN)}</div>
+      <div class="reg-summary">
+        <div class="reg-sum-line"><span>いま選んでいる内容</span>
+          <b id="regStep2Now">${escapeHtml(regQuantityText())}</b></div>
+      </div>
+      <button id="regStep2Next" class="btn btn-primary reg-next-step">確認へ進む →</button>`;
+  }
   const ranks = regMasters().ranks;
   const mode = regSel.qtyMode;
   const modeBtn = (key, label) =>
@@ -5781,6 +5854,16 @@ function regStep2Html(){
 }
 
 function bindRegStep2(){
+  if(regIsGoods()){
+    const refresh = () => {
+      const el = $('#regStep2Now');
+      if(el) el.textContent = regQuantityText();
+      renderRegSteps();
+    };
+    bindWheel('wheelQty', regRange(100), regSel.qtyN, v => { regSel.qtyN = +v; refresh(); });
+    $('#regStep2Next').onclick = () => { regSel.step = 3; renderRegisterPanel(); };
+    return;
+  }
   const ranks = regMasters().ranks;
   if(!regSel.rank) regSel.rank = ranks[0];
 
@@ -5831,8 +5914,8 @@ function regStep4Html(){
   const b = regSel.breed;
   return `<h3 class="card-title">この内容で登録する</h3>
     <div class="reg-summary">
-      <div class="reg-sum-line"><span>品種</span><b>${escapeHtml(b ? b.name : '—')}</b></div>
-      <div class="reg-sum-line"><span>ランク</span><b>${escapeHtml(regSel.rank || 'なし')}</b></div>
+      <div class="reg-sum-line"><span>${regThingName()}</span><b>${escapeHtml(b ? b.name : '—')}</b></div>
+      ${regIsGoods() ? '' : `<div class="reg-sum-line"><span>ランク</span><b>${escapeHtml(regSel.rank || 'なし')}</b></div>`}
       <div class="reg-sum-line"><span>数量</span><b>${escapeHtml(regSel.qty || 'なし')}</b></div>
       <div class="reg-sum-line"><span>管理番号</span><b class="mono">${escapeHtml(regPreviewNumber().no)}</b></div>
     </div>
@@ -5917,7 +6000,9 @@ function regDoRegister(){
   list.push({
     controlNo: pv.no, seq: pv.seq, resetKey: pv.resetKey,
     variety: regSel.breed.name, breedCode: regSel.breed.code || '',
-    rank: regSel.rank || '', quantityText: regQuantityText(),   // 選択から作り直す（古い値を残さない）
+    kind: regSel.mode,
+    rank: regIsGoods() ? '' : (regSel.rank || ''),
+    quantityText: regQuantityText(),   // 選択から作り直す（古い値を残さない）
     photoNames: [], ts: Date.now()
   });
   saveRegItems(list);
@@ -6910,6 +6995,7 @@ fsRestoreRoot().then(() => renderFsBar()).catch(() => {});
   if(o.encoding) $('#lstEncoding').value = o.encoding;
   $('#lstTemplate').value = lstTemplateText();
   $('#lstTitleTemplate').value = lstTitleTemplate();
+  $('#lstTitleTemplateGoods').value = lstTitleTemplateGoods();
   updateTitlePreview();
   fillImgForm();
 })();
