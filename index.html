@@ -506,6 +506,24 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .reg-tepra .err{font-size:12px;color:#f87171}
 .reg-tepra .btn{margin-left:auto}
 .reg-print-now{width:100%;margin-bottom:10px}
+
+/* 携帯の画面（指で押す前提の大きさにする） */
+@media (max-width: 640px){
+  .tab{padding:12px 14px;font-size:14px;min-height:46px;flex:1;min-width:76px}
+  .tabs{width:100%;gap:6px}
+  .topbar{gap:10px;padding-bottom:14px;margin-bottom:16px}
+  .logo-text{font-size:14px}
+  .logo-text small{display:none}
+  .reg-breeds{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));max-height:none}
+  .reg-breeds button{min-height:64px}
+  .reg-big{min-height:64px;font-size:18px}
+  .reg-step{min-width:0;padding:10px;gap:6px}
+  .reg-step .l{font-size:13px;white-space:nowrap}
+  .reg-step .v{font-size:14px}
+  .reg-kana button{min-width:44px;min-height:46px}
+  .reg-search{font-size:16px}   /* 16px未満だとiPhoneで勝手に拡大される */
+  .reg-go{min-height:60px}
+}
 </style>
 </head>
 <body>
