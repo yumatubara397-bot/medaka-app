@@ -5169,43 +5169,191 @@ function regItems(){
 }
 function saveRegItems(list){ localStorage.setItem(REG_ITEMS_KEY, JSON.stringify(list)); }
 
+// ===== Windows：テプラ クリエイター WebAPI =====
+// パソコンに入れた「WebAPI用通信モジュール」が localhost:29108 で待っているので、そこへ送る。
+// （キングジムのJavaScript SDKと同じ通信を、こちらで書いたもの。SDK本体は同梱していない）
+const TEPRA_WEBAPI = 'http://localhost:29108/api/printer';
+
+// SR-R5600P の印字可能領域（テープ幅mm → ドット）。SDK付属の印字領域表より
+const TEPRA_DOTS_5600P = { 4:22, 6:36, 9:54, 12:72, 18:108, 24:128 };
+// WebAPI のテープID → mm
+const TEPRA_TAPEID_MM = { 274:4, 259:6, 260:9, 261:12, 262:18, 263:24, 264:36, 275:24, 276:36, 309:50 };
+const TEPRA_MM_TAPEID = { 4:274, 6:259, 9:260, 12:261, 18:262, 24:263, 36:264, 50:309 };
+
+const TepraWin = {
+  printerName: null,
+
+  async fetchJson(path, opts, timeoutMs){
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs || 8000);
+    try {
+      const res = await fetch(TEPRA_WEBAPI + path, Object.assign({ signal: ctrl.signal }, opts || {}));
+      if(!res.ok) return { __http: res.status };
+      return await res.json();
+    } finally { clearTimeout(timer); }
+  },
+
+  /** 通信モジュールが動いているか（短く試す） */
+  async available(){
+    try {
+      const list = await this.fetchJson('', null, 2500);
+      return Array.isArray(list);
+    } catch(e){ return false; }
+  },
+
+  /** 使うプリンターを決める */
+  async pick(){
+    const list = await this.fetchJson('', null, 5000);
+    if(!Array.isArray(list) || !list.length) return null;
+    // テプラらしい名前を優先する
+    const hit = list.find(p => /TEPRA|テプラ|SR-/i.test(p.printerName || '')) || list[0];
+    this.printerName = hit.printerName;
+    return this.printerName;
+  },
+
+  async status(){
+    if(!this.printerName && !(await this.pick())){
+      return { ok:false, error:'テプラが見つかりません（パソコンにプリンターとして入っていますか）' };
+    }
+    const st = await this.fetchJson('/lwstatus/' + encodeURIComponent(this.printerName), null, 8000);
+    if(st.__http) return { ok:false, error:'テプラの状態を取得できませんでした' };
+    const mm = TEPRA_TAPEID_MM[st.tapeID] || 0;
+    const out = { ok:true, connected:true, printer:this.printerName, tapeMM:mm };
+    if(st.error) out.error = 'テプラのエラー（コード ' + st.error + '）';
+    return out;
+  },
+
+  /** ラベルを画像にする。テプラは「テープ幅＝画像の高さ」 */
+  makePng(lines, heightDots){
+    const cv = document.createElement('canvas');
+    const pad = 12, gap = heightDots * 0.10;
+    const weights = lines.map((l, i) => i === 0 ? 1.5 : 1.0);
+    const total = weights.reduce((a, b) => a + b, 0);
+    const usable = heightDots - gap * (lines.length - 1);
+    const hs = weights.map(w => usable * w / total);
+
+    const ctx0 = cv.getContext('2d');
+    const fonts = lines.map((t, i) =>
+      `${i === 0 ? '700' : '400'} ${Math.round(hs[i] * 0.86)}px "Noto Sans JP", sans-serif`);
+    let content = 0;
+    lines.forEach((t, i) => { ctx0.font = fonts[i]; content = Math.max(content, ctx0.measureText(t).width); });
+
+    cv.width = Math.ceil(Math.max(heightDots, content + pad * 2));
+    cv.height = heightDots;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = '#000'; ctx.textBaseline = 'middle';
+    let y = 0;
+    lines.forEach((t, i) => {
+      ctx.font = fonts[i];
+      const limit = cv.width - pad * 2;
+      const w = ctx.measureText(t).width;
+      if(w > limit){    // はみ出す行だけ縮める
+        const size = Math.floor(parseInt(fonts[i].match(/(\d+)px/)[1], 10) * limit / w);
+        ctx.font = fonts[i].replace(/\d+px/, size + 'px');
+      }
+      ctx.fillText(t, pad, y + hs[i] / 2);
+      y += hs[i] + gap;
+    });
+    return cv.toDataURL('image/png').split(',')[1];   // base64だけ返す
+  },
+
+  async print(labels){
+    const st = await this.status();
+    if(!st.ok) return st;
+    const mm = st.tapeMM || 24;
+    const dots = TEPRA_DOTS_5600P[mm] || 128;
+
+    for(let i = 0; i < labels.length; i++){
+      const body = {
+        printFile: {
+          imageFile: {
+            fileName: 'label' + (i + 1) + '.png',
+            base64Str: this.makePng(labels[i].lines, dots)
+          }
+        },
+        printParameter: {
+          copies: 1,
+          tapeCut: 2,                 // ラベルごとに切る
+          halfCut: 1,                 // ハーフカットしない
+          printSpeed: 1,              // 高速
+          density: { mode: 1, value: 0 },
+          tape: TEPRA_MM_TAPEID[mm] || 263,
+          priorityPrintSetting: false,
+          halfCutContinuous: false,
+          marginLeftRight: 0,
+          displayTapeWidth: false,    // 確認画面を出さない（自動で出したいので）
+          displayError: false,
+          displayPrintSetting: false,
+          skipRecord: false,
+          previewImage: false,
+          convertFullWidth: false,
+          stretchImage: false
+        }
+      };
+      const res = await this.fetchJson('/print/' + encodeURIComponent(this.printerName), {
+        method: 'POST',
+        headers: { 'accept': 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      }, 60000);
+      if(res.__http) return { ok:false, error:'印刷に失敗しました（コード ' + res.__http + '）' };
+      if(res.errorCode && res.errorCode !== 0){
+        return { ok:false, error:'印刷に失敗しました（エラー ' + res.errorCode + '）' };
+      }
+    }
+    return { ok:true, printed: labels.length, tapeMM: mm };
+  }
+};
+
 // ===== テプラへの橋渡し =====
 // 端末によって経路が変わるが、呼び方は同じにしておく。
 //   android … Androidアプリの中で動いているとき（WebViewが窓口を用意している）
 //   local   … Windowsの印刷ヘルパーがこのページを配信しているとき
 //   none    … iPadなど。直接は印刷できないので、CSVに落とす
 const TepraLink = {
+  _kind: null,          // 'android' / 'windows' / 'none'（一度調べたら覚えておく）
+
+  /** どの経路が使えるかを調べる。起動時と、登録タブを開いたときに1回 */
+  async probe(){
+    if(window.TepraBridge && typeof window.TepraBridge.print === 'function'){
+      this._kind = 'android';
+    } else if(await TepraWin.available()){
+      this._kind = 'windows';
+    } else {
+      this._kind = 'none';
+    }
+    return this._kind;
+  },
+
   kind(){
+    if(this._kind) return this._kind;
+    // まだ調べていないときは、すぐ分かるものだけ返す
     if(window.TepraBridge && typeof window.TepraBridge.print === 'function') return 'android';
-    if(location.protocol === 'http:' && /^(127\.0\.0\.1|localhost)$/.test(location.hostname)) return 'local';
     return 'none';
   },
   available(){ return this.kind() !== 'none'; },
 
-  async call(method, arg){
-    const kind = this.kind();
-    if(kind === 'android'){
-      // Android側は同期で返す（JSON文字列）
-      const raw = (arg === undefined) ? window.TepraBridge[method]() : window.TepraBridge[method](arg);
-      try { return JSON.parse(raw); } catch(e){ return { ok:false, error:'応答を読めませんでした: ' + raw }; }
-    }
-    if(kind === 'local'){
-      try {
-        const res = await fetch('/tepra/' + method, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(arg === undefined ? {} : { payload: arg })
-        });
-        return await res.json();
-      } catch(e){
-        return { ok:false, error:'印刷ヘルパーに繋がりません（起動していますか？）' };
-      }
-    }
+  async status(){
+    const k = this.kind();
+    if(k === 'android') return this.android('status');
+    if(k === 'windows') return TepraWin.status();
     return { ok:false, error:'この端末からは直接印刷できません' };
   },
 
-  status(){ return this.call('status'); },
-  connect(){ return this.call('connect'); },
+  async connect(){
+    const k = await this.probe();
+    if(k === 'android') return this.android('connect');
+    if(k === 'windows'){ await TepraWin.pick(); return TepraWin.status(); }
+    return { ok:false, error:'テプラにつながる経路が見つかりません' };
+  },
+
+  /** Android アプリの窓口（同期でJSON文字列が返る） */
+  android(method, arg){
+    try {
+      const raw = (arg === undefined) ? window.TepraBridge[method]() : window.TepraBridge[method](arg);
+      return JSON.parse(raw);
+    } catch(e){ return { ok:false, error:'応答を読めませんでした' }; }
+  },
 
   /** 登録した商品をラベルにして印刷する */
   print(items){
@@ -5216,7 +5364,10 @@ const TepraLink = {
         it.controlNo || ''
       ].filter(t => String(t).trim() !== '')
     }));
-    return this.call('print', JSON.stringify(labels));
+    const k = this.kind();
+    if(k === 'android') return Promise.resolve(this.android('print', JSON.stringify(labels)));
+    if(k === 'windows') return TepraWin.print(labels);
+    return Promise.resolve({ ok:false, error:'この端末からは直接印刷できません' });
   }
 };
 
@@ -5224,6 +5375,7 @@ const TepraLink = {
 async function renderTepraBar(){
   const box = $('#regTepraBar');
   if(!box) return;
+  if(TepraLink._kind === null) await TepraLink.probe();
   if(!TepraLink.available()){
     box.classList.add('hidden');
     return;
