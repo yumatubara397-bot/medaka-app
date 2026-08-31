@@ -1,0 +1,17 @@
+import time, base64
+from common import Browser
+b = Browser(9352, 1100, 1400)
+b.ev("localStorage.clear();switchTab('register');renderRegisterPanel()"); time.sleep(0.8)
+b.ev("[...document.querySelectorAll('#regBreedList button')].find(x=>x.querySelector('.bn').textContent==='幹之').click()")
+time.sleep(0.8)
+b.ev("[...document.querySelectorAll('#wheelRank .wheel-item')].find(e=>e.textContent==='上物').click()"); time.sleep(0.5)
+b.ev("[...document.querySelectorAll('#wheelQty .wheel-item')].find(e=>e.textContent==='3').click()"); time.sleep(0.6)
+d = b.send("Page.captureScreenshot", {"captureBeyondViewport": True})
+open("/tmp/wheel_pair.png","wb").write(base64.b64decode(d["data"]))
+b.ev("[...document.querySelectorAll('.qty-modes button')].find(x=>x.textContent.includes('雄')).click()"); time.sleep(0.8)
+b.ev("[...document.querySelectorAll('#wheelMale .wheel-item')].find(e=>e.textContent==='2').click()"); time.sleep(0.4)
+b.ev("[...document.querySelectorAll('#wheelFemale .wheel-item')].find(e=>e.textContent==='5').click()"); time.sleep(0.8)
+d = b.send("Page.captureScreenshot", {"captureBeyondViewport": True})
+open("/tmp/wheel_sex.png","wb").write(base64.b64decode(d["data"]))
+print("撮影OK")
+b.close()

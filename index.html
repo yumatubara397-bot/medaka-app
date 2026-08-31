@@ -6,7 +6,9 @@
 <meta name="theme-color" content="#0a0e27">
 <title>メダカ出品アシスタント</title>
 <link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -523,6 +525,38 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
   .reg-kana button{min-width:44px;min-height:46px}
   .reg-search{font-size:16px}   /* 16px未満だとiPhoneで勝手に拡大される */
   .reg-go{min-height:60px}
+}
+
+/* ホイールピッカー（上下に回して選ぶ） */
+.wheels{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;margin-bottom:16px}
+.wheel-box{flex:1;min-width:120px}
+.wheel-title{font-size:12px;font-weight:700;opacity:.6;margin-bottom:6px;text-align:center}
+.wheel{position:relative;height:200px;overflow-y:auto;overflow-x:hidden;
+  scroll-snap-type:y mandatory;-webkit-overflow-scrolling:touch;
+  border-radius:12px;border:1px solid var(--line,#2a3350);background:var(--bg2,#141a2e);
+  scrollbar-width:none}
+.wheel::-webkit-scrollbar{display:none}
+.wheel-pad{height:78px}                     /* 上下の余白。1つ目と最後を中央に来させる */
+.wheel-item{height:44px;line-height:44px;text-align:center;font-size:19px;
+  scroll-snap-align:center;opacity:.35;transition:opacity .12s,transform .12s;cursor:pointer;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 6px}
+.wheel-item.on{opacity:1;font-weight:700;font-size:22px;color:var(--accent,#39d0ff)}
+/* 真ん中の帯（ここが選ばれている場所） */
+.wheel-band{position:absolute;left:0;right:0;top:78px;height:44px;pointer-events:none;
+  border-top:1px solid var(--accent,#39d0ff);border-bottom:1px solid var(--accent,#39d0ff);
+  background:rgba(57,208,255,.06)}
+.wheel-wrap{position:relative}
+.qty-modes{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.qty-modes button{flex:1;min-width:96px;min-height:52px;font-size:16px;font-weight:700;border-radius:10px;
+  cursor:pointer;border:1px solid var(--line,#2a3350);background:var(--bg2,#141a2e);color:inherit}
+.qty-modes button.on{background:var(--accent,#39d0ff);color:#05131d;border-color:transparent}
+.reg-sub-title{font-size:13px;font-weight:700;opacity:.65;margin:4px 0 8px}
+.reg-next-step{width:100%;min-height:60px;font-size:18px;margin-top:6px}
+@media(max-width:640px){
+  .wheel{height:176px}
+  .wheel-pad{height:66px}
+  .wheel-band{top:66px}
+  .wheel-box{min-width:96px}
 }
 </style>
 </head>
@@ -5020,8 +5054,9 @@ const REG_RULE_KEY   = 'medaka_reg_rule';
 const REG_ITEMS_KEY  = 'medaka_reg_items';
 
 const REG_SEED_BREEDS = [{"name": "赤秋", "reading": "あかあき", "code": "AKA"}, {"name": "あけぼの", "reading": "あけぼの", "code": "AKE"}, {"name": "オロチ", "reading": "オロチ", "code": "ORC"}, {"name": "王妃", "reading": "おうひ", "code": "OUH"}, {"name": "煌", "reading": "きらめき", "code": "KRM"}, {"name": "カブキ", "reading": "カブキ", "code": "KBK"}, {"name": "紅白", "reading": "こうはく", "code": "KOH"}, {"name": "黄金", "reading": "おうごん", "code": "OUG"}, {"name": "極上ラメ", "reading": "ごくじょうらめ", "code": "GKJ"}, {"name": "銀河", "reading": "ぎんが", "code": "GIN"}, {"name": "小町", "reading": "こまち", "code": "KOM"}, {"name": "琥珀", "reading": "こはく", "code": "KHK"}, {"name": "紅帝", "reading": "こうてい", "code": "KOT"}, {"name": "三色ラメ", "reading": "さんしょくラメ", "code": "SAN"}, {"name": "サファイア", "reading": "サファイア", "code": "SAP"}, {"name": "錦鯉", "reading": "にしきごい", "code": "NSK"}, {"name": "深海", "reading": "しんかい", "code": "SNK"}, {"name": "白幹之", "reading": "しろみゆき", "code": "SMY"}, {"name": "スーパーブラック", "reading": "スーパーブラック", "code": "SBK"}, {"name": "蒼", "reading": "あお", "code": "AOI"}, {"name": "楊貴妃", "reading": "ようきひ", "code": "YOK"}, {"name": "垂水", "reading": "たるみ", "code": "TRM"}, {"name": "天女の舞", "reading": "てんにょのまい", "code": "TEN"}, {"name": "東天光", "reading": "とうてんこう", "code": "TOT"}, {"name": "夜桜", "reading": "よざくら", "code": "YOZ"}, {"name": "女雛", "reading": "めびな", "code": "MEB"}, {"name": "忘却の翼", "reading": "ぼうきゃくのつばさ", "code": "BOU"}, {"name": "マリンブルー", "reading": "マリンブルー", "code": "MRB"}, {"name": "幹之", "reading": "みゆき", "code": "MIY"}, {"name": "幹之ラメ", "reading": "みゆきラメ", "code": "MIYR"}, {"name": "松井ヒレ長", "reading": "まついひれちょう", "code": "MTI"}, {"name": "ラメ幹之", "reading": "らめみきの", "code": "RMY"}, {"name": "螺鈿光", "reading": "らでんこう", "code": "RDN"}, {"name": "ロングフィン", "reading": "ロングフィン", "code": "LNG"}, {"name": "五色", "reading": "ごしき", "code": "GSK"}, {"name": "月弓", "reading": "つきゆみ", "code": "TKY"}, {"name": "紅蓮", "reading": "ぐれん", "code": "GUR"}, {"name": "蜃気楼", "reading": "しんきろう", "code": "SKR"}, {"name": "翡翠", "reading": "ひすい", "code": "HIS"}, {"name": "ブラックリム", "reading": "ブラックリム", "code": "BLR"}];
-const REG_SEED_RANKS = ['SS','S','A','B','C'];
-const REG_SEED_QTYS  = ['1匹','2匹','3匹','5匹','10匹','1ペア','2ペア'];
+const REG_SEED_RANKS = ['特上', '上物', '通常', '若魚'];
+const REG_SEED_QTYS  = [];   // 数量はホイールで 1〜100 から選ぶので一覧は持たない
+const REG_MASTER_VERSION = 2;
 
 // --- 頭文字の判定（iPadアプリの KanaIndex と同じ区切り）---
 const KANA_GROUPS = ['あ','か','さ','た','な','は','ま','や','ら','わ','英数','その他'];
@@ -5083,11 +5118,19 @@ function regMasters(){
   let m = null;
   try { m = JSON.parse(localStorage.getItem(REG_MASTER_KEY) || 'null'); } catch(e){ m = null; }
   if(!m || !Array.isArray(m.breeds) || !m.breeds.length){
-    m = { breeds: REG_SEED_BREEDS.slice(), ranks: REG_SEED_RANKS.slice(), quantities: REG_SEED_QTYS.slice() };
+    m = { breeds: REG_SEED_BREEDS.slice(), ranks: REG_SEED_RANKS.slice(),
+          quantities: [], version: REG_MASTER_VERSION };
     localStorage.setItem(REG_MASTER_KEY, JSON.stringify(m));
   }
   m.ranks = m.ranks || REG_SEED_RANKS.slice();
-  m.quantities = m.quantities || REG_SEED_QTYS.slice();
+  m.quantities = m.quantities || [];
+  // 前の版のランク（SS/S/A/B/C）は、新しい4段階に入れ替える
+  if(m.version !== REG_MASTER_VERSION){
+    const old = ['SS','S','A','B','C'];
+    if(m.ranks.every(x => old.includes(x))) m.ranks = REG_SEED_RANKS.slice();
+    m.version = REG_MASTER_VERSION;
+    localStorage.setItem(REG_MASTER_KEY, JSON.stringify(m));
+  }
   return m;
 }
 function saveRegMasters(m){ localStorage.setItem(REG_MASTER_KEY, JSON.stringify(m)); }
@@ -5438,19 +5481,33 @@ async function tepraPrintPending(){
 // ===== 登録タブの動き =====
 // 1つ選ぶと次の項目が出る、順番に進む形。
 // 各項目は「最初に設定した内容（マスター）」を全部並べて、押すだけで選べる。
-let regSel = { breed: null, rank: null, qty: null, group: '全部', search: '', step: 1, lastNo: '' };
+let regSel = {
+  breed: null, rank: null, qty: null,
+  qtyMode: 'pair',           // pair=ペア / set=セット / sex=雄雌べつべつ
+  qtyN: 1, qtyMale: 1, qtyFemale: 1,
+  group: '全部', search: '', step: 1, lastNo: ''
+};
+
+/** 選んだ数量を、ラベルや出品タイトルに載せる文字にする */
+function regQuantityText(){
+  if(regSel.qtyMode === 'pair') return regSel.qtyN + 'ペア';
+  if(regSel.qtyMode === 'set')  return regSel.qtyN + 'セット';
+  const parts = [];
+  if(regSel.qtyMale   > 0) parts.push('雄' + regSel.qtyMale);
+  if(regSel.qtyFemale > 0) parts.push('雌' + regSel.qtyFemale);
+  return parts.join(' ');
+}
 
 const REG_STEPS = [
   { n: 1, label: '品種' },
-  { n: 2, label: 'ランク' },
-  { n: 3, label: '数量' },
-  { n: 4, label: '確認' }
+  { n: 2, label: 'ランク・数量' },
+  { n: 3, label: '確認' }
 ];
 
 function renderRegisterPanel(){
   const m = regMasters();
   if(!m.ranks.length) regSel.rank = '';
-  if(!m.quantities.length) regSel.qty = '';
+  regSel.qty = regQuantityText();     // 数量はホイールの選択から毎回作る
   renderRegSteps();
   renderRegStepBody();
   renderRegItems();
@@ -5460,7 +5517,8 @@ function renderRegisterPanel(){
 
 /** 上の進み具合。押すとそこまで戻れる */
 function renderRegSteps(){
-  const chosen = { 1: regSel.breed ? regSel.breed.name : '', 2: regSel.rank, 3: regSel.qty, 4: '' };
+  const both = [regSel.rank, regSel.qty].filter(Boolean).join(' ');
+  const chosen = { 1: regSel.breed ? regSel.breed.name : '', 2: both, 3: '' };
   $('#regSteps').innerHTML = REG_STEPS.map(st => {
     const cls = st.n === regSel.step ? 'on' : (chosen[st.n] ? 'done' : '');
     const val = chosen[st.n] ? `<span class="v">${escapeHtml(chosen[st.n])}</span>` : '';
@@ -5475,8 +5533,7 @@ function renderRegSteps(){
 function renderRegStepBody(){
   const box = $('#regStepBody');
   if(regSel.step === 1){ box.innerHTML = regStep1Html(); bindRegStep1(); }
-  else if(regSel.step === 2){ box.innerHTML = regPickHtml('ランク', regMasters().ranks, regSel.rank); bindRegPick('ranks'); }
-  else if(regSel.step === 3){ box.innerHTML = regPickHtml('数量', regMasters().quantities, regSel.qty); bindRegPick('quantities'); }
+  else if(regSel.step === 2){ box.innerHTML = regStep2Html(); bindRegStep2(); }
   else { box.innerHTML = regStep4Html(); bindRegStep4(); }
 }
 
@@ -5566,33 +5623,132 @@ function regPickBreed(b){
   renderRegisterPanel();
 }
 
-// --- ② ランク / ③ 数量（どちらも同じ形）---
-function regPickHtml(title, items, current){
-  const body = items.length
-    ? items.map(v => `<button data-v="${escapeAttr(v)}" class="reg-big ${v === current ? 'on' : ''}">${escapeHtml(v)}</button>`).join('')
-    : '<div class="reg-empty">まだ登録がありません。「＋ 追加する」から登録してください。</div>';
-  return `<h3 class="card-title">${escapeHtml(title)}を選ぶ</h3>
-    <div class="reg-bigs">${body}</div>
-    <div class="reg-pick-acts">
-      <button class="btn btn-ghost" id="regPickAdd">＋ ${escapeHtml(title)}を追加する</button>
-      <button class="btn btn-ghost" id="regPickSkip">指定しない →</button>
-    </div>`;
+// --- ② ランク・数量（上下に回して選ぶ）---
+
+/** 1〜n の数字の並び */
+function regRange(n){ return Array.from({ length: n }, (_, i) => String(i + 1)); }
+
+/** ホイール1本ぶんのHTML */
+function wheelHtml(id, title, items, current){
+  const rows = items.map((v, i) =>
+    `<div class="wheel-item ${String(v) === String(current) ? 'on' : ''}" data-i="${i}">${escapeHtml(v)}</div>`).join('');
+  return `<div class="wheel-box">
+    <div class="wheel-title">${escapeHtml(title)}</div>
+    <div class="wheel-wrap">
+      <div class="wheel" id="${id}"><div class="wheel-pad"></div>${rows}<div class="wheel-pad"></div></div>
+      <div class="wheel-band"></div>
+    </div>
+  </div>`;
 }
 
-function bindRegPick(kind){
-  const isRank = kind === 'ranks';
-  const set = (v) => {
-    if(isRank) regSel.rank = v; else regSel.qty = v;
-    regSel.step = isRank ? 3 : 4;
-    renderRegisterPanel();
+/** ホイールを動かせるようにする。止まった位置の値を onPick で返す */
+function bindWheel(id, items, current, onPick){
+  const el = document.getElementById(id);
+  if(!el) return;
+  const rows = [...el.querySelectorAll('.wheel-item')];
+  if(!rows.length) return;
+  const itemH = rows[0].offsetHeight || 44;
+
+  const paint = (idx) => {
+    rows.forEach((r, i) => r.classList.toggle('on', i === idx));
   };
-  $$('#regStepBody .reg-big').forEach(b => { b.onclick = () => set(b.dataset.v); });
-  $('#regPickSkip').onclick = () => set('');
-  $('#regPickAdd').onclick = () => {
-    const v = prompt(isRank ? '追加するランクを入力してください（例：SS）'
-                            : '追加する数量表記を入力してください（例：3匹 / 1ペア）');
+  const centerOn = (idx, smooth) => {
+    el.scrollTo({ top: idx * itemH, behavior: smooth ? 'smooth' : 'auto' });
+    paint(idx);
+  };
+
+  let idx = Math.max(0, items.findIndex(v => String(v) === String(current)));
+  centerOn(idx, false);
+
+  let timer = null;
+  el.addEventListener('scroll', () => {
+    const near = Math.round(el.scrollTop / itemH);
+    paint(Math.max(0, Math.min(items.length - 1, near)));
+    clearTimeout(timer);
+    timer = setTimeout(() => {                 // 指を離してしばらくしたら確定する
+      const i = Math.max(0, Math.min(items.length - 1, Math.round(el.scrollTop / itemH)));
+      centerOn(i, true);
+      onPick(items[i]);
+    }, 120);
+  });
+  // 押しても選べるようにする
+  rows.forEach((row, i) => {
+    row.onclick = () => { centerOn(i, true); onPick(items[i]); };
+  });
+}
+
+function regStep2Html(){
+  const ranks = regMasters().ranks;
+  const mode = regSel.qtyMode;
+  const modeBtn = (key, label) =>
+    `<button data-m="${key}" class="${mode === key ? 'on' : ''}">${escapeHtml(label)}</button>`;
+
+  const qtyWheels = (mode === 'sex')
+    ? wheelHtml('wheelMale', '雄', regRange(100), regSel.qtyMale)
+      + wheelHtml('wheelFemale', '雌', regRange(100), regSel.qtyFemale)
+    : wheelHtml('wheelQty', mode === 'pair' ? 'ペア数' : 'セット数', regRange(100), regSel.qtyN);
+
+  return `<h3 class="card-title">ランクと数量を選ぶ</h3>
+    <div class="reg-sub-title">ランク</div>
+    <div class="wheels">${wheelHtml('wheelRank', '', ranks, regSel.rank || ranks[0])}</div>
+    <button id="regRankAdd" class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:16px">＋ ランクを追加する</button>
+
+    <div class="reg-sub-title">数量</div>
+    <div class="qty-modes">
+      ${modeBtn('pair', 'ペア')}${modeBtn('set', 'セット')}${modeBtn('sex', '雄・雌べつべつ')}
+    </div>
+    <div class="wheels">${qtyWheels}</div>
+
+    <div class="reg-summary">
+      <div class="reg-sum-line"><span>いま選んでいる内容</span>
+        <b id="regStep2Now">${escapeHtml([regSel.rank, regQuantityText()].filter(Boolean).join('　'))}</b></div>
+    </div>
+    <button id="regStep2Next" class="btn btn-primary reg-next-step">確認へ進む →</button>`;
+}
+
+function bindRegStep2(){
+  const ranks = regMasters().ranks;
+  if(!regSel.rank) regSel.rank = ranks[0];
+
+  const refresh = () => {
+    const el = $('#regStep2Now');
+    if(el) el.textContent = [regSel.rank, regQuantityText()].filter(Boolean).join('　');
+    renderRegSteps();
+  };
+
+  bindWheel('wheelRank', ranks, regSel.rank, v => { regSel.rank = v; refresh(); });
+
+  if(regSel.qtyMode === 'sex'){
+    bindWheel('wheelMale', regRange(100), regSel.qtyMale, v => { regSel.qtyMale = +v; regSel.qty = regQuantityText(); refresh(); });
+    bindWheel('wheelFemale', regRange(100), regSel.qtyFemale, v => { regSel.qtyFemale = +v; regSel.qty = regQuantityText(); refresh(); });
+  } else {
+    bindWheel('wheelQty', regRange(100), regSel.qtyN, v => { regSel.qtyN = +v; regSel.qty = regQuantityText(); refresh(); });
+  }
+  regSel.qty = regQuantityText();
+
+  $$('#regStepBody .qty-modes button').forEach(b => {
+    b.onclick = () => {
+      regSel.qtyMode = b.dataset.m;
+      regSel.qty = regQuantityText();
+      renderRegStepBody();           // ホイールの数が変わるので描き直す
+      renderRegSteps();
+    };
+  });
+
+  $('#regRankAdd').onclick = () => {
+    const v = prompt('追加するランクを入力してください');
     if(!v || !v.trim()) return;
-    if(regAddSimple(kind, v)) set(v.trim());
+    if(regAddSimple('ranks', v)){
+      regSel.rank = v.trim();
+      renderRegStepBody();
+      renderRegSteps();
+    }
+  };
+
+  $('#regStep2Next').onclick = () => {
+    regSel.qty = regQuantityText();
+    regSel.step = 3;
+    renderRegisterPanel();
   };
 }
 
@@ -5687,7 +5843,7 @@ function regDoRegister(){
   list.push({
     controlNo: pv.no, seq: pv.seq, resetKey: pv.resetKey,
     variety: regSel.breed.name, breedCode: regSel.breed.code || '',
-    rank: regSel.rank || '', quantityText: regSel.qty || '',
+    rank: regSel.rank || '', quantityText: regQuantityText(),   // 選択から作り直す（古い値を残さない）
     photoNames: [], ts: Date.now()
   });
   saveRegItems(list);
