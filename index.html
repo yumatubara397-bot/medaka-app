@@ -605,6 +605,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
     <!-- ===== 登録タブ ===== -->
     <section id="panel-register" class="panel">
       <div id="regTepraBar" class="reg-tepra hidden"></div>
+      <div id="regFsBar" class="reg-tepra hidden"></div>
       <div class="reg-wrap">
         <div class="reg-main">
           <div class="card">
@@ -643,7 +644,8 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
         <h2>撮った写真を取り込む</h2>
         <p id="importIntro">「① 登録」した順に、1商品あたり決まった枚数ずつ撮ってください。<br>
         取り込むと、管理番号のフォルダへ自動で振り分けます。</p>
-        <button id="btnPickFolder" class="btn btn-primary">📂 フォルダを選ぶ</button>
+        <button id="btnFsLoad" class="btn btn-primary">🐟 保存先フォルダから読み込む</button>
+        <button id="btnPickFolder" class="btn btn-ghost">📂 別のフォルダを選ぶ</button>
         <button id="btnPickFiles" class="btn btn-ghost">🖼 写真を選ぶ（Safari・iPad用）</button>
         <input type="file" id="filePicker" accept="image/jpeg,image/png" multiple hidden>
         <div class="hint" id="pickerHint">※ フォルダ選択は Chrome / Edge のみ。Safari・iPad では「写真を選ぶ」をお使いください</div>
@@ -653,6 +655,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
         <div class="bar-row">
           <div class="bar-info"><span id="folderName"></span> / <span id="photoCount"></span>枚</div>
           <div class="bar-actions">
+            <button id="btnFsReload" class="btn btn-ghost">🐟 保存先から読み直す</button>
             <button id="btnReimport" class="btn btn-ghost">フォルダを変更</button>
             <button id="btnReimportFiles" class="btn btn-ghost">写真を選び直す</button>
             <button id="btnClearImport" class="btn btn-ghost">クリア</button>
@@ -1145,6 +1148,8 @@ $('#btnClearImport').onclick = clearImport;
 const supportsFolderPicker = typeof window.showDirectoryPicker === 'function';
 
 $('#btnAssign').onclick = assignPhotosToRegistered;
+$('#btnFsLoad').onclick = fsLoadFromFolders;
+$('#btnFsReload').onclick = fsLoadFromFolders;
 $('#assignPerItem').oninput = refreshAssignBar;
 
 $('#btnPickFiles').onclick = () => $('#filePicker').click();
@@ -1847,6 +1852,7 @@ let editState = {};
 
 // ===== IndexedDB: 編集済み画像 + マイスタイル(お気に入りペア)を保管 =====
 const EDIT_DB = 'medaka-edit';
+const FSHANDLE_STORE = 'fshandles';
 const EDIT_STORE = 'edited';
 const FAV_STORE = 'favorites';  // マイスタイル: {beforeBlob, afterBlob, timestamp, photoName}
 const HISTORY_STORE = 'history';  // 出品履歴(ロット単位)
@@ -1854,8 +1860,8 @@ let editDbPromise = null;
 function openEditDb(){
   if(editDbPromise) return editDbPromise;
   editDbPromise = new Promise((resolve, reject) => {
-    // v2: favorites ストア追加 / v3: history(出品履歴) ストア追加
-    const req = indexedDB.open(EDIT_DB, 3);
+    // v2: favorites / v3: history(出品履歴) / v4: 保存先フォルダの手がかり
+    const req = indexedDB.open(EDIT_DB, 4);
     req.onupgradeneeded = (e) => {
       const db = req.result;
       if(!db.objectStoreNames.contains(EDIT_STORE)){
@@ -1866,6 +1872,9 @@ function openEditDb(){
       }
       if(!db.objectStoreNames.contains(HISTORY_STORE)){
         db.createObjectStore(HISTORY_STORE, { autoIncrement: true });
+      }
+      if(!db.objectStoreNames.contains(FSHANDLE_STORE)){
+        db.createObjectStore(FSHANDLE_STORE);
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -5543,6 +5552,7 @@ function renderRegisterPanel(){
   renderRegItems();
   renderRegDone();
   renderTepraBar();
+  renderFsBar();
 }
 
 /** 上の進み具合。押すとそこまで戻れる */
@@ -5883,6 +5893,9 @@ function regDoRegister(){
   renderRegisterPanel();
   $('#panel-register').scrollIntoView({ block: 'start', behavior: 'smooth' });
 
+  // 保存先が決まっていれば、その商品のフォルダを用意しておく
+  if(FS_SUPPORTED) fsEnsureFolder(list[list.length - 1]);
+
   // テプラが使える端末なら、そのまま1枚出す
   if(TepraLink.available()){
     const item = list[list.length - 1];
@@ -5956,6 +5969,212 @@ $('#regTepraCsvAll').onclick = () => {
   exportTepraCsv('sjis', true);
 };
 $('#regTepraCsvUtf8').onclick = () => exportTepraCsv('utf8', false);
+
+// ===== 保存先フォルダ（管理番号のフォルダを自動で作る） =====
+// パソコンのChrome / Edge でだけ使える。
+// 一度「魚」フォルダを選んでおくと、登録するたびに
+// 「管理番号_品種名」のフォルダをその中に作る。写真はそこへ入れてもらう。
+
+const FS_SUPPORTED = typeof window.showDirectoryPicker === 'function';
+const FS_ROOT_NAME_KEY = 'medaka_fs_root_name';
+let fsRoot = null;            // 選んでもらった「魚」フォルダ
+
+async function fsHandlePut(key, handle){
+  const db = await openEditDb();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(FSHANDLE_STORE, 'readwrite');
+    tx.objectStore(FSHANDLE_STORE).put(handle, key);
+    tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+  });
+}
+async function fsHandleGet(key){
+  const db = await openEditDb();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(FSHANDLE_STORE, 'readonly');
+    const q = tx.objectStore(FSHANDLE_STORE).get(key);
+    q.onsuccess = () => res(q.result || null);
+    q.onerror = () => rej(q.error);
+  });
+}
+
+/** フォルダ名に使えない文字を落とす */
+function fsSafeName(t){
+  return String(t || '').replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim().slice(0, 80);
+}
+/** 「管理番号_品種名」 */
+function fsFolderName(item){
+  const name = fsSafeName(item.variety);
+  return fsSafeName(item.controlNo) + (name ? '_' + name : '');
+}
+
+/** 覚えている「魚」フォルダを呼び戻す。使えなければ null */
+async function fsRestoreRoot(){
+  if(!FS_SUPPORTED) return null;
+  if(fsRoot) return fsRoot;
+  const h = await fsHandleGet('root');
+  if(!h) return null;
+  try {
+    const perm = await h.queryPermission({ mode: 'readwrite' });
+    if(perm === 'granted'){ fsRoot = h; return fsRoot; }
+  } catch(e){ /* 使えない手がかりは捨てる */ }
+  return null;
+}
+
+/** 「魚」フォルダを選び直す（許可を取り直すときにも使う） */
+async function fsChooseRoot(){
+  if(!FS_SUPPORTED){
+    toast('このブラウザではフォルダを作れません（パソコンのChrome / Edgeが必要です）', 'err');
+    return null;
+  }
+  try {
+    const h = await window.showDirectoryPicker({ mode: 'readwrite' });
+    const perm = await h.requestPermission({ mode: 'readwrite' });
+    if(perm !== 'granted'){ toast('書き込みの許可がもらえませんでした', 'err'); return null; }
+    fsRoot = h;
+    localStorage.setItem(FS_ROOT_NAME_KEY, h.name);
+    // 覚えておけなくても、今回は使えるので止めない
+    try { await fsHandlePut('root', h); }
+    catch(e){ console.warn('保存先を覚えられませんでした', e); }
+    toast(`保存先を「${h.name}」にしました`, 'ok');
+    renderFsBar();
+    return fsRoot;
+  } catch(e){
+    if(e && e.name === 'AbortError') return null;    // 選ぶのをやめただけ
+    toast('フォルダを選べませんでした', 'err');
+    return null;
+  }
+}
+
+/** 覚えている手がかりに許可を出し直す（起動のたびに1回押してもらう） */
+async function fsReconnect(){
+  if(!FS_SUPPORTED) return null;
+  const h = await fsHandleGet('root');
+  if(!h) return fsChooseRoot();
+  try {
+    const perm = await h.requestPermission({ mode: 'readwrite' });
+    if(perm === 'granted'){
+      fsRoot = h;
+      toast(`保存先「${h.name}」につながりました`, 'ok');
+      renderFsBar();
+      return fsRoot;
+    }
+  } catch(e){ /* だめなら選び直してもらう */ }
+  return fsChooseRoot();
+}
+
+/** その商品のフォルダを作る（すでにあればそれを返す） */
+async function fsEnsureFolder(item){
+  const root = await fsRestoreRoot();
+  if(!root) return null;
+  try {
+    return await root.getDirectoryHandle(fsFolderName(item), { create: true });
+  } catch(e){
+    toast('フォルダを作れませんでした: ' + (e && e.message ? e.message : e), 'err');
+    return null;
+  }
+}
+
+/** 登録済みのぶんで、まだ無いフォルダをまとめて作る */
+async function fsCreateMissingFolders(){
+  const root = await fsRestoreRoot();
+  if(!root){ toast('先に保存先フォルダを選んでください', 'err'); return; }
+  const items = regItems();
+  let made = 0;
+  for(const it of items){
+    try {
+      await root.getDirectoryHandle(fsFolderName(it), { create: true });
+      made++;
+    } catch(e){ /* 1件ずつなので、失敗しても次へ進む */ }
+  }
+  toast(`${made}件のフォルダを用意しました`, 'ok');
+  renderFsBar();
+}
+
+/** 各フォルダの中の写真を読み込んで、そのまま商品に割り当てる */
+async function fsLoadFromFolders(){
+  const root = await fsRestoreRoot();
+  if(!root){ toast('先に保存先フォルダを選んでください', 'err'); return; }
+  const items = regItems();
+  if(!items.length){ toast('登録した商品がありません', 'err'); return; }
+
+  photos.forEach(p => p.blobUrl && URL.revokeObjectURL(p.blobUrl));
+  photos = [];
+  const built = [];
+  let missing = 0;
+
+  for(const it of items){
+    let dir = null;
+    try { dir = await root.getDirectoryHandle(fsFolderName(it), { create: false }); }
+    catch(e){ missing++; }
+
+    const idxs = [];
+    if(dir){
+      const files = [];
+      for await (const [name, handle] of dir.entries()){
+        if(handle.kind === 'file' && /\.(jpe?g|png)$/i.test(name)) files.push({ name, handle });
+      }
+      files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+      for(const f of files){
+        idxs.push(photos.length);
+        photos.push({ name: f.name, handle: f.handle, blobUrl: null, isLabel: false });
+      }
+    }
+    built.push({
+      labelIdx: idxs.length ? idxs[0] : -1, specimenIdxs: idxs,
+      variety: it.variety, rank: it.rank, quantityText: it.quantityText,
+      male: '', female: '', controlNo: it.controlNo,
+      manualEdits: { variety:true, rank:true, quantityText:true, male:false, female:false, controlNo:true }
+    });
+  }
+
+  products = built;
+  assignMode = true;
+  leftoverIdxs = [];
+  folderHandle = { name: root.name };
+  $('#emptyImport').classList.add('hidden');
+  $('#importLoaded').classList.remove('hidden');
+  $('#folderName').textContent = root.name;
+  $('#photoCount').textContent = photos.length;
+
+  await Promise.all(built.flatMap(b => b.specimenIdxs).map(ensureThumb));
+  syncFolderPhotos();
+  renderFolders(); renderProductList(); renderWarnings(); renderPhotoGrid(); refreshAssignBar();
+
+  const withPhotos = built.filter(b => b.specimenIdxs.length).length;
+  toast(`${withPhotos}件 / ${photos.length}枚 を読み込みました`
+        + (missing ? `（フォルダが無い商品 ${missing}件）` : ''), 'ok');
+}
+
+/** 保存先の案内バー */
+function renderFsBar(){
+  const box = $('#regFsBar');
+  if(!box) return;
+  if(!FS_SUPPORTED){
+    box.innerHTML = '<span class="txt">この端末ではフォルダの自動作成は使えません（パソコンのChrome / Edgeが必要です）</span>';
+    box.classList.remove('hidden');
+    return;
+  }
+  box.classList.remove('hidden');
+  const saved = localStorage.getItem(FS_ROOT_NAME_KEY);
+  if(fsRoot){
+    box.innerHTML = `<span class="dot on"></span>
+      <span class="txt">保存先「${escapeHtml(fsRoot.name)}」… 登録するとフォルダを自動で作ります</span>
+      <button id="fsMake" class="btn btn-ghost btn-sm">足りないフォルダを作る</button>
+      <button id="fsChange" class="btn btn-ghost btn-sm">変更</button>`;
+    $('#fsMake').onclick = fsCreateMissingFolders;
+    $('#fsChange').onclick = fsChooseRoot;
+  } else if(saved){
+    box.innerHTML = `<span class="dot"></span>
+      <span class="txt">保存先「${escapeHtml(saved)}」を覚えています。使うには許可が要ります</span>
+      <button id="fsConnect" class="btn btn-primary btn-sm">つなぐ</button>`;
+    $('#fsConnect').onclick = fsReconnect;
+  } else {
+    box.innerHTML = `<span class="dot"></span>
+      <span class="txt">写真の保存先フォルダ（例：デスクトップの「魚」）を決めると、登録のたびにフォルダを作ります</span>
+      <button id="fsPick" class="btn btn-primary btn-sm">保存先を選ぶ</button>`;
+    $('#fsPick').onclick = fsChooseRoot;
+  }
+}
 
 // ===== 管理番号ごとのフォルダ表示 =====
 // 登録した順に写真を配り、ズレていたら区切りを1枚ずつ動かして直せるようにする。
@@ -6249,6 +6468,8 @@ $('#btnHistExport').onclick = async () => {
 };
 
 // 起動したとき、最初に開く「登録」タブを描いておく
+fsRestoreRoot().then(() => renderFsBar()).catch(() => {});
+
 (function initRegisterPanel(){
   try { renderRegisterPanel(); }
   catch(e){
