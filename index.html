@@ -612,6 +612,14 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
   .lb-zoombar input[type=range]{width:38vw}
   .lb-zoomval{font-size:12px;min-width:44px}
 }
+
+/* 品種を減らす画面 */
+.reg-add-row{display:flex;gap:10px;flex-wrap:wrap}
+.reg-add-row .btn{flex:1;min-width:150px;min-height:48px}
+.reg-breeds button.tidy{position:relative}
+.reg-breeds button.tidy.on{border-color:var(--accent-2,#f87171);
+  box-shadow:0 0 0 2px rgba(248,113,113,.3);opacity:.65}
+.reg-breeds button.tidy .mark{position:absolute;top:6px;right:8px;font-size:14px}
 </style>
 </head>
 <body>
@@ -5116,6 +5124,23 @@ function regAddBreed(name, reading, code){
   saveRegMasters(m);
   return b;
 }
+/** 品種を消す。登録ずみの商品には影響しない（名前は商品側に控えてある） */
+function regRemoveBreeds(names){
+  const gone = new Set(names);
+  const m = regMasters();
+  const before = m.breeds.length;
+  m.breeds = m.breeds.filter(b => !gone.has(b.name));
+  saveRegMasters(m);
+  return before - m.breeds.length;
+}
+
+/** 最初に入っていた品種の一覧に戻す（自分で足したものは消える） */
+function regResetBreeds(){
+  const m = regMasters();
+  m.breeds = REG_SEED_BREEDS.slice();
+  saveRegMasters(m);
+}
+
 function regAddSimple(kind, name){
   const t = String(name||'').trim();
   if(!t) return null;
@@ -5454,7 +5479,8 @@ let regSel = {
   breed: null, rank: null, qty: null,
   qtyMode: 'pair',           // pair=ペア / sex=雄雌べつべつ
   qtyN: 1, qtyMale: 1, qtyFemale: 1,
-  group: '全部', search: '', step: 1, lastNo: ''
+  group: '全部', search: '', step: 1, lastNo: '',
+  tidy: false, tidyPicked: new Set()
 };
 
 /** 選んだ数量を、ラベルや出品タイトルに載せる文字にする */
@@ -5509,15 +5535,48 @@ function renderRegStepBody(){
 
 // --- ① 品種 ---
 function regStep1Html(){
+  if(regSel.tidy) return regTidyHtml();
   return `<h3 class="card-title">品種を選ぶ</h3>
     <input type="search" id="regBreedSearch" class="reg-search"
            placeholder="品種名・ふりがな・コードで検索" value="${escapeAttr(regSel.search)}">
     <div id="regKanaBar" class="reg-kana"></div>
     <div id="regBreedList" class="reg-breeds"></div>
-    <button id="regAddBreed" class="btn btn-ghost reg-add">＋ 品種を追加する</button>`;
+    <div class="reg-add-row">
+      <button id="regAddBreed" class="btn btn-ghost">＋ 品種を追加する</button>
+      <button id="regTidyStart" class="btn btn-ghost">🗑 品種を減らす</button>
+    </div>`;
+}
+
+/** 品種を減らす画面。押して選び、まとめて消す */
+function regTidyHtml(){
+  const list = regFilteredBreeds();
+  const n = regSel.tidyPicked.size;
+  return `<h3 class="card-title">品種を減らす</h3>
+    <p class="hint" style="margin:0 0 12px">
+      消したい品種を押して選んでください。<b>登録ずみの商品はそのまま残ります。</b></p>
+    <input type="search" id="regBreedSearch" class="reg-search"
+           placeholder="品種名・ふりがな・コードで検索" value="${escapeAttr(regSel.search)}">
+    <div id="regKanaBar" class="reg-kana"></div>
+    <div id="regBreedList" class="reg-breeds">
+      ${list.map(b => {
+        const on = regSel.tidyPicked.has(b.name);
+        const sub = (b.reading && b.reading !== b.name) ? b.reading : (b.code || '');
+        return `<button data-n="${escapeAttr(b.name)}" class="tidy ${on ? 'on' : ''}">
+          <span class="bn">${escapeHtml(b.name)}</span><span class="br">${escapeHtml(sub)}</span>
+          <span class="mark">${on ? '🗑' : ''}</span></button>`;
+      }).join('') || '<div class="reg-empty">見つかりません</div>'}
+    </div>
+    <div class="reg-add-row" style="margin-top:12px">
+      <button id="regTidyDo" class="btn btn-primary" ${n ? '' : 'disabled'}>
+        ${n ? `選んだ ${n}件を消す` : '消す品種を選んでください'}</button>
+      <button id="regTidyEnd" class="btn btn-ghost">やめる</button>
+    </div>
+    <button id="regTidyReset" class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px">
+      最初の品種一覧に戻す</button>`;
 }
 
 function bindRegStep1(){
+  if(regSel.tidy) return bindRegTidy();
   renderRegKanaBar(); renderRegBreeds();
   $('#regBreedSearch').addEventListener('input', (e) => {
     regSel.search = e.target.value;
@@ -5532,6 +5591,51 @@ function bindRegStep1(){
     }
     const b = regAddBreed(name, reading, '');
     if(b) regPickBreed(b);
+  };
+  $('#regTidyStart').onclick = () => {
+    regSel.tidy = true;
+    regSel.tidyPicked = new Set();
+    renderRegStepBody();
+  };
+}
+
+function bindRegTidy(){
+  renderRegKanaBar();
+  $('#regBreedSearch').addEventListener('input', (e) => {
+    regSel.search = e.target.value;
+    renderRegStepBody();
+  });
+  $$('#regBreedList button.tidy').forEach(b => {
+    b.onclick = () => {
+      const n = b.dataset.n;
+      if(regSel.tidyPicked.has(n)) regSel.tidyPicked.delete(n);
+      else regSel.tidyPicked.add(n);
+      renderRegStepBody();
+    };
+  });
+  $('#regTidyEnd').onclick = () => {
+    regSel.tidy = false;
+    regSel.tidyPicked = new Set();
+    renderRegStepBody();
+  };
+  $('#regTidyDo').onclick = () => {
+    const names = [...regSel.tidyPicked];
+    if(!names.length) return;
+    const head = names.slice(0, 8).join('、') + (names.length > 8 ? ` ほか${names.length - 8}件` : '');
+    if(!confirm(`次の品種を消します。よろしいですか？\n\n${head}\n\n※ 登録ずみの商品はそのまま残ります`)) return;
+    const removed = regRemoveBreeds(names);
+    regSel.tidyPicked = new Set();
+    if(regSel.breed && names.includes(regSel.breed.name)) regSel.breed = null;
+    renderRegisterPanel();
+    toast(`${removed}件の品種を消しました`, 'ok');
+  };
+  $('#regTidyReset').onclick = () => {
+    if(!confirm('最初に入っていた品種の一覧に戻します。\n自分で足した品種は消えます。よろしいですか？')) return;
+    regResetBreeds();
+    regSel.tidyPicked = new Set();
+    regSel.breed = null;
+    renderRegisterPanel();
+    toast('最初の品種一覧に戻しました', 'ok');
   };
 }
 

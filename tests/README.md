@@ -14,6 +14,7 @@ python3 fsandroidtest.py    # 保存先フォルダ・Android経路（19項目�
 python3 exporttest.py       # 出品CSV+画像ZIPの生成（14項目）
 python3 redotest.py         # 拡大と1枚だけやり直し（23項目）
 python3 croptest.py         # 拡大のゲージと切り取り保存（14項目）
+python3 tidytest.py         # 品種を減らす（25項目）
 python3 phonetest.py        # 携帯の画面幅での見え方（8項目）
 
 # Windows経路（テプラ クリエイター WebAPI）
@@ -36,6 +37,7 @@ pkill -f fake_webapi.py
 | `exporttest.py` | 出品タブからCSV+画像ZIPを作り、中身（列・画像枚数・文字コード）を確かめる |
 | `redotest.py` | フォルダから写真を拡大／1枚だけやり直し／ダメだった理由の記録とAIへの反映 |
 | `croptest.py` | 拡大のゲージ／見えている範囲の切り取り保存（保存画像の中身も確認）／出品への反映 |
+| `tidytest.py` | 品種の複数選択と削除／登録ずみ商品が残ること／検索しながらの整理／初期一覧への復帰 |
 | `phonetest.py` | iPhone SE・iPhone 15・Pixel 8・360px端末で、横にはみ出さないか／指で押せる大きさか |
 | `fake_webapi.py` | Windowsの通信モジュール（localhost:29108）を真似たもの。送られた画像を `/tmp/fake_tepra/` に保存する |
 | `wintest.py` | Windows経路：経路の判定／ラベル画像の大きさ／印刷パラメータ／まとめ印刷／モジュール停止時の扱い |
