@@ -600,6 +600,18 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .redo-top{font-size:12px;opacity:.6;margin-bottom:14px}
 .redo-acts{display:flex;gap:10px;flex-wrap:wrap}
 .redo-acts .btn{flex:1;min-width:130px;min-height:50px}
+
+/* 拡大画面のゲージ */
+.lb-zoombar{position:absolute;bottom:66px;left:50%;transform:translateX(-50%);
+  display:flex;align-items:center;gap:12px;background:rgba(0,0,0,.6);
+  border-radius:99px;padding:8px 16px;max-width:min(92vw,620px)}
+.lb-zoombar input[type=range]{width:min(46vw,300px);accent-color:var(--accent,#ffe14d);height:28px}
+.lb-zoomval{color:#fff;font-family:ui-monospace,monospace;font-size:13px;min-width:52px;text-align:right}
+@media (max-width:640px){
+  .lb-zoombar{bottom:62px;padding:6px 10px;gap:8px}
+  .lb-zoombar input[type=range]{width:38vw}
+  .lb-zoomval{font-size:12px;min-width:44px}
+}
 </style>
 </head>
 <body>
@@ -917,6 +929,12 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
         <button class="lb-tool" id="lbToggleSide" title="元/加工後を切替">A/B</button>
         <button class="lb-tool" id="lbEditToggle" title="拡大したまま明るさ・コントラスト等を調整する">🎛</button>
         <button class="lb-tool" id="lbRedo" title="この1枚をやり直す（撮り直す／使わない）">↺ やり直す</button>
+      </div>
+      <div class="lb-zoombar">
+        <span class="lb-zoomval" id="lbZoomVal">130%</span>
+        <input type="range" id="lbZoomRange" min="50" max="500" step="5" value="130"
+               title="ゲージを動かすと拡大・縮小します">
+        <button class="lb-tool" id="lbSaveCrop" title="いま見えている範囲で切り取って保存します">💾 この範囲で保存</button>
       </div>
     </div>
 
@@ -3774,6 +3792,7 @@ function openLightbox(photoIdx, side){
   $('#lbEditToggle').classList.toggle('active', openEdit);
   renderLightbox();
   renderLbEdit();
+  syncZoomBar();
 }
 function closeLightbox(){
   stopAutoPlay();
@@ -3803,10 +3822,11 @@ function renderLightbox(){
   } else {
     cmpEl.classList.add('hidden');
     imgEl.style.display = '';
-    imgEl.src = showEdited ? st.editedBlobUrl : ph.blobUrl;
-    // 画面に収まる大きさ(96vw/78vh)を1.0として、その倍率で表示する
-    imgEl.style.maxWidth  = (96 * lbState.zoom) + 'vw';
-    imgEl.style.maxHeight = (78 * lbState.zoom) + 'vh';
+    const nextSrc = showEdited ? st.editedBlobUrl : ph.blobUrl;
+    if(imgEl.src !== nextSrc) imgEl.src = nextSrc;
+    // 画面に収まる大きさを1.0として、その倍率で表示する。
+    // 小さい写真でもゲージのぶんだけ本当に拡大されるよう、実寸で指定する。
+    applyLbSize();
     imgEl.style.transform = `rotate(${lbState.rot}deg)`;
   }
 
@@ -3976,13 +3996,19 @@ function stopAutoPlay(){
 
 $('#lbClose').onclick = closeLightbox;
 $('#lightbox').addEventListener('click', (e) => { if(e.target.id === 'lightbox') closeLightbox(); });
-$('#lbPrev').onclick = () => { stopAutoPlay(); lbState.pos = (lbState.pos - 1 + lbState.photoIdxs.length) % lbState.photoIdxs.length; lbState.zoom = LB_ZOOM_DEFAULT; lbState.rot = 0; const st = editState[lbState.photoIdxs[lbState.pos]]; lbState.showEdited = !!(st && st.editedBlobUrl); lbState.compareMode = false; lbState.cmpPercent = 50; renderLightbox(); renderLbEdit(); };
+$('#lbPrev').onclick = () => { stopAutoPlay(); lbState.pos = (lbState.pos - 1 + lbState.photoIdxs.length) % lbState.photoIdxs.length; lbState.zoom = LB_ZOOM_DEFAULT; lbState.rot = 0; const st = editState[lbState.photoIdxs[lbState.pos]]; lbState.showEdited = !!(st && st.editedBlobUrl); lbState.compareMode = false; lbState.cmpPercent = 50; renderLightbox(); renderLbEdit(); syncZoomBar(); };
 $('#lbNext').onclick = () => { stopAutoPlay(); lbState.pos = (lbState.pos + 1) % lbState.photoIdxs.length; lbState.zoom = LB_ZOOM_DEFAULT; lbState.rot = 0; const st = editState[lbState.photoIdxs[lbState.pos]]; lbState.showEdited = !!(st && st.editedBlobUrl); lbState.compareMode = false; lbState.cmpPercent = 50; renderLightbox(); renderLbEdit(); };
-$('#lbZoomIn').onclick = () => { lbState.zoom = Math.min(8, lbState.zoom * 1.4); renderLightbox(); };
-$('#lbZoomOut').onclick = () => { lbState.zoom = Math.max(0.2, lbState.zoom / 1.4); renderLightbox(); };
-$('#lbZoomReset').onclick = () => { lbState.zoom = (Math.abs(lbState.zoom - 1) < 0.01) ? LB_ZOOM_DEFAULT : 1; lbState.rot = 0; lbState.cmpPercent = 50; renderLightbox(); renderLbEdit(); };
+$('#lbZoomIn').onclick = () => { lbState.zoom = Math.min(5, lbState.zoom * 1.4); renderLightbox(); syncZoomBar(); };
+$('#lbZoomOut').onclick = () => { lbState.zoom = Math.max(0.5, lbState.zoom / 1.4); renderLightbox(); syncZoomBar(); };
+$('#lbZoomReset').onclick = () => { lbState.zoom = (Math.abs(lbState.zoom - 1) < 0.01) ? LB_ZOOM_DEFAULT : 1; lbState.rot = 0; lbState.cmpPercent = 50; renderLightbox(); renderLbEdit(); syncZoomBar(); };
 $('#lbRotate').onclick = () => { lbState.rot = (lbState.rot + 90) % 360; renderLightbox(); };
 $('#lbRedo').onclick = () => redoOnePhoto(lbState.photoIdxs[lbState.pos]);
+$('#lbSaveCrop').onclick = lbSaveCrop;
+$('#lbZoomRange').oninput = (e) => {
+  lbState.zoom = Math.max(0.5, Math.min(5, (+e.target.value || 100) / 100));
+  renderLightbox();
+  syncZoomBar();
+};
 $('#lbToggleSide').onclick = () => { stopAutoPlay(); lbState.showEdited = !lbState.showEdited; renderLightbox(); };
 $('#lbCmpMode').onclick = () => {
   const st = editState[lbState.photoIdxs[lbState.pos]];
@@ -6227,6 +6253,111 @@ async function fsCreateMissingFoldersAuto(){
   renderFsBar();
 }
 
+
+// ===== 拡大のゲージと、見えている範囲の保存 =====
+
+
+/** 拡大画面の画像を、いまの倍率どおりの大きさにする */
+function applyLbSize(){
+  const img = $('#lbImg');
+  if(!img) return;
+  const set = () => {
+    if(!img.naturalWidth) return;
+    const boxW = window.innerWidth  * 0.96;
+    const boxH = window.innerHeight * 0.78;
+    const fit = Math.min(boxW / img.naturalWidth, boxH / img.naturalHeight);
+    img.style.maxWidth = 'none';
+    img.style.maxHeight = 'none';
+    img.style.width  = Math.round(img.naturalWidth  * fit * lbState.zoom) + 'px';
+    img.style.height = Math.round(img.naturalHeight * fit * lbState.zoom) + 'px';
+  };
+  if(img.naturalWidth) set();
+  else img.onload = set;      // まだ読み込めていなければ、読めてから合わせる
+}
+
+/** ゲージの見た目を、いまの倍率に合わせる */
+function syncZoomBar(){
+  const r = $('#lbZoomRange'), v = $('#lbZoomVal');
+  if(!r) return;
+  r.value = Math.round(lbState.zoom * 100);
+  v.textContent = Math.round(lbState.zoom * 100) + '%';
+}
+
+/** いま画面に見えている範囲を、元の写真の座標に直す */
+function lbVisibleRect(){
+  const img = $('#lbImg'), stage = $('#lbStage');
+  if(!img || !img.naturalWidth) return null;
+  const ir = img.getBoundingClientRect();
+  const sr = stage.getBoundingClientRect();
+  // 枠と画像の重なっているところが「見えている範囲」
+  const left   = Math.max(ir.left, sr.left);
+  const top    = Math.max(ir.top, sr.top);
+  const right  = Math.min(ir.right, sr.right);
+  const bottom = Math.min(ir.bottom, sr.bottom);
+  if(right <= left || bottom <= top) return null;
+
+  const kx = img.naturalWidth / ir.width;
+  const ky = img.naturalHeight / ir.height;
+  return {
+    x: Math.round((left - ir.left) * kx),
+    y: Math.round((top - ir.top) * ky),
+    w: Math.round((right - left) * kx),
+    h: Math.round((bottom - top) * ky)
+  };
+}
+
+/** いま見えている範囲で切り取って保存する */
+async function lbSaveCrop(){
+  const photoIdx = lbState.photoIdxs[lbState.pos];
+  const ph = photos[photoIdx];
+  if(!ph) return;
+  if(lbState.compareMode){ toast('比較表示のときは保存できません（⇔ で戻してください）', 'err'); return; }
+
+  const rect = lbVisibleRect();
+  if(!rect || rect.w < 40 || rect.h < 40){ toast('切り取る範囲が小さすぎます', 'err'); return; }
+
+  const img = $('#lbImg');
+  const rot = ((lbState.rot % 360) + 360) % 360;
+  const cv = document.createElement('canvas');
+  const swap = (rot === 90 || rot === 270);
+  cv.width  = swap ? rect.h : rect.w;
+  cv.height = swap ? rect.w : rect.h;
+  const ctx = cv.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.save();
+  ctx.translate(cv.width / 2, cv.height / 2);
+  ctx.rotate(rot * Math.PI / 180);
+  ctx.drawImage(img, rect.x, rect.y, rect.w, rect.h, -rect.w / 2, -rect.h / 2, rect.w, rect.h);
+  ctx.restore();
+
+  const blob = await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.92));
+  if(!blob){ toast('保存できませんでした', 'err'); return; }
+
+  const prev = editState[photoIdx];
+  if(prev){
+    if(prev.editedBlobUrl) URL.revokeObjectURL(prev.editedBlobUrl);
+    if(prev.baseBlobUrl) URL.revokeObjectURL(prev.baseBlobUrl);
+  }
+  const key = `crop_${ph.name}_${Date.now()}`;
+  try { await editDbPut(key, blob); } catch(e){ /* 覚えられなくても今回は使える */ }
+  editState[photoIdx] = {
+    editedBlobUrl: URL.createObjectURL(blob),
+    baseBlobUrl: URL.createObjectURL(blob),
+    editedKey: key,
+    modes: ['crop'],
+    showEdited: true
+  };
+  if(typeof dropSrcBitmaps === 'function') dropSrcBitmaps(photoIdx);
+
+  lbState.showEdited = true;
+  lbState.zoom = LB_ZOOM_DEFAULT;
+  lbState.rot = 0;
+  renderLightbox();
+  syncZoomBar();
+  if(typeof renderEditPanel === 'function') renderEditPanel();
+  renderFolders();
+  toast(`${cv.width}×${cv.height} で保存しました（出品にはこの写真を使います）`, 'ok');
+}
 
 // ===== 1枚だけやり直す =====
 // 何がダメだったかを残しておき、次のAI編集の指示に足す。
