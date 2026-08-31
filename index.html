@@ -566,7 +566,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .folder-head .sub{font-size:12px;opacity:.6}
 .folder-head .cnt{margin-left:auto;font-size:13px;opacity:.7}
 .folder-shots{display:flex;gap:8px;flex-wrap:wrap;padding:12px 16px}
-.folder-shots .shot{position:relative;width:104px;height:104px;border-radius:8px;overflow:hidden;
+.folder-shots .shot{position:relative;width:104px;height:104px;cursor:zoom-in;border-radius:8px;overflow:hidden;
   background:#000;border:1px solid var(--line,#2a3350)}
 .folder-shots .shot img{width:100%;height:100%;object-fit:cover;display:block}
 .folder-shots .shot .fn{position:absolute;left:0;right:0;bottom:0;font-size:9px;padding:2px 4px;
@@ -578,6 +578,28 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .folder-acts button:disabled{opacity:.35;cursor:default}
 .leftover{margin-top:14px;padding:12px 16px;border-radius:12px;
   border:1px dashed var(--warn,#f59e0b);color:var(--warn,#f59e0b);font-size:13px}
+
+/* 1枚だけやり直す */
+.redo-dialog{position:fixed;inset:0;z-index:1200;background:rgba(0,0,0,.6);
+  display:flex;align-items:center;justify-content:center;padding:20px}
+.redo-dialog.hidden{display:none}
+.redo-box{width:min(560px,100%);max-height:90vh;overflow-y:auto;padding:22px;border-radius:16px;
+  background:var(--bg,#0d1220);border:1px solid var(--line,#2a3350);box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.redo-box h3{margin:0 0 14px;font-size:18px}
+.redo-target{display:flex;gap:12px;align-items:center;margin-bottom:16px}
+.redo-target img{width:88px;height:88px;object-fit:cover;border-radius:8px;background:#000}
+.redo-target .nm{font-size:13px;font-family:ui-monospace,monospace}
+.redo-target .sub{font-size:13px;opacity:.7;margin-top:2px}
+.redo-label{font-size:13px;font-weight:700;opacity:.75;margin-bottom:8px}
+.redo-chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.redo-chip{padding:9px 13px;min-height:42px;border-radius:9px;font-size:14px;cursor:pointer;
+  border:1px solid var(--line,#2a3350);background:var(--bg2,#141a2e);color:inherit}
+.redo-chip.on{background:var(--accent,#39d0ff);color:#05131d;border-color:transparent;font-weight:700}
+.redo-input{width:100%;padding:12px;font-size:16px;border-radius:9px;margin-bottom:10px;
+  border:1px solid var(--line,#2a3350);background:var(--bg2,#141a2e);color:inherit}
+.redo-top{font-size:12px;opacity:.6;margin-bottom:14px}
+.redo-acts{display:flex;gap:10px;flex-wrap:wrap}
+.redo-acts .btn{flex:1;min-width:130px;min-height:50px}
 </style>
 </head>
 <body>
@@ -894,8 +916,12 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
         <button class="lb-tool" id="lbAutoPlay" title="加工前/後を自動で交互表示">▶</button>
         <button class="lb-tool" id="lbToggleSide" title="元/加工後を切替">A/B</button>
         <button class="lb-tool" id="lbEditToggle" title="拡大したまま明るさ・コントラスト等を調整する">🎛</button>
+        <button class="lb-tool" id="lbRedo" title="この1枚をやり直す（撮り直す／使わない）">↺ やり直す</button>
       </div>
     </div>
+
+    <!-- 1枚だけやり直すときの画面 -->
+    <div id="redoDialog" class="redo-dialog hidden"></div>
 
     <!-- ===== 出品タブ ===== -->
     <section id="panel-listing" class="panel hidden">
@@ -3956,6 +3982,7 @@ $('#lbZoomIn').onclick = () => { lbState.zoom = Math.min(8, lbState.zoom * 1.4);
 $('#lbZoomOut').onclick = () => { lbState.zoom = Math.max(0.2, lbState.zoom / 1.4); renderLightbox(); };
 $('#lbZoomReset').onclick = () => { lbState.zoom = (Math.abs(lbState.zoom - 1) < 0.01) ? LB_ZOOM_DEFAULT : 1; lbState.rot = 0; lbState.cmpPercent = 50; renderLightbox(); renderLbEdit(); };
 $('#lbRotate').onclick = () => { lbState.rot = (lbState.rot + 90) % 360; renderLightbox(); };
+$('#lbRedo').onclick = () => redoOnePhoto(lbState.photoIdxs[lbState.pos]);
 $('#lbToggleSide').onclick = () => { stopAutoPlay(); lbState.showEdited = !lbState.showEdited; renderLightbox(); };
 $('#lbCmpMode').onclick = () => {
   const st = editState[lbState.photoIdxs[lbState.pos]];
@@ -6201,6 +6228,125 @@ async function fsCreateMissingFoldersAuto(){
 }
 
 
+// ===== 1枚だけやり直す =====
+// 何がダメだったかを残しておき、次のAI編集の指示に足す。
+
+const REDO_LOG_KEY = 'medaka_redo_log';
+/** よくあるダメな理由。押すだけで選べるようにする */
+const REDO_REASONS = [
+  'ピントが合っていない', '暗い', '明るすぎる', '水面の反射が強い',
+  '浮遊物・ゴミが多い', '魚が小さく写っている', '色が実物と違う',
+  'ヒレが切れている', '手前の魚が隠れている'
+];
+
+function redoLog(){
+  try { return JSON.parse(localStorage.getItem(REDO_LOG_KEY) || '[]'); } catch(e){ return []; }
+}
+function saveRedoLog(list){ localStorage.setItem(REDO_LOG_KEY, JSON.stringify(list)); }
+
+/** ダメだった理由を記録する。AIへの指示にも足す */
+function addRedoReason(reason, ctx){
+  const t = String(reason || '').trim();
+  if(!t) return;
+  const list = redoLog();
+  list.push({ text: t, controlNo: (ctx && ctx.controlNo) || '', photo: (ctx && ctx.photo) || '', ts: Date.now() });
+  saveRedoLog(list.slice(-200));            // 増えすぎないように直近だけ残す
+  addAiNote(t);                             // 次のAI編集の指示にも反映する
+}
+
+/** よく出るダメな理由（多い順） */
+function redoTopReasons(limit){
+  const count = {};
+  redoLog().forEach(r => { count[r.text] = (count[r.text] || 0) + 1; });
+  return Object.entries(count).sort((a, b) => b[1] - a[1]).slice(0, limit || 5);
+}
+
+/** 拡大画面から「この1枚をやり直す」 */
+async function redoOnePhoto(photoIdx){
+  const ph = photos[photoIdx];
+  if(!ph) return;
+  const prod = products.find(p => p.specimenIdxs.includes(photoIdx));
+  const item = prod ? regItems().find(x => x.controlNo === prod.controlNo) : null;
+  openRedoDialog(photoIdx, ph, prod, item);
+}
+
+function openRedoDialog(photoIdx, ph, prod, item){
+  const dlg = $('#redoDialog');
+  const canShoot = FsLink.kind() === 'android' && item;
+  const top = redoTopReasons(3);
+  dlg.innerHTML = `
+    <div class="redo-box">
+      <h3>この1枚をやり直す</h3>
+      <div class="redo-target">
+        ${ph.blobUrl ? `<img src="${ph.blobUrl}" alt="">` : ''}
+        <div>
+          <div class="nm">${escapeHtml(ph.name)}</div>
+          <div class="sub">${escapeHtml(prod ? (prod.controlNo + '  ' + prod.variety) : '')}</div>
+        </div>
+      </div>
+
+      <div class="redo-label">何がダメでしたか？（次に活かします）</div>
+      <div class="redo-chips">
+        ${REDO_REASONS.map(t => `<button class="redo-chip" data-r="${escapeAttr(t)}">${escapeHtml(t)}</button>`).join('')}
+      </div>
+      <input id="redoFree" class="redo-input" placeholder="ほかにあれば書いてください">
+      ${top.length ? `<div class="redo-top">よくある理由：${top.map(([t, n]) => escapeHtml(t) + '(' + n + ')').join('　')}</div>` : ''}
+
+      <div class="redo-acts">
+        ${canShoot ? '<button id="redoShoot" class="btn btn-primary">📷 撮り直す</button>' : ''}
+        <button id="redoDrop" class="btn btn-ghost">この写真を使わない</button>
+        <button id="redoCancel" class="btn btn-ghost">閉じる</button>
+      </div>
+      <div class="hint" style="margin-top:8px">
+        「使わない」を選ぶと、この写真はフォルダから外れます（ファイルは消しません）。</div>
+    </div>`;
+  dlg.classList.remove('hidden');
+
+  const picked = new Set();
+  dlg.querySelectorAll('.redo-chip').forEach(b => {
+    b.onclick = () => { b.classList.toggle('on'); 
+      if(picked.has(b.dataset.r)) picked.delete(b.dataset.r); else picked.add(b.dataset.r); };
+  });
+
+  const collect = () => {
+    const free = ($('#redoFree').value || '').trim();
+    const all = [...picked].concat(free ? [free] : []);
+    all.forEach(t => addRedoReason(t, { controlNo: prod ? prod.controlNo : '', photo: ph.name }));
+    return all;
+  };
+  const close = () => dlg.classList.add('hidden');
+
+  $('#redoCancel').onclick = close;
+
+  $('#redoDrop').onclick = () => {
+    const reasons = collect();
+    if(prod){
+      prod.specimenIdxs = prod.specimenIdxs.filter(i => i !== photoIdx);
+      prod.labelIdx = prod.specimenIdxs.length ? prod.specimenIdxs[0] : -1;
+      syncFolderPhotos();
+    }
+    close(); closeLightbox();
+    renderFolders(); renderProductList(); renderWarnings();
+    toast(reasons.length ? `この写真を外しました（${reasons[0]}）` : 'この写真を外しました', 'ok');
+  };
+
+  if($('#redoShoot')){
+    $('#redoShoot').onclick = async () => {
+      collect();
+      close(); closeLightbox();
+      // 先に古い1枚を外してから撮り直す
+      if(prod){
+        prod.specimenIdxs = prod.specimenIdxs.filter(i => i !== photoIdx);
+        syncFolderPhotos();
+      }
+      const r = await FsLink.takePhoto(item);
+      if(!r.ok){ toast(r.error || '撮影できませんでした', 'err'); return; }
+      toast('撮り直しました', 'ok');
+      fsLoadAuto();
+    };
+  }
+}
+
 // ===== 管理番号ごとのフォルダ表示 =====
 // 登録した順に写真を配り、ズレていたら区切りを1枚ずつ動かして直せるようにする。
 
@@ -6234,7 +6380,8 @@ function renderFolders(){
     const shots = p.specimenIdxs.map(i => {
       const ph = photos[i];
       const src = ph && ph.blobUrl ? `<img src="${ph.blobUrl}" alt="">` : '';
-      return `<div class="shot" data-i="${i}">${src}<span class="fn">${escapeHtml(ph ? ph.name : '')}</span></div>`;
+      return `<div class="shot" data-action="zoom" data-photo-idx="${i}" title="押すと拡大します">${src}
+        <span class="fn">${escapeHtml(ph ? ph.name : '')}</span></div>`;
     }).join('');
     // 次のフォルダか、余りの写真があればもらえる
     const canTake = (products[idx + 1] && products[idx + 1].specimenIdxs.length) || leftoverIdxs.length;
@@ -6266,6 +6413,9 @@ function renderFolders(){
     box.after(div);
   }
 
+  box.querySelectorAll('.shot[data-action="zoom"]').forEach(el => {
+    el.onclick = () => openLightbox(+el.dataset.photoIdx, 'before');
+  });
   box.querySelectorAll('.folder-acts button').forEach(b => {
     b.onclick = async () => {
       const act = b.dataset.act, idx = +b.dataset.idx;
