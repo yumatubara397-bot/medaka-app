@@ -1143,6 +1143,16 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 
       <div class="settings-card">
         <div style="font-size:12px;line-height:1.7;color:var(--ink-dim)">
+          <strong style="color:var(--ink)">このパソコンに保存</strong><br>
+          <span style="font-size:12px">
+            テプラにつながらないとき用です。保存したファイルを開いて使うと、
+            ブラウザの制限を受けずに印刷できることがあります。<br>
+            ※ 保存したものは自動で新しくなりません。ふだんはURLからお使いください。
+          </span>
+          <div class="btn-row" style="margin:8px 0 16px">
+            <button id="btnSaveLocal" class="btn btn-ghost btn-mini">💾 このパソコンに保存</button>
+          </div>
+
           <strong style="color:var(--ink)">バージョン情報</strong><br>
           メダカ出品アシスタント v2.0 (Phase 1〜4)<br>
           登録・テプラ印刷 → 写真の取込 → AI画像加工 → オークタウンCSV+ZIP → 出品履歴
@@ -4487,6 +4497,22 @@ $('#lstTitleTemplate').addEventListener('input', () => {
   updateTitlePreview();
   if(prev === null) localStorage.removeItem(LST_TITLE_KEY); else localStorage.setItem(LST_TITLE_KEY, prev);
 });
+$('#btnSaveLocal').onclick = async () => {
+  let html = '';
+  // まず配信元から取り直す。だめなら、いま表示しているものをそのまま書き出す
+  try {
+    const res = await fetch(location.href.split('#')[0], { cache: 'reload' });
+    if(res.ok) html = await res.text();
+  } catch(e){ /* file:// で開いているときなどは取れない */ }
+  if(!html) html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+  try {
+    downloadBlob(new Blob([html], { type: 'text/html;charset=utf-8' }), 'メダカ出品アシスタント.html');
+    toast('保存しました。ファイルを開いてお使いください', 'ok');
+  } catch(e){
+    toast('保存できませんでした: ' + (e && e.message ? e.message : e), 'err');
+  }
+};
+
 $('#btnLstTitleSave').onclick = () => {
   localStorage.setItem(LST_TITLE_KEY, $('#lstTitleTemplate').value);
   localStorage.setItem(LST_TITLE_GOODS_KEY, $('#lstTitleTemplateGoods').value);
@@ -5301,12 +5327,23 @@ const TepraWin = {
     } finally { clearTimeout(timer); }
   },
 
+  /** 直前に失敗した理由（画面の案内に使う） */
+  lastError: '',
+
   /** 通信モジュールが動いているか（短く試す） */
   async available(){
     try {
       const list = await this.fetchJson('', null, 2500);
-      return Array.isArray(list);
-    } catch(e){ return false; }
+      if(Array.isArray(list)){ this.lastError = ''; return true; }
+      this.lastError = '通信モジュールが応答しませんでした';
+      return false;
+    } catch(e){
+      // https のページから localhost を呼ぶのをブラウザが止めることがある
+      this.lastError = (location.protocol === 'https:')
+        ? 'つながりません。通信モジュールが起動していないか、ブラウザが止めています'
+        : 'つながりません。テプラ クリエイターの「WebAPI用通信モジュール」が起動していますか';
+      return false;
+    }
   },
 
   /** 使うプリンターを決める */
@@ -5480,12 +5517,45 @@ const TepraLink = {
   }
 };
 
+const TEPRA_WIN_HELP = [
+  'パソコン（Windows）からテプラに出すには、次の3つが必要です。',
+  '',
+  '1. テプラ クリエイター を入れる',
+  '   https://www.kingjim.co.jp/sp/tepra_creator/',
+  '   ※ 入れるときに「WebAPI用通信モジュール」も一緒に選んでください',
+  '',
+  '2. 通信モジュールが動いていることを確かめる',
+  '   ブラウザで http://localhost:29108/api/printer を開いて、',
+  '   [{"printerName":"…"}] のような文字が出れば動いています',
+  '',
+  '3. テプラをUSBかBluetoothでつなぎ、Windowsのプリンターとして見えるようにする',
+  '',
+  'それでもつながらない場合、ブラウザが止めている可能性があります。',
+  '設定タブの「このパソコンに保存」からアプリを保存し、',
+  '保存したファイルを開いて使ってみてください。'
+].join('\n');
+
 /** 登録タブの上に出すテプラの状態 */
 async function renderTepraBar(){
   const box = $('#regTepraBar');
   if(!box) return;
   if(TepraLink._kind === null) await TepraLink.probe();
   if(!TepraLink.available()){
+    // パソコンで、印刷ヘルパーに繋がらなかったときだけ案内を出す
+    if(!window.TepraBridge && TepraWin.lastError && FS_SUPPORTED){
+      box.classList.remove('hidden');
+      box.innerHTML = `<span class="dot"></span>
+        <span class="txt">テプラ：${escapeHtml(TepraWin.lastError)}</span>
+        <button id="tepraRetry" class="btn btn-ghost btn-sm">もう一度ためす</button>
+        <button id="tepraHelp" class="btn btn-ghost btn-sm">対処を見る</button>`;
+      $('#tepraRetry').onclick = async () => {
+        TepraLink._kind = null;
+        await TepraLink.probe();
+        renderTepraBar();
+      };
+      $('#tepraHelp').onclick = () => alert(TEPRA_WIN_HELP);
+      return;
+    }
     box.classList.add('hidden');
     return;
   }
@@ -6168,7 +6238,10 @@ function buildTepraCsv(items){
 }
 
 /** まだテプラに出していないぶん */
-function regUnprinted(){ return regItems().filter(it => !it.tepraExportedAt); }
+function regUnprinted(){
+  // 用品はラベルを出さないので、印刷の対象にも数えない
+  return regItems().filter(it => it.kind !== 'goods' && !it.tepraExportedAt);
+}
 
 function exportTepraCsv(encoding, all){
   const items = all ? regItems() : regUnprinted();
@@ -6815,6 +6888,7 @@ function setTepraAuto(on){
 /** 登録ボタンを押した直後に呼ぶ。テプラが使えるなら、そのまま1枚出す */
 async function tepraPrintOnRegister(item){
   if(!item || !tepraAutoOn()) return;
+  if(item.kind === 'goods') return;      // 用品はラベルを出さない（固定の商品なので）
   // まだ調べていない、または「なし」のまま少し経っていれば調べ直す。
   // （あとからパソコンの印刷ヘルパーを立ち上げた場合に気づけるようにする）
   const stale = TepraLink._kind === null

@@ -18,6 +18,7 @@ python3 tidytest.py         # 品種を減らす（25項目）
 python3 goodstest.py        # 用品（餌・容器・道具）の登録（49項目）
 python3 goodsfixedtest.py   # 用品の固定写真と固定の管理番号（25項目）
 python3 autoprinttest.py    # 登録したらすぐテプラから出る（20項目）
+python3 surfacetest.py      # 用品はラベルを出さない／Windowsの案内／ローカル保存（16項目）
 python3 phonetest.py        # 携帯の画面幅での見え方（8項目）
 
 # Windows経路（テプラ クリエイター WebAPI）
@@ -44,6 +45,7 @@ pkill -f fake_webapi.py
 | `goodstest.py` | メダカ／用品の切り替え／用品はランクを聞かず個数だけ／用品用の出品タイトル／用品だけ減らせること |
 | `goodsfixedtest.py` | 用品ごとの固定管理番号（重複しない・変更できる）／固定写真の登録と削除／取込で固定写真が入ること |
 | `autoprinttest.py` | 登録と同時の印刷／経路判定が未了でも出ること／用品の出し直し／切り替えを外すと出ないこと |
+| `surfacetest.py` | 用品はテプラを出さないこと／パソコンで繋がらないときの案内と対処／アプリのローカル保存 |
 | `phonetest.py` | iPhone SE・iPhone 15・Pixel 8・360px端末で、横にはみ出さないか／指で押せる大きさか |
 | `fake_webapi.py` | Windowsの通信モジュール（localhost:29108）を真似たもの。送られた画像を `/tmp/fake_tepra/` に保存する |
 | `wintest.py` | Windows経路：経路の判定／ラベル画像の大きさ／印刷パラメータ／まとめ印刷／モジュール停止時の扱い |

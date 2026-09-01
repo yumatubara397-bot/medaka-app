@@ -64,13 +64,12 @@ r.check("数量は5個", b.ev("regItems()[0].quantityText"), "5個")
 r.check("用品として記録", b.ev("regItems()[0].kind"), "goods")
 r.check("管理番号は用品の固定番号", b.ev("regItems()[0].controlNo"), b.ev("goodsOf('ホテイソウ').fixedNo"))
 
-print("■ ラベルと出品タイトル")
+print("■ 用品はラベルを出さない／出品タイトルは作る")
 b.ev("""window.__sent=[]; window.TepraBridge={ status(){return JSON.stringify({ok:true,connected:true,printer:'X',tapeMM:24});},
   connect(){return JSON.stringify({ok:true,connected:true});},
   print(j){window.__sent.push(JSON.parse(j));return JSON.stringify({ok:true,printed:1});} }; TepraLink._kind='android';""")
 b.ev("{const l=regItems(); l.forEach(x=>x.tepraExportedAt=null); saveRegItems(l);} tepraPrintPending()"); time.sleep(1.2)
-r.check("ラベル1行目＝商品名", b.ev("window.__sent[0][0].lines[0]"), "ホテイソウ")
-r.check("ラベル2行目＝個数", b.ev("window.__sent[0][0].lines[1]"), "5個")
+r.check("用品はテプラを出さない", b.ev("window.__sent.length"), 0)
 b.ev("""{ photos=[{name:'a.jpg',handle:null,blobUrl:null}]; folderHandle={name:'t'}; TepraLink._kind='none';
   switchTab('import'); document.getElementById('assignPerItem').value=1; assignPhotosToRegistered(); }""")
 time.sleep(1.0)
