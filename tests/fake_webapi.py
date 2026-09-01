@@ -37,6 +37,23 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         n = int(self.headers.get("Content-Length", 0))
         body = json.loads(self.rfile.read(n) or b"{}")
+        # 公式SDKが送っている項目がそろっているか調べ、足りなければ本物と同じく 400 を返す
+        need = ["copies","tapeCut","halfCut","printSpeed","density","tapeID",
+                "priorityCutSetting","halfCutSeparate","marginLeftRight","displayTapeWidth",
+                "errorMessage","displayTransferTape","displayPrintSetting","cutTitle",
+                "kanaZen","displayPrintPreview","stretchImage"]
+        pp = body.get("printParameter", {})
+        missing = [k for k in need if k not in pp]
+        bad = []
+        if not isinstance(pp.get("density"), dict): bad.append("density")
+        if not isinstance(pp.get("errorMessage"), dict): bad.append("errorMessage")
+        for k in ["tapeCut","halfCut","printSpeed","priorityCutSetting","halfCutSeparate",
+                  "displayTapeWidth","displayTransferTape","displayPrintSetting","displayPrintPreview"]:
+            if k in pp and pp[k] not in (1,2,3): bad.append(k)
+        if missing or bad:
+            self._send({"error": "invalid parameter",
+                        "missing": missing, "bad": bad}, 400)
+            return
         img = body.get("printFile", {}).get("imageFile", {})
         idx = len(list(OUT.glob("*.png"))) + 1
         if img.get("base64Str"):

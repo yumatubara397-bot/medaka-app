@@ -5326,7 +5326,11 @@ const TepraWin = {
     const timer = setTimeout(() => ctrl.abort(), timeoutMs || 8000);
     try {
       const res = await fetch(TEPRA_WEBAPI + path, Object.assign({ signal: ctrl.signal }, opts || {}));
-      if(!res.ok) return { __http: res.status };
+      if(!res.ok){
+        let why = '';
+        try { why = (await res.text()).slice(0, 300); } catch(e){ /* 本文が無いこともある */ }
+        return { __http: res.status, __why: why };
+      }
       return await res.json();
     } finally { clearTimeout(timer); }
   },
@@ -5421,23 +5425,25 @@ const TepraWin = {
             base64Str: this.makePng(labels[i].lines, dots)
           }
         },
+        // 項目名と値は、キングジムのSDKが送っているものに合わせる
         printParameter: {
           copies: 1,
-          tapeCut: 2,                 // ラベルごとに切る
-          halfCut: 1,                 // ハーフカットしない
-          printSpeed: 1,              // 高速
+          tapeCut: 2,                       // 1=切らない / 2=ラベルごと / 3=ジョブごと
+          halfCut: 1,                       // 1=しない / 2=する
+          printSpeed: 1,                    // 1=高速 / 2=低速 / 3=中速
           density: { mode: 1, value: 0 },
-          tape: TEPRA_MM_TAPEID[mm] || 263,
-          priorityPrintSetting: false,
-          halfCutContinuous: false,
+          tapeID: TEPRA_MM_TAPEID[mm] || 263,
+          priorityCutSetting: 1,            // 1=テープの設定に従う / 2=こちらの設定を優先
+          halfCutSeparate: 1,               // 1=つながったラベル / 2=切り離す
           marginLeftRight: 0,
-          displayTapeWidth: false,    // 確認画面を出さない（自動で出したいので）
-          displayError: false,
-          displayPrintSetting: false,
-          skipRecord: false,
-          previewImage: false,
-          convertFullWidth: false,
-          stretchImage: false
+          displayTapeWidth: 1,              // 1=確認メッセージを出さない
+          errorMessage: { mode: 1, fileOutput: 0, filePath: '' },   // 1=エラー画面を出さない
+          displayTransferTape: 1,
+          displayPrintSetting: 1,           // 1=印刷設定の確認を出さない
+          cutTitle: 0,                      // CSVの見出し行の扱い（画像印刷では使わない）
+          kanaZen: 0,
+          displayPrintPreview: 1,           // 1=プレビューを出さない
+          stretchImage: 0
         }
       };
       const res = await this.fetchJson('/print/' + encodeURIComponent(this.printerName), {
@@ -5445,7 +5451,11 @@ const TepraWin = {
         headers: { 'accept': 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       }, 60000);
-      if(res.__http) return { ok:false, error:'印刷に失敗しました（コード ' + res.__http + '）' };
+      if(res.__http){
+        return { ok:false,
+          error: '印刷に失敗しました（コード ' + res.__http + '）'
+                 + (res.__why ? '\n' + res.__why : '') };
+      }
       if(res.errorCode && res.errorCode !== 0){
         return { ok:false, error:'印刷に失敗しました（エラー ' + res.errorCode + '）' };
       }

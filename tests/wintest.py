@@ -58,10 +58,20 @@ if pngs:
     dark = sum(1 for px in im.convert("L").getdata() if px < 100)
     expect("文字が描かれている", dark > 200, f"黒い点 {dark}個")
     params = json.load(open(sorted(glob.glob("/tmp/fake_tepra/*_param.json"))[0]))
-    check("テープIDは24mm", params["tape"], 263)
+    check("テープIDは24mm", params["tapeID"], 263)
     check("ラベルごとに切る", params["tapeCut"], 2)
-    check("確認画面を出さない", params["displayTapeWidth"], False)
+    check("テープ幅の確認を出さない", params["displayTapeWidth"], 1)
+    check("エラー画面を出さない", params["errorMessage"]["mode"], 1)
+    check("印刷設定の確認を出さない", params["displayPrintSetting"], 1)
+    check("プレビューを出さない", params["displayPrintPreview"], 1)
     check("部数は1", params["copies"], 1)
+    # 公式SDKが送る項目がすべて入っているか
+    need = ["copies","tapeCut","halfCut","printSpeed","density","tapeID",
+            "priorityCutSetting","halfCutSeparate","marginLeftRight","displayTapeWidth",
+            "errorMessage","displayTransferTape","displayPrintSetting","cutTitle",
+            "kanaZen","displayPrintPreview","stretchImage"]
+    missing = [k for k in need if k not in params]
+    expect("公式SDKと同じ項目がそろっている", not missing, "足りない: " + str(missing))
 
 print("■ まとめて印刷")
 for f in glob.glob("/tmp/fake_tepra/*"): os.unlink(f)
