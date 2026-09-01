@@ -640,6 +640,9 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .reg-tepra .tepra-auto{display:flex;align-items:center;gap:6px;font-size:13px;margin-left:auto;cursor:pointer}
 .reg-tepra .tepra-auto input{width:20px;height:20px;accent-color:var(--accent,#39d0ff)}
 .reg-tepra .tepra-auto + .btn{margin-left:0}
+
+.reg-item.goods{background:rgba(255,255,255,.03);border-radius:6px;padding-left:6px}
+.reg-item .gpick{width:20px;height:20px;flex:none;accent-color:var(--accent,#39d0ff);cursor:pointer}
 </style>
 </head>
 <body>
@@ -680,6 +683,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
             </div>
             <div id="regItemList" class="reg-items"></div>
             <button id="regTepraPrint" class="btn btn-primary reg-print-now hidden">🖨 まだ出していないぶんを印刷</button>
+            <button id="regGoodsPrint" class="btn btn-ghost reg-print-now hidden">🖨 発行する用品を選んでください</button>
             <button id="regTepraCsv" class="btn btn-primary reg-next" disabled>🏷 テプラ用CSVを書き出す</button>
             <div class="hint" style="margin:6px 0 12px">
               「TEPRA LINK 2」の<b>流し込みフォーム</b>で読み込むと、まとめて印刷できます。<br>
@@ -5599,6 +5603,29 @@ async function tepraPrintOne(item){
   return r.ok;
 }
 
+
+/** 選んだ用品だけテプラから出す */
+async function tepraPrintPickedGoods(){
+  const targets = regItems().filter(x => x.kind === 'goods' && goodsPicked.has(x.controlNo));
+  if(!targets.length){ toast('発行する用品を選んでください', 'err'); return; }
+  if(TepraLink._kind === null){
+    try { await TepraLink.probe(); } catch(e){ /* 判定できなければ下で断る */ }
+  }
+  if(!TepraLink.available()){ toast('この端末からは直接印刷できません', 'err'); return; }
+
+  toast(`${targets.length}枚 印刷しています…`, 'ok');
+  const r = await TepraLink.print(targets);
+  if(!r.ok){ toast(r.error || '印刷できませんでした', 'err'); return; }
+  const stamp = Date.now();
+  const list = regItems();
+  const done = new Set(targets.map(x => x.controlNo));
+  list.forEach(x => { if(done.has(x.controlNo)) x.tepraExportedAt = stamp; });
+  saveRegItems(list);
+  goodsPicked = new Set();
+  renderRegisterPanel();
+  toast(`${r.printed || targets.length}枚 発行しました`, 'ok');
+}
+
 /** まだ出していないぶんをまとめて印刷する */
 async function tepraPrintPending(){
   const items = regUnprinted();
@@ -6090,8 +6117,14 @@ function bindRegStep4(){
 }
 
 // --- 登録した商品の一覧 ---
+/** 発行するために選んでいる用品の管理番号 */
+let goodsPicked = new Set();
+
 function renderRegItems(){
   const items = regItems();
+  // もう無い用品の選択は落とす
+  const alive = new Set(items.filter(x => x.kind === 'goods').map(x => x.controlNo));
+  goodsPicked = new Set([...goodsPicked].filter(no => alive.has(no)));
   $('#regCount').textContent = items.length;
   $('#regToImport').disabled = items.length === 0;
   const yet = regUnprinted().length;
@@ -6100,6 +6133,14 @@ function renderRegItems(){
   $('#regTepraPrint').classList.toggle('hidden', !direct);
   $('#regTepraPrint').disabled = yet === 0;
   $('#regTepraPrint').textContent = yet ? `🖨 まだ出していない${yet}枚を印刷` : '🖨 出していない商品はありません';
+  // 用品は選んだものだけ出す
+  const goodsCount = items.filter(x => x.kind === 'goods').length;
+  const pickBtn = $('#regGoodsPrint');
+  pickBtn.classList.toggle('hidden', !direct || goodsCount === 0);
+  pickBtn.disabled = goodsPicked.size === 0;
+  pickBtn.textContent = goodsPicked.size
+    ? `🖨 選んだ用品 ${goodsPicked.size}件を発行`
+    : '🖨 発行する用品を選んでください';
   $('#regTepraCsv').classList.toggle('btn-primary', !direct);
   $('#regTepraCsv').classList.toggle('btn-ghost', direct);
   $('#regTepraCsv').disabled = yet === 0;
@@ -6113,7 +6154,10 @@ function renderRegItems(){
   }
   box.innerHTML = items.slice().reverse().map(it => {
     const n = (it.photoNames || []).length;
-    return `<div class="reg-item">
+    const goods = it.kind === 'goods';
+    return `<div class="reg-item${goods ? ' goods' : ''}">
+      ${goods ? `<input type="checkbox" class="gpick" data-no="${escapeAttr(it.controlNo)}"
+                  ${goodsPicked.has(it.controlNo) ? 'checked' : ''} title="発行するものを選ぶ">` : ''}
       <span class="no">${escapeHtml(it.controlNo)}</span>
       <span class="nm">${escapeHtml([it.variety, it.rank, it.quantityText].filter(Boolean).join(' '))}</span>
       <span class="tag ${it.tepraExportedAt ? 'on' : ''}" title="${it.tepraExportedAt ? 'テプラに出しました' : 'まだ出していません'}">🏷</span>
@@ -6121,6 +6165,12 @@ function renderRegItems(){
       <button class="del" data-no="${escapeAttr(it.controlNo)}" title="削除">✕</button>
     </div>`;
   }).join('');
+  box.querySelectorAll('.gpick').forEach(c => {
+    c.onchange = () => {
+      if(c.checked) goodsPicked.add(c.dataset.no); else goodsPicked.delete(c.dataset.no);
+      renderRegItems();
+    };
+  });
   box.querySelectorAll('.del').forEach(b => {
     b.onclick = () => {
       if(!confirm(b.dataset.no + ' を削除しますか？')) return;
@@ -6276,6 +6326,7 @@ function exportTepraCsv(encoding, all){
 }
 
 $('#regTepraPrint').onclick  = () => tepraPrintPending();
+$('#regGoodsPrint').onclick  = () => tepraPrintPickedGoods();
 $('#regTepraCsv').onclick    = () => exportTepraCsv('sjis', false);
 $('#regTepraCsvAll').onclick = () => {
   if(!confirm('すでに出したぶんも含めて、全部もう一度書き出しますか？')) return;
