@@ -626,6 +626,16 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .reg-mode button{flex:1;min-height:52px;font-size:16px;font-weight:700;border-radius:10px;cursor:pointer;
   border:1px solid var(--line,#2a3350);background:var(--bg2,#141a2e);color:inherit}
 .reg-mode button.on{background:var(--accent,#39d0ff);color:#05131d;border-color:transparent}
+
+/* 用品の固定写真 */
+.goods-fixed{margin:16px 0;padding:14px;border-radius:12px;
+  background:var(--bg2,#141a2e);border:1px solid var(--line,#2a3350)}
+.goods-photos{display:flex;gap:8px;flex-wrap:wrap}
+.goods-photos .gp{position:relative;width:92px;height:92px;border-radius:8px;overflow:hidden;
+  background:#000;border:1px solid var(--line,#2a3350)}
+.goods-photos .gp img{width:100%;height:100%;object-fit:cover;display:block}
+.goods-photos .gp-del{position:absolute;top:2px;right:2px;width:26px;height:26px;border-radius:50%;
+  border:none;background:rgba(0,0,0,.65);color:#fff;cursor:pointer;font-size:13px}
 </style>
 </head>
 <body>
@@ -1794,6 +1804,7 @@ let editState = {};
 // ===== IndexedDB: 編集済み画像 + マイスタイル(お気に入りペア)を保管 =====
 const EDIT_DB = 'medaka-edit';
 const FSHANDLE_STORE = 'fshandles';
+const GOODS_PHOTO_STORE = 'goodsphotos';
 const EDIT_STORE = 'edited';
 const FAV_STORE = 'favorites';  // マイスタイル: {beforeBlob, afterBlob, timestamp, photoName}
 const HISTORY_STORE = 'history';  // 出品履歴(ロット単位)
@@ -1801,8 +1812,8 @@ let editDbPromise = null;
 function openEditDb(){
   if(editDbPromise) return editDbPromise;
   editDbPromise = new Promise((resolve, reject) => {
-    // v2: favorites / v3: history(出品履歴) / v4: 保存先フォルダの手がかり
-    const req = indexedDB.open(EDIT_DB, 4);
+    // v2: favorites / v3: history(出品履歴) / v4: 保存先フォルダの手がかり / v5: 用品の固定写真
+    const req = indexedDB.open(EDIT_DB, 5);
     req.onupgradeneeded = (e) => {
       const db = req.result;
       if(!db.objectStoreNames.contains(EDIT_STORE)){
@@ -1816,6 +1827,9 @@ function openEditDb(){
       }
       if(!db.objectStoreNames.contains(FSHANDLE_STORE)){
         db.createObjectStore(FSHANDLE_STORE);
+      }
+      if(!db.objectStoreNames.contains(GOODS_PHOTO_STORE)){
+        db.createObjectStore(GOODS_PHOTO_STORE);
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -5132,6 +5146,17 @@ function regMasters(){
     m.goods = REG_SEED_GOODS.slice();
     localStorage.setItem(REG_MASTER_KEY, JSON.stringify(m));
   }
+  // 用品には固定の管理番号を持たせる
+  let numbered = false;
+  const usedNo = new Set(m.goods.map(g => g.fixedNo).filter(Boolean));
+  let seq = 1;
+  m.goods.forEach(g => {
+    if(g.fixedNo) return;
+    let no;
+    do { no = 'YO-' + String(seq++).padStart(2, '0'); } while(usedNo.has(no));
+    g.fixedNo = no; usedNo.add(no); numbered = true;
+  });
+  if(numbered) localStorage.setItem(REG_MASTER_KEY, JSON.stringify(m));
   // 前の版のランク（SS/S/A/B/C）は、新しい4段階に入れ替える
   if(m.version !== REG_MASTER_VERSION){
     const old = ['SS','S','A','B','C'];
@@ -5817,8 +5842,29 @@ function bindWheel(id, items, current, onPick){
 
 function regStep2Html(){
   if(regIsGoods()){
+    const g = goodsOf(regSel.breed ? regSel.breed.name : '') || {};
+    const keys = g.photoKeys || [];
     return `<h3 class="card-title">個数を選ぶ</h3>
       <div class="wheels">${wheelHtml('wheelQty', '個数', regRange(100), regSel.qtyN)}</div>
+
+      <div class="goods-fixed">
+        <div class="reg-sum-line">
+          <span>管理番号（固定）</span>
+          <b class="mono">${escapeHtml(g.fixedNo || '—')}</b>
+          <button id="goodsNoEdit" class="btn btn-ghost btn-sm">変更</button>
+        </div>
+        <div class="reg-sub-title" style="margin-top:14px">固定の写真（毎回これを使います）</div>
+        <div id="goodsPhotos" class="goods-photos">
+          ${keys.length ? keys.map(k => `<div class="gp" data-k="${escapeAttr(k)}">
+              <img alt="" data-key="${escapeAttr(k)}"><button class="gp-del" data-k="${escapeAttr(k)}">✕</button>
+            </div>`).join('')
+            : '<div class="reg-empty">まだありません。下から追加してください</div>'}
+        </div>
+        <input type="file" id="goodsPhotoInput" accept="image/jpeg,image/png" multiple hidden>
+        <button id="goodsPhotoAdd" class="btn btn-ghost" style="width:100%;margin-top:10px">
+          ＋ 写真を追加する</button>
+      </div>
+
       <div class="reg-summary">
         <div class="reg-sum-line"><span>いま選んでいる内容</span>
           <b id="regStep2Now">${escapeHtml(regQuantityText())}</b></div>
@@ -5855,6 +5901,7 @@ function regStep2Html(){
 
 function bindRegStep2(){
   if(regIsGoods()){
+    const name = regSel.breed ? regSel.breed.name : '';
     const refresh = () => {
       const el = $('#regStep2Now');
       if(el) el.textContent = regQuantityText();
@@ -5862,6 +5909,39 @@ function bindRegStep2(){
     };
     bindWheel('wheelQty', regRange(100), regSel.qtyN, v => { regSel.qtyN = +v; refresh(); });
     $('#regStep2Next').onclick = () => { regSel.step = 3; renderRegisterPanel(); };
+
+    // 固定写真を読み込んで並べる
+    goodsPhotoKeys(name).forEach(async k => {
+      const blob = await goodsPhotoGet(k);
+      const img = document.querySelector(`#goodsPhotos img[data-key="${CSS.escape(k)}"]`);
+      if(blob && img) img.src = URL.createObjectURL(blob);
+    });
+    $$('#goodsPhotos .gp-del').forEach(b => {
+      b.onclick = async () => {
+        if(!confirm('この写真を消しますか？')) return;
+        await goodsRemovePhoto(name, b.dataset.k);
+        renderRegStepBody();
+        toast('写真を消しました', 'ok');
+      };
+    });
+    $('#goodsPhotoAdd').onclick = () => $('#goodsPhotoInput').click();
+    $('#goodsPhotoInput').onchange = async (e) => {
+      const files = Array.from(e.target.files || []);
+      e.target.value = '';
+      if(!files.length) return;
+      const n = await goodsAddPhotos(name, files);
+      renderRegStepBody();
+      toast(`${n}枚を登録しました`, 'ok');
+    };
+    $('#goodsNoEdit').onclick = () => {
+      const g = goodsOf(name) || {};
+      const v = prompt('この用品の管理番号を入れてください', g.fixedNo || '');
+      if(v === null) return;
+      const r = setGoodsNumber(name, v);
+      if(!r.ok){ toast(r.error, 'err'); return; }
+      renderRegStepBody();
+      toast('管理番号を変えました', 'ok');
+    };
     return;
   }
   const ranks = regMasters().ranks;
@@ -5917,9 +5997,12 @@ function regStep4Html(){
       <div class="reg-sum-line"><span>${regThingName()}</span><b>${escapeHtml(b ? b.name : '—')}</b></div>
       ${regIsGoods() ? '' : `<div class="reg-sum-line"><span>ランク</span><b>${escapeHtml(regSel.rank || 'なし')}</b></div>`}
       <div class="reg-sum-line"><span>数量</span><b>${escapeHtml(regSel.qty || 'なし')}</b></div>
-      <div class="reg-sum-line"><span>管理番号</span><b class="mono">${escapeHtml(regPreviewNumber().no)}</b></div>
+      <div class="reg-sum-line"><span>管理番号</span><b class="mono">${escapeHtml(
+        regIsGoods() ? ((goodsOf(b ? b.name : '') || {}).fixedNo || '—') : regPreviewNumber().no)}</b></div>
     </div>
-    <div class="hint">「登録する」を押すまで管理番号は確定しません</div>
+    <div class="hint">${regIsGoods()
+      ? '用品の管理番号は決まっています。同じ用品を登録し直すと、数量だけ書き替わります。'
+      : '「登録する」を押すまで管理番号は確定しません'}</div>
     <button id="regDoRegister" class="btn btn-primary reg-go" ${b ? '' : 'disabled'}>登録する</button>`;
 }
 
@@ -5995,6 +6078,39 @@ function renderRegDone(){
 
 function regDoRegister(){
   if(!regSel.breed) return;
+
+  // 用品は固定の管理番号。同じ用品がすでにあれば、その1件の数量を書き替える
+  if(regIsGoods()){
+    const g = goodsOf(regSel.breed.name);
+    const no = (g && g.fixedNo) || regSel.breed.name;
+    const list = regItems();
+    const found = list.find(x => x.kind === 'goods' && x.controlNo === no);
+    if(found){
+      found.quantityText = regQuantityText();
+      found.tepraExportedAt = null;      // 内容が変わったので、また出せるようにする
+      saveRegItems(list);
+      regSel.lastNo = no;
+      regSel.step = 1;
+      renderRegisterPanel();
+      toast(`${no} の数量を ${found.quantityText} にしました`, 'ok');
+      if(TepraLink.available()) tepraPrintOne(found);
+      return;
+    }
+    list.push({
+      controlNo: no, seq: 0, resetKey: 'goods',
+      variety: regSel.breed.name, breedCode: regSel.breed.code || '',
+      kind: 'goods', rank: '', quantityText: regQuantityText(),
+      photoNames: [], ts: Date.now()
+    });
+    saveRegItems(list);
+    regSel.lastNo = no;
+    regSel.step = 1;
+    renderRegisterPanel();
+    $('#panel-register').scrollIntoView({ block: 'start', behavior: 'smooth' });
+    if(TepraLink.available()) tepraPrintOne(list[list.length - 1]);
+    return;
+  }
+
   const pv = regPreviewNumber();
   const list = regItems();
   list.push({
@@ -6013,7 +6129,7 @@ function regDoRegister(){
   $('#panel-register').scrollIntoView({ block: 'start', behavior: 'smooth' });
 
   // 保存先が決まっていれば、その商品のフォルダを用意しておく
-  if(FsLink.available()) FsLink.ensureFolder(list[list.length - 1]);
+  if(FsLink.available()) FsLink.ensureFolder(list[list.length - 1]);   // 魚だけ（用品は固定写真）
 
   // テプラが使える端末なら、そのまま1枚出す
   if(TepraLink.available()){
@@ -6222,6 +6338,16 @@ async function fsLoadFromFolders(){
   let missing = 0;
 
   for(const it of items){
+    if(it.kind === 'goods'){                 // 用品は固定写真をそのまま使う
+      const g = await pushGoodsPhotos(it);
+      built.push({
+        labelIdx: g.length ? g[0] : -1, specimenIdxs: g,
+        variety: it.variety, rank: it.rank, quantityText: it.quantityText,
+        male:'', female:'', controlNo: it.controlNo,
+        manualEdits: { variety:true, rank:true, quantityText:true, male:false, female:false, controlNo:true }
+      });
+      continue;
+    }
     let dir = null;
     try { dir = await root.getDirectoryHandle(fsFolderName(it), { create: false }); }
     catch(e){ missing++; }
@@ -6264,6 +6390,120 @@ async function fsLoadFromFolders(){
         + (missing ? `（フォルダが無い商品 ${missing}件）` : ''), 'ok');
 }
 
+
+// ===== 用品の固定写真と固定の管理番号 =====
+// 用品は毎回撮り直す必要がないので、商品ごとに写真と管理番号を持たせておく。
+
+/** 用品の管理番号（YO-01 …）。まだ無いものには順に振る */
+function ensureGoodsNumbers(){
+  const m = regMasters();
+  const used = new Set((m.goods || []).map(g => g.fixedNo).filter(Boolean));
+  let next = 1;
+  let changed = false;
+  (m.goods || []).forEach(g => {
+    if(g.fixedNo) return;
+    while(used.has('YO-' + String(next).padStart(2, '0'))) next++;
+    g.fixedNo = 'YO-' + String(next).padStart(2, '0');
+    used.add(g.fixedNo);
+    changed = true;
+  });
+  if(changed) saveRegMasters(m);
+  return m.goods || [];
+}
+
+/** 用品の管理番号を変える。ほかと重なっていたら断る */
+function setGoodsNumber(name, no){
+  const t = String(no || '').trim();
+  if(!t) return { ok:false, error:'管理番号を入れてください' };
+  const m = regMasters();
+  if((m.goods || []).some(g => g.name !== name && g.fixedNo === t)){
+    return { ok:false, error:`「${t}」は他の用品で使っています` };
+  }
+  const g = (m.goods || []).find(x => x.name === name);
+  if(!g) return { ok:false, error:'用品が見つかりません' };
+  const old = g.fixedNo;
+  g.fixedNo = t;
+  saveRegMasters(m);
+  // すでに登録してあるぶんの番号も付け替える
+  const list = regItems();
+  list.forEach(it => { if(it.kind === 'goods' && it.controlNo === old) it.controlNo = t; });
+  saveRegItems(list);
+  return { ok:true };
+}
+
+// --- 固定写真の出し入れ ---
+async function goodsPhotoPut(key, blob){
+  const db = await openEditDb();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(GOODS_PHOTO_STORE, 'readwrite');
+    tx.objectStore(GOODS_PHOTO_STORE).put(blob, key);
+    tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+  });
+}
+async function goodsPhotoGet(key){
+  const db = await openEditDb();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(GOODS_PHOTO_STORE, 'readonly');
+    const q = tx.objectStore(GOODS_PHOTO_STORE).get(key);
+    q.onsuccess = () => res(q.result || null);
+    q.onerror = () => rej(q.error);
+  });
+}
+async function goodsPhotoDelete(key){
+  const db = await openEditDb();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(GOODS_PHOTO_STORE, 'readwrite');
+    tx.objectStore(GOODS_PHOTO_STORE).delete(key);
+    tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+  });
+}
+
+function goodsOf(name){ return (regMasters().goods || []).find(g => g.name === name) || null; }
+function goodsPhotoKeys(name){ const g = goodsOf(name); return (g && g.photoKeys) || []; }
+
+/** 固定写真を足す。長辺1600に縮めてから持っておく */
+async function goodsAddPhotos(name, files){
+  const g = goodsOf(name);
+  if(!g) return 0;
+  let added = 0;
+  for(const f of files){
+    if(!/\.(jpe?g|png)$/i.test(f.name) && !/^image\//.test(f.type)) continue;
+    let blob = f;
+    try { blob = await shrinkImage(f, 1600); } catch(e){ /* 縮められなければそのまま */ }
+    const key = `goods_${name}_${Date.now()}_${added}`;
+    await goodsPhotoPut(key, blob);
+    g.photoKeys = (g.photoKeys || []).concat([key]);
+    added++;
+  }
+  if(added){
+    const m = regMasters();
+    const t = (m.goods || []).find(x => x.name === name);
+    if(t) t.photoKeys = g.photoKeys;
+    saveRegMasters(m);
+  }
+  return added;
+}
+
+async function goodsRemovePhoto(name, key){
+  const m = regMasters();
+  const g = (m.goods || []).find(x => x.name === name);
+  if(!g) return;
+  g.photoKeys = (g.photoKeys || []).filter(k => k !== key);
+  saveRegMasters(m);
+  try { await goodsPhotoDelete(key); } catch(e){ /* 消せなくても一覧からは外す */ }
+}
+
+/** 写真を長辺 maxEdge に縮める */
+async function shrinkImage(file, maxEdge){
+  const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  const k = Math.min(1, maxEdge / Math.max(bmp.width, bmp.height));
+  const cv = document.createElement('canvas');
+  cv.width = Math.round(bmp.width * k);
+  cv.height = Math.round(bmp.height * k);
+  cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
+  bmp.close && bmp.close();
+  return await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.9));
+}
 
 // ===== 保存先フォルダ（端末ごとの違いを吸収する） =====
 // pc      … パソコンのChrome / Edge。ブラウザの機能でフォルダを作る
@@ -6358,6 +6598,16 @@ async function fsLoadFromFoldersAndroid(){
   const built = [];
 
   for(const it of items){
+    if(it.kind === 'goods'){                 // 用品は固定写真をそのまま使う
+      const g = await pushGoodsPhotos(it);
+      built.push({
+        labelIdx: g.length ? g[0] : -1, specimenIdxs: g,
+        variety: it.variety, rank: it.rank, quantityText: it.quantityText,
+        male:'', female:'', controlNo: it.controlNo,
+        manualEdits: { variety:true, rank:true, quantityText:true, male:false, female:false, controlNo:true }
+      });
+      continue;
+    }
     const names = await FsLink.listPhotos(it);
     const idxs = [];
     for(const n of names){
@@ -6790,6 +7040,21 @@ function syncFolderPhotos(){
 /** どのフォルダにも入っていない写真 */
 let leftoverIdxs = [];
 
+
+/** 用品の固定写真を photos に入れて、その添字を返す */
+async function pushGoodsPhotos(item){
+  const idxs = [];
+  for(const key of goodsPhotoKeys(item.variety)){
+    const blob = await goodsPhotoGet(key);
+    if(!blob) continue;
+    idxs.push(photos.length);
+    photos.push({ name: `${item.controlNo}_${String(idxs.length).padStart(2, '0')}.jpg`,
+                  blobUrl: URL.createObjectURL(blob),
+                  handle: { getFile: async () => blob } });
+  }
+  return idxs;
+}
+
 // ===== 登録した商品に写真を割り当てる =====
 // 登録済みの商品へ、撮った順に配る。
 let assignMode = false;
@@ -6816,6 +7081,16 @@ async function assignPhotosToRegistered(){
   const built = [];
   let cursor = 0;
   for(const it of items){
+    if(it.kind === 'goods'){                 // 用品は固定写真。撮った写真は使わない
+      const g = await pushGoodsPhotos(it);
+      built.push({
+        labelIdx: g.length ? g[0] : -1, specimenIdxs: g,
+        variety: it.variety, rank: it.rank, quantityText: it.quantityText,
+        male:'', female:'', controlNo: it.controlNo,
+        manualEdits: { variety:true, rank:true, quantityText:true, male:false, female:false, controlNo:true }
+      });
+      continue;
+    }
     const idxs = [];
     for(let k = 0; k < per && cursor < photos.length; k++, cursor++) idxs.push(cursor);
     if(!idxs.length) break;

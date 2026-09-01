@@ -62,7 +62,7 @@ r.check("商品名", b.ev("regItems()[0].variety"), "ホテイソウ")
 r.check("ランクは空", b.ev("regItems()[0].rank"), "")
 r.check("数量は5個", b.ev("regItems()[0].quantityText"), "5個")
 r.check("用品として記録", b.ev("regItems()[0].kind"), "goods")
-r.check("管理番号は同じ通し番号", b.ev("regItems()[0].controlNo"), f"MD-{today}-001")
+r.check("管理番号は用品の固定番号", b.ev("regItems()[0].controlNo"), b.ev("goodsOf('ホテイソウ').fixedNo"))
 
 print("■ ラベルと出品タイトル")
 b.ev("""window.__sent=[]; window.TepraBridge={ status(){return JSON.stringify({ok:true,connected:true,printer:'X',tapeMM:24});},
