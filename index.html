@@ -636,6 +636,10 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .goods-photos .gp img{width:100%;height:100%;object-fit:cover;display:block}
 .goods-photos .gp-del{position:absolute;top:2px;right:2px;width:26px;height:26px;border-radius:50%;
   border:none;background:rgba(0,0,0,.65);color:#fff;cursor:pointer;font-size:13px}
+
+.reg-tepra .tepra-auto{display:flex;align-items:center;gap:6px;font-size:13px;margin-left:auto;cursor:pointer}
+.reg-tepra .tepra-auto input{width:20px;height:20px;accent-color:var(--accent,#39d0ff)}
+.reg-tepra .tepra-auto + .btn{margin-left:0}
 </style>
 </head>
 <body>
@@ -5418,7 +5422,9 @@ const TepraLink = {
   _kind: null,          // 'android' / 'windows' / 'none'（一度調べたら覚えておく）
 
   /** どの経路が使えるかを調べる。起動時と、登録タブを開いたときに1回 */
+  _probedAt: 0,
   async probe(){
+    this._probedAt = Date.now();
     if(window.TepraBridge && typeof window.TepraBridge.print === 'function'){
       this._kind = 'android';
     } else if(await TepraWin.available()){
@@ -5430,10 +5436,9 @@ const TepraLink = {
   },
 
   kind(){
-    if(this._kind) return this._kind;
-    // まだ調べていないときは、すぐ分かるものだけ返す
+    // アプリの窓口は、あるか無いかがその場で分かる
     if(window.TepraBridge && typeof window.TepraBridge.print === 'function') return 'android';
-    return 'none';
+    return this._kind === 'android' ? 'none' : (this._kind || 'none');
   },
   available(){ return this.kind() !== 'none'; },
 
@@ -5494,7 +5499,11 @@ async function renderTepraBar(){
   box.innerHTML = `<span class="dot ${on ? 'on' : ''}"></span>
     <span class="txt">${escapeHtml(msg)}</span>
     ${st.error && st.connected ? `<span class="err">${escapeHtml(st.error)}</span>` : ''}
+    <label class="tepra-auto" title="登録ボタンを押したら、そのままテプラから1枚出します">
+      <input type="checkbox" id="tepraAuto" ${tepraAutoOn() ? 'checked' : ''}>
+      <span>登録したらすぐ出す</span></label>
     <button id="regTepraConnect" class="btn btn-ghost btn-sm">${on ? '接続し直す' : '接続する'}</button>`;
+  $('#tepraAuto').onchange = (e) => setTepraAuto(e.target.checked);
   $('#regTepraConnect').onclick = async () => {
     toast('テプラを探しています…', 'ok');
     const r = await TepraLink.connect();
@@ -6093,7 +6102,7 @@ function regDoRegister(){
       regSel.step = 1;
       renderRegisterPanel();
       toast(`${no} の数量を ${found.quantityText} にしました`, 'ok');
-      if(TepraLink.available()) tepraPrintOne(found);
+      tepraPrintOnRegister(found);
       return;
     }
     list.push({
@@ -6107,7 +6116,7 @@ function regDoRegister(){
     regSel.step = 1;
     renderRegisterPanel();
     $('#panel-register').scrollIntoView({ block: 'start', behavior: 'smooth' });
-    if(TepraLink.available()) tepraPrintOne(list[list.length - 1]);
+    tepraPrintOnRegister(list[list.length - 1]);
     return;
   }
 
@@ -6131,12 +6140,8 @@ function regDoRegister(){
   // 保存先が決まっていれば、その商品のフォルダを用意しておく
   if(FsLink.available()) FsLink.ensureFolder(list[list.length - 1]);   // 魚だけ（用品は固定写真）
 
-  // テプラが使える端末なら、そのまま1枚出す
-  if(TepraLink.available()){
-    const item = list[list.length - 1];
-    toast('テプラから出しています…', 'ok');
-    tepraPrintOne(item);
-  }
+  // 登録したら、そのまま1枚出す
+  tepraPrintOnRegister(list[list.length - 1]);
 }
 
 $('#regClearAll').onclick = () => {
@@ -6796,6 +6801,30 @@ async function lbSaveCrop(){
   if(typeof renderEditPanel === 'function') renderEditPanel();
   renderFolders();
   toast(`${cv.width}×${cv.height} で保存しました（出品にはこの写真を使います）`, 'ok');
+}
+
+// ===== 登録したらすぐ印刷する =====
+const TEPRA_AUTO_KEY = 'medaka_tepra_auto';
+/** 既定は「出す」。設定で止められる */
+function tepraAutoOn(){ return localStorage.getItem(TEPRA_AUTO_KEY) !== '0'; }
+function setTepraAuto(on){
+  localStorage.setItem(TEPRA_AUTO_KEY, on ? '1' : '0');
+  renderTepraBar();
+}
+
+/** 登録ボタンを押した直後に呼ぶ。テプラが使えるなら、そのまま1枚出す */
+async function tepraPrintOnRegister(item){
+  if(!item || !tepraAutoOn()) return;
+  // まだ調べていない、または「なし」のまま少し経っていれば調べ直す。
+  // （あとからパソコンの印刷ヘルパーを立ち上げた場合に気づけるようにする）
+  const stale = TepraLink._kind === null
+    || (TepraLink.kind() === 'none' && Date.now() - (TepraLink._probedAt || 0) > 30000);
+  if(stale){
+    try { await TepraLink.probe(); } catch(e){ return; }
+  }
+  if(!TepraLink.available()) return;
+  toast('テプラから出しています…', 'ok');
+  await tepraPrintOne(item);
 }
 
 // ===== 1枚だけやり直す =====
