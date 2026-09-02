@@ -5426,6 +5426,11 @@ const TepraWin = {
       ctx.fillText(t, pad, y + hs[i] / 2);
       y += hs[i] + gap;
     });
+    // 白紙のまま送ると、何も書かれていないラベルが出て切られてしまう。
+    // 実際に黒い点が描けているか数えて、無ければ作り直しを促す
+    if(!hasInk(ctx, cv.width, cv.height)){
+      throw new Error('ラベルの文字を描けませんでした');
+    }
     return cv.toDataURL('image/png').split(',')[1];   // base64だけ返す
   },
 
@@ -5436,11 +5441,18 @@ const TepraWin = {
     const dots = TEPRA_DOTS_5600P[mm] || 128;
 
     for(let i = 0; i < labels.length; i++){
+      let png;
+      try {
+        png = this.makePng(labels[i].lines, dots);
+      } catch(e){
+        return { ok:false, error:(e && e.message ? e.message : '画像を作れませんでした')
+                 + '（' + (labels[i].lines[0] || '') + '）' };
+      }
       const body = {
         printFile: {
           imageFile: {
             fileName: 'label' + (i + 1) + '.png',
-            base64Str: this.makePng(labels[i].lines, dots)
+            base64Str: png
           }
         },
         // 項目名と値は、キングジムのSDKが送っているものに合わせる
@@ -5496,7 +5508,7 @@ const TepraLink = {
   _probedAt: 0,
   async probe(){
     this._probedAt = Date.now();
-    if(window.TepraBridge && typeof window.TepraBridge.print === 'function'){
+    if(hasTepraBridge()){
       this._kind = 'android';
     } else if(await TepraWin.available()){
       this._kind = 'windows';
@@ -5508,7 +5520,7 @@ const TepraLink = {
 
   kind(){
     // アプリの窓口は、あるか無いかがその場で分かる
-    if(window.TepraBridge && typeof window.TepraBridge.print === 'function') return 'android';
+    if(hasTepraBridge()) return 'android';
     return this._kind === 'android' ? 'none' : (this._kind || 'none');
   },
   available(){ return this.kind() !== 'none'; },
@@ -5536,24 +5548,45 @@ const TepraLink = {
   },
 
   /** 登録した商品をラベルにして印刷する */
-  print(items){
-    const labels = items.map(it => ({
-      lines: [
-        it.variety || 'メダカ',
-        [it.rank, it.quantityText].filter(Boolean).join(' '),
-        it.controlNo || ''
-      ].filter(t => String(t).trim() !== '')
-    }));
+  _busy: false,
+
+  /** 登録した商品をラベルにして印刷する */
+  async print(items){
+    // 同じ印刷が二重に走ると、余計なテープが出てしまう
+    if(this._busy) return { ok:false, error:'いま印刷しています。終わるまでお待ちください' };
+
+    const labels = [];
+    const empty = [];
+    (items || []).forEach(it => {
+      const lines = labelLinesOf(it);
+      if(lines.length) labels.push({ lines });
+      else empty.push(it.controlNo || '(番号なし)');
+    });
+    if(!labels.length){
+      return { ok:false, error:'ラベルに書く内容がありません' + (empty.length ? '（' + empty.join('、') + '）' : '') };
+    }
+
+    this._busy = true;
+    try {
+      const r = await this._send(labels);
+      if(r.ok && empty.length) r.skipped = empty;
+      return r;
+    } finally {
+      this._busy = false;
+    }
+  },
+
+  async _send(labels){
     const k = this.kind();
     if(k === 'android'){
       const json = JSON.stringify(labels);
       if(typeof window.TepraBridge.printWithMargin === 'function'){
-        return Promise.resolve(this.android('printWithMargin', json, tepraMarginMM()));
+        return this.android('printWithMargin', json, tepraMarginMM());
       }
-      return Promise.resolve(this.android('print', json));   // 古いアプリ向け
+      return this.android('print', json);   // 古いアプリ向け
     }
     if(k === 'windows') return TepraWin.print(labels);
-    return Promise.resolve({ ok:false, error:'この端末からは直接印刷できません' });
+    return { ok:false, error:'この端末からは直接印刷できません' };
   }
 };
 
@@ -5582,7 +5615,7 @@ async function renderTepraBar(){
   if(TepraLink._kind === null) await TepraLink.probe();
   if(!TepraLink.available()){
     // パソコンで、印刷ヘルパーに繋がらなかったときだけ案内を出す
-    if(!window.TepraBridge && TepraWin.lastError && FS_SUPPORTED){
+    if(!hasTepraBridge() && TepraWin.lastError && FS_SUPPORTED){
       box.classList.remove('hidden');
       box.innerHTML = `<span class="dot"></span>
         <span class="txt">テプラ：${escapeHtml(TepraWin.lastError)}</span>
@@ -6700,6 +6733,40 @@ async function shrinkImage(file, maxEdge){
   cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
   bmp.close && bmp.close();
   return await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.9));
+}
+
+
+/** 画像に黒い点があるか（白紙でないか）を調べる */
+/** Androidアプリの窓口があるか（新旧どちらの呼び方でもよい） */
+function hasTepraBridge(){
+  const br = window.TepraBridge;
+  return !!(br && (typeof br.print === 'function' || typeof br.printWithMargin === 'function'));
+}
+
+function hasInk(ctx, w, h){
+  try {
+    const d = ctx.getImageData(0, 0, w, h).data;
+    let dark = 0;
+    // 4画素ごとに見れば十分。200点あれば文字が描けている
+    for(let i = 0; i < d.length; i += 16){
+      if(d[i] < 128 && d[i+1] < 128 && d[i+2] < 128){
+        dark++;
+        if(dark >= 200) return true;
+      }
+    }
+    return false;
+  } catch(e){
+    return true;   // 調べられないときは止めない
+  }
+}
+
+/** その商品のラベルに載せる行。中身が無ければ空の配列 */
+function labelLinesOf(it){
+  return [
+    String(it.variety || '').trim(),
+    [it.rank, it.quantityText].map(x => String(x || '').trim()).filter(Boolean).join(' '),
+    String(it.controlNo || '').trim()
+  ].filter(t => t !== '');
 }
 
 // ===== 保存先フォルダ（端末ごとの違いを吸収する） =====

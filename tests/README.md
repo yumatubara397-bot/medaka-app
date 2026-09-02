@@ -21,6 +21,7 @@ python3 autoprinttest.py    # 登録したらすぐテプラから出る（20項
 python3 surfacetest.py      # Windowsの案内／ローカル保存（16項目）
 python3 goodsprinttest.py   # 用品は選んで発行したものだけ出る（21項目）
 python3 labeltest.py        # ラベルの長さ（余白）とランク→数量の移動（17項目）
+python3 blanktest.py        # 白紙のラベルを出さない・二重印刷を防ぐ（17項目）
 python3 phonetest.py        # 携帯の画面幅での見え方（8項目）
 
 # Windows経路（テプラ クリエイター WebAPI）
@@ -50,6 +51,7 @@ pkill -f fake_webapi.py
 | `surfacetest.py` | 用品はテプラを出さないこと／パソコンで繋がらないときの案内と対処／アプリのローカル保存 |
 | `goodsprinttest.py` | 用品は登録時に出ないこと／選んだものだけ発行されること／何度でも出せること／魚のまとめ印刷に混ざらないこと |
 | `labeltest.py` | ラベルの余白設定／Android・Windows双方への反映／古いアプリでも動くこと／ランクを選ぶと数量へ進むこと |
+| `blanktest.py` | 中身の無いラベルを送らないこと／白紙の画像を作らないこと／二重に印刷しないこと |
 | `phonetest.py` | iPhone SE・iPhone 15・Pixel 8・360px端末で、横にはみ出さないか／指で押せる大きさか |
 | `fake_webapi.py` | Windowsの通信モジュール（localhost:29108）を真似たもの。送られた画像を `/tmp/fake_tepra/` に保存する |
 | `wintest.py` | Windows経路：経路の判定／ラベル画像の大きさ／印刷パラメータ／まとめ印刷／モジュール停止時の扱い |
