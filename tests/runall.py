@@ -29,7 +29,7 @@ PLAIN = ["registertest", "wheeltest", "foldertest", "fstest", "fsandroidtest",
          "goodsfixedtest", "autoprinttest", "goodsprinttest", "surfacetest",
          "labeltest", "blanktest", "phonetest"]
 # 偽モジュールが要るもの（止めるものは最後）
-WITH_FAKE = ["structtest", "usbtest", "resptest", "wintest"]
+WITH_FAKE = ["structtest", "cuttest", "usbtest", "resptest", "wintest"]
 
 def run(name):
     start = time.time()

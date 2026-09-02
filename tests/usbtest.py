@@ -70,7 +70,7 @@ r.check("画像の幅は余白で変わらない", w0, w15)
 for f in glob.glob("/tmp/fake_tepra/*"): os.unlink(f)
 b.ev("TepraWin.printerName=null; TepraWin.print([{lines:['幹之','特上','MD-1']}])"); time.sleep(1.5)
 params = json.load(open(sorted(glob.glob("/tmp/fake_tepra/*_param.json"))[0]))
-r.check("余白は本体側にだけ渡す", params["marginLeftRight"], 15)
+r.check("余白は本体側にだけ、0.1mm単位で渡す（15mm→150）", params["marginLeftRight"], 150)
 
 print("■ テープの切り方を選べる")
 r.check("既定はラベルごと", b.ev("tepraCutMode()"), 2)

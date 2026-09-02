@@ -33,6 +33,10 @@ class H(BaseHTTPRequestHandler):
             self._send([{"printerName": n} for n in names])
         elif p.startswith("/api/printer/info/"):
             self._send({"driverName": "SR-R5600P", "dpi": 180, "tapeList": [263]})
+        elif p.startswith("/api/printer/tapefeed/"):
+            (OUT / "tapefeed.log").write_text((OUT / "tapefeed.log").read_text() + p + "\n"
+                                              if (OUT / "tapefeed.log").exists() else p + "\n")
+            self._send({"errorCode": 0})
         elif p.startswith("/api/printer/onlinestatus/"):
             # 実機と同じく、USB側はオフライン・BT側はオンライン にできる
             name = p.split("/")[-1]

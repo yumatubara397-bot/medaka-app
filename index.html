@@ -1156,6 +1156,15 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 
       <div class="settings-card">
         <div style="font-size:12px;line-height:1.7;color:var(--ink-dim)">
+          <strong style="color:var(--ink)">テプラの手入れ</strong><br>
+          <span style="font-size:12px">
+            ふだんの印刷では使いません。テープの先を整えたいときだけ押してください。
+          </span>
+          <div class="btn-row" style="margin:8px 0 16px">
+            <button id="btnTapeFeed" class="btn btn-ghost btn-mini">テープ送り</button>
+            <button id="btnTapeFeedCut" class="btn btn-ghost btn-mini">テープ送り＋カット</button>
+          </div>
+
           <strong style="color:var(--ink)">テプラの記録</strong><br>
           <span style="font-size:12px">直前の印刷でどこへ何を送り、どう返ってきたかが分かります。</span>
           <div class="btn-row" style="margin:8px 0 16px">
@@ -4522,6 +4531,17 @@ $('#lstTitleTemplate').addEventListener('input', () => {
   updateTitlePreview();
   if(prev === null) localStorage.removeItem(LST_TITLE_KEY); else localStorage.setItem(LST_TITLE_KEY, prev);
 });
+$('#btnTapeFeed').onclick = async () => {
+  if(TepraLink.kind() !== 'windows'){ toast('この端末では使えません', 'err'); return; }
+  const r = await TepraWin.tapeFeed(false);
+  toast(r.ok ? 'テープを送りました' : (r.error || 'できませんでした'), r.ok ? 'ok' : 'err');
+};
+$('#btnTapeFeedCut').onclick = async () => {
+  if(TepraLink.kind() !== 'windows'){ toast('この端末では使えません', 'err'); return; }
+  const r = await TepraWin.tapeFeed(true);
+  toast(r.ok ? 'テープを送って切りました' : (r.error || 'できませんでした'), r.ok ? 'ok' : 'err');
+};
+
 $('#btnPrintLog').onclick = () => {
   const g = getPrintLog();
   if(!g){ toast('まだ印刷していません', 'err'); return; }
@@ -5519,6 +5539,17 @@ const TepraWin = {
     return out;
   },
 
+
+  /** テープ送り（cut=true なら送ってから切る）。手動のときだけ使う */
+  async tapeFeed(cut){
+    if(!this.printerName && !(await this.pick())) return { ok:false, error:'テプラが見つかりません' };
+    const r = await this.fetchJson('/tapefeed/' + encodeURIComponent(this.printerName)
+                                  + '?cutflag=' + (cut ? 'true' : 'false'), null, 30000);
+    if(r.__err) return { ok:false, error:'テープを送れませんでした（' + r.__err + '）' };
+    if(r.__http) return { ok:false, error:'テープを送れませんでした（コード ' + r.__http + '）' };
+    return { ok:true };
+  },
+
   /** ラベルを画像にする。テプラは「テープ幅＝画像の高さ」 */
   makePng(lines, heightDots){
     const cv = document.createElement('canvas');
@@ -5616,9 +5647,12 @@ const TepraWin = {
           printSpeed: 1,                    // 1=高速 / 2=低速 / 3=中速
           density: { mode: 1, value: 0 },
           tapeID: TEPRA_MM_TAPEID[mm] || 263,
-          priorityCutSetting: 1,            // 1=テープの設定に従う / 2=こちらの設定を優先
+          // 1=テープカートリッジの設定に従う / 2=こちらの指定を優先
+          // 1 のままだと、先頭の白紙送りとカットがカートリッジ側の設定で行われてしまう
+          priorityCutSetting: 2,
           halfCutSeparate: 1,               // 1=つながったラベル / 2=切り離す
-          marginLeftRight: tepraMarginMM(),
+          // 仕様書どおり 0.1mm 単位で渡す（0 = 余白を指定しない）
+          marginLeftRight: Math.round(tepraMarginMM() * 10),
           displayTapeWidth: 1,              // 1=確認メッセージを出さない
           errorMessage: { mode: 1, fileOutput: 0, filePath: '' },   // 1=エラー画面を出さない
           displayTransferTape: 1,
@@ -5635,13 +5669,17 @@ const TepraWin = {
         method: 'POST',
         headers: { 'accept': 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
-      }, 180000);   // Bluetoothは目覚めるまで時間がかかることがある
+      }, 45000);   // これ以上待っても、たいていは本体側で止まっている
 
       if(res.__err){
         const timeout = res.__err === 'timeout';
         return { ok:false, __noRetry: timeout,
           error: timeout
-            ? 'テプラの返事を待ちましたが、時間内に返ってきませんでした。\nWindowsの印刷キューを開いて、たまっていないか確認してください'
+            ? 'テプラが45秒たっても返事をしませんでした。\n'
+              + '・本体の電源が入っているか\n'
+              + '・Windowsの「プリンターとスキャナー」でこのテプラがオフラインになっていないか\n'
+              + '・印刷キューに前の仕事がたまっていないか（あれば取り消してください）\n'
+              + 'を確認してください'
             : 'テプラに送れませんでした（' + res.__err + '）' };
       }
       if(res.__http){
@@ -5901,6 +5939,10 @@ async function tepraPrintOne(item){
     プリンター: TepraWin.printerName || '(アプリ内)',
     内容: fitLabelRows(labelLinesOf(item)).join(' / '),
     設定: `行数${tepraRows()} / 長さ${tepraMinLenRatio()}倍 / 余白${tepraMarginMM()}mm / 切り方${tepraCutMode()}`,
+    '印刷前のテープ送り': 'なし（アプリからは送っていません）',
+    '印刷前のカット': 'なし（アプリからは切っていません）',
+    '印刷後のカット': tepraCutMode() === 1 ? 'なし' : (tepraCutMode() === 3 ? 'まとめて最後に1回' : 'ラベルごとに1回'),
+    'カット設定の優先': 'こちらの指定を優先（priorityCutSetting=2）',
     結果: r.ok ? '成功' : ('失敗: ' + (r.error || ''))
   });
   if(r.ok){
