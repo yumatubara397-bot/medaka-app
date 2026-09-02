@@ -16,9 +16,9 @@ TepraLink._kind=null;""")
 b.ev("renderRegisterPanel()"); time.sleep(1.0)
 
 print("■ 余白（ラベルの長さ）の設定")
-r.check("既定は0mm", b.ev("tepraMarginMM()"), 0)
+r.check("既定は6mm", b.ev("tepraMarginMM()"), 6)
 r.expect("設定欄が出ている", b.ev("!!document.getElementById('tepraMargin')"), "")
-r.check("欄の値も0", b.ev("document.getElementById('tepraMargin').value"), "0")
+r.check("欄の値も6", b.ev("document.getElementById('tepraMargin').value"), "6")
 b.ev("setTepraMarginMM(12)"); time.sleep(0.6)
 r.check("変えられる", b.ev("tepraMarginMM()"), 12)
 r.check("覚えている", b.ev("localStorage.getItem('medaka_tepra_margin')"), "12")
@@ -56,6 +56,8 @@ size = b.ev("""(async()=>{ const b64=TepraWin.makePng(['幹之','特上 1ペア'
   const bmp=await createImageBitmap(new Blob([buf],{type:'image/png'}));
   return {w:bmp.width,h:bmp.height}; })()""")
 r.check("高さはテープの印字ドット数", size["h"], 128)
+r.expect("短すぎるラベルにならない（テープ幅の2.5倍以上）", size["w"] >= 128 * 2.5,
+         f"{size['w']}px（最低 {int(128*2.5)}px）")
 b.ev("setTepraMarginMM(0)"); time.sleep(0.4)
 size0 = b.ev("""(async()=>{ const b64=TepraWin.makePng(['幹之','特上 1ペア','MD-1'],128);
   const bin=atob(b64); const buf=new Uint8Array(bin.length);

@@ -1156,6 +1156,12 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 
       <div class="settings-card">
         <div style="font-size:12px;line-height:1.7;color:var(--ink-dim)">
+          <strong style="color:var(--ink)">テプラの記録</strong><br>
+          <span style="font-size:12px">直前の印刷でどこへ何を送り、どう返ってきたかが分かります。</span>
+          <div class="btn-row" style="margin:8px 0 16px">
+            <button id="btnPrintLog" class="btn btn-ghost btn-mini">🖨 直前の印刷を見る</button>
+          </div>
+
           <strong style="color:var(--ink)">このパソコンに保存</strong><br>
           <span style="font-size:12px">
             テプラにつながらないとき用です。保存したファイルを開いて使うと、
@@ -1210,7 +1216,13 @@ function toast(msg, type=''){
   t.textContent = msg;
   t.className = 'toast show ' + type;
   clearTimeout(toast._t);
-  toast._t = setTimeout(()=>t.className='toast '+type, 2600);
+  // 長い知らせ（エラーの理由など）は、押して閉じるまで残す
+  const text = String(msg || '');
+  const keep = (type === 'err') && (text.length > 24 || text.includes('\n'));
+  t.style.whiteSpace = text.includes('\n') ? 'pre-line' : '';
+  t.style.cursor = keep ? 'pointer' : '';
+  t.onclick = keep ? () => { t.className = 'toast ' + type; } : null;
+  if(!keep) toast._t = setTimeout(()=>t.className='toast '+type, 2600);
 }
 
 // ===== Tabs =====
@@ -4510,6 +4522,12 @@ $('#lstTitleTemplate').addEventListener('input', () => {
   updateTitlePreview();
   if(prev === null) localStorage.removeItem(LST_TITLE_KEY); else localStorage.setItem(LST_TITLE_KEY, prev);
 });
+$('#btnPrintLog').onclick = () => {
+  const g = getPrintLog();
+  if(!g){ toast('まだ印刷していません', 'err'); return; }
+  alert(Object.entries(g).map(([k, v]) => k + '：' + v).join('\n'));
+};
+
 $('#btnSaveLocal').onclick = async () => {
   let html = '';
   // まず配信元から取り直す。だめなら、いま表示しているものをそのまま書き出す
@@ -5324,7 +5342,7 @@ const TEPRA_WEBAPI = 'http://localhost:29108/api/printer';
 const TEPRA_MARGIN_KEY = 'medaka_tepra_margin';
 function tepraMarginMM(){
   const v = parseInt(localStorage.getItem(TEPRA_MARGIN_KEY) || '', 10);
-  return Number.isFinite(v) ? Math.max(0, Math.min(20, v)) : 0;   // 既定 0mm（余白を足すほど、切り落とされる白い紙も長くなる）
+  return Number.isFinite(v) ? Math.max(0, Math.min(20, v)) : 6;   // 既定 6mm
 }
 // テープの切り方。1=切らない / 2=ラベルごと / 3=まとめて最後に1回
 const TEPRA_CUT_KEY = 'medaka_tepra_cut';
@@ -5461,7 +5479,10 @@ const TepraWin = {
     let content = 0;
     lines.forEach((t, i) => { ctx0.font = fonts[i]; content = Math.max(content, ctx0.measureText(t).width); });
 
-    cv.width = Math.ceil(Math.max(heightDots, content + pad * 2));
+    // 短すぎるラベルは、印刷されずテープだけ出てしまうことがある。
+    // テープ幅の2.5倍を最低の長さとして確保する
+    const minWidth = Math.ceil(heightDots * 2.5);
+    cv.width = Math.ceil(Math.max(minWidth, content + pad * 2));
     cv.height = heightDots;
     const ctx = cv.getContext('2d');
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
@@ -5502,6 +5523,12 @@ const TepraWin = {
   async printOnce(labels){
     const st = await this.status();
     if(!st.ok) return st;
+    // オフラインのまま送ると、Windowsの印刷キューにたまって出てこない
+    if(!(await this.isOnline(this.printerName))){
+      return { ok:false,
+        error:'「' + this.printerName + '」がオフラインです。\n'
+              + 'テプラの電源とつなぎ方を確認してください' };
+    }
     const mm = st.tapeMM || 24;
     const dots = TEPRA_DOTS_5600P[mm] || 128;
 
@@ -5544,18 +5571,30 @@ const TepraWin = {
           stretchImage: 1
         }
       };
-      const res = await this.fetchJson('/print/' + encodeURIComponent(this.printerName), {
-        method: 'POST',
-        headers: { 'accept': 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      }, 60000);
+      let res;
+      try {
+        res = await this.fetchJson('/print/' + encodeURIComponent(this.printerName), {
+          method: 'POST',
+          headers: { 'accept': 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        }, 180000);   // Bluetoothは目覚めるまで時間がかかることがある
+      } catch(e){
+        // 待っても返事が来なかった場合。送れてはいるかもしれないので、そう伝える
+        const aborted = e && (e.name === 'AbortError');
+        return { ok:false, __noRetry: aborted,
+          error: aborted
+            ? 'テプラの返事を待ちましたが、時間内に返ってきませんでした。\nWindowsの印刷キューを開いて、たまっていないか確認してください'
+            : 'テプラに送れませんでした（' + (e && e.message ? e.message : e) + '）' };
+      }
       if(res.__http){
         return { ok:false,
           error: '印刷に失敗しました（コード ' + res.__http + '）'
                  + (res.__why ? '\n' + res.__why : '') };
       }
       if(res.errorCode && res.errorCode !== 0){
-        return { ok:false, error:'印刷に失敗しました（エラー ' + res.errorCode + '）' };
+        return { ok:false,
+          error:'印刷に失敗しました（エラー ' + res.errorCode + '）'
+                + (res.message ? '\n' + res.message : '') };
       }
     }
     return { ok:true, printed: labels.length, tapeMM: mm };
@@ -5635,8 +5674,10 @@ const TepraLink = {
     this._busy = true;
     try {
       const r = await this._send(labels);
-      if(r.ok && empty.length) r.skipped = empty;
-      return r;
+      if(r && r.ok && empty.length) r.skipped = empty;
+      return r || { ok:false, error:'印刷の結果が分かりませんでした' };
+    } catch(e){
+      return { ok:false, error:'印刷でエラーが起きました（' + (e && e.message ? e.message : e) + '）' };
     } finally {
       this._busy = false;
     }
@@ -5752,6 +5793,8 @@ async function renderTepraBar(){
 /** 登録した1件をその場で印刷する */
 async function tepraPrintOne(item){
   const r = await TepraLink.print([item]);
+  setPrintLog({ 経路: TepraLink.kind(), プリンター: TepraWin.printerName || '(アプリ内)',
+                内容: labelLinesOf(item).join(' / '), 結果: r.ok ? '成功' : ('失敗: ' + (r.error || '')) });
   if(r.ok){
     const list = regItems();
     const t = list.find(x => x.controlNo === item.controlNo);
@@ -7150,6 +7193,17 @@ function tepraAutoOn(){ return localStorage.getItem(TEPRA_AUTO_KEY) !== '0'; }
 function setTepraAuto(on){
   localStorage.setItem(TEPRA_AUTO_KEY, on ? '1' : '0');
   renderTepraBar();
+}
+
+/** 直近の印刷でのやり取り（うまくいかないときの手がかり） */
+let lastPrintLog = null;
+function setPrintLog(o){
+  lastPrintLog = Object.assign({ ts: new Date().toLocaleString('ja-JP') }, o);
+  try { localStorage.setItem('medaka_last_print', JSON.stringify(lastPrintLog)); } catch(e){}
+}
+function getPrintLog(){
+  if(lastPrintLog) return lastPrintLog;
+  try { return JSON.parse(localStorage.getItem('medaka_last_print') || 'null'); } catch(e){ return null; }
 }
 
 /** 登録ボタンを押した直後に呼ぶ。テプラが使えるなら、そのまま1枚出す */
