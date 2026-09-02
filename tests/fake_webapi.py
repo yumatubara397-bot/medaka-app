@@ -70,8 +70,29 @@ class H(BaseHTTPRequestHandler):
         if pathlib.Path("/tmp/fake_tepra_usb_fail").exists() and not self.path.upper().endswith("BT"):
             self._send({"error": "printer offline"}, 500)
             return
+        # 本物が「本文なし」や「JSONでない返事」を返す場合も試せるようにする
+        mode = ""
+        for m in ("empty", "plain"):
+            if pathlib.Path("/tmp/fake_tepra_resp_" + m).exists(): mode = m
         img = body.get("printFile", {}).get("imageFile", {})
         idx = len(list(OUT.glob("*.png"))) + 1
+        if mode:
+            if img.get("base64Str"):
+                (OUT / f"{idx:02d}_{img.get('fileName','label.png')}").write_bytes(base64.b64decode(img["base64Str"]))
+            (OUT / f"{idx:02d}_param.json").write_text(json.dumps(body.get("printParameter", {}), ensure_ascii=False))
+            if mode == "empty":
+                self.send_response(200)
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+            else:
+                b = b"OK"
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Content-Length", str(len(b)))
+                self.end_headers(); self.wfile.write(b)
+            return
         if img.get("base64Str"):
             (OUT / f"{idx:02d}_{img.get('fileName','label.png')}").write_bytes(base64.b64decode(img["base64Str"]))
         (OUT / f"{idx:02d}_param.json").write_text(json.dumps(body.get("printParameter", {}), ensure_ascii=False))

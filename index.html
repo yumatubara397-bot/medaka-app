@@ -5355,6 +5355,17 @@ function setTepraCutMode(v){
   renderTepraBar();
 }
 
+// ラベルの文字の大きさ（行の高さに対する割合）
+const TEPRA_FONT_KEY = 'medaka_tepra_font';
+function tepraFontScale(){
+  const v = parseFloat(localStorage.getItem(TEPRA_FONT_KEY) || '');
+  return Number.isFinite(v) ? Math.max(0.6, Math.min(1.0, v)) : 0.86;
+}
+function setTepraFontScale(v){
+  localStorage.setItem(TEPRA_FONT_KEY, String(Math.max(0.6, Math.min(1.0, +v || 0.86))));
+  renderTepraBar();
+}
+
 // ラベルの並べ方。3=3行（今までどおり） / 2=2行（文字が大きい）
 const TEPRA_ROWS_KEY = 'medaka_tepra_rows';
 function tepraRows(){
@@ -5378,7 +5389,7 @@ function fitLabelRows(lines){
 const TEPRA_LEN_KEY = 'medaka_tepra_len';
 function tepraMinLenRatio(){
   const v = parseFloat(localStorage.getItem(TEPRA_LEN_KEY) || '');
-  return Number.isFinite(v) ? Math.max(1.5, Math.min(8, v)) : 3.5;
+  return Number.isFinite(v) ? Math.max(1.5, Math.min(8, v)) : 2.4;   // 24mmテープで約43mm
 }
 function setTepraMinLenRatio(v){
   localStorage.setItem(TEPRA_LEN_KEY, String(Math.max(1.5, Math.min(8, +v || 3.5))));
@@ -5399,18 +5410,29 @@ const TEPRA_MM_TAPEID = { 4:274, 6:259, 9:260, 12:261, 18:262, 24:263, 36:264, 5
 const TepraWin = {
   printerName: null,
 
+  /**
+   * 通信モジュールへの問い合わせ。何が起きても例外を投げず、必ず結果を返す。
+   *   成功         … 返ってきた中身（本文が無いときは空の {}）
+   *   HTTPエラー   … { __http: 番号, __why: 本文 }
+   *   通信できない … { __err: 理由 }
+   */
   async fetchJson(path, opts, timeoutMs){
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs || 8000);
     try {
       const res = await fetch(TEPRA_WEBAPI + path, Object.assign({ signal: ctrl.signal }, opts || {}));
-      if(!res.ok){
-        let why = '';
-        try { why = (await res.text()).slice(0, 300); } catch(e){ /* 本文が無いこともある */ }
-        return { __http: res.status, __why: why };
-      }
-      return await res.json();
-    } finally { clearTimeout(timer); }
+      let text = '';
+      try { text = await res.text(); } catch(e){ /* 本文が無いこともある */ }
+      if(!res.ok) return { __http: res.status, __why: (text || '').slice(0, 300) };
+      if(!text.trim()) return {};                 // 本文なし。成功として扱う
+      try { return JSON.parse(text); }
+      catch(e){ return { __raw: text.slice(0, 300) }; }   // JSONでなくても失敗にしない
+    } catch(e){
+      const aborted = e && e.name === 'AbortError';
+      return { __err: aborted ? 'timeout' : (e && e.message ? e.message : String(e)) };
+    } finally {
+      clearTimeout(timer);
+    }
   },
 
   /** 直前に失敗した理由（画面の案内に使う） */
@@ -5418,18 +5440,19 @@ const TepraWin = {
 
   /** 通信モジュールが動いているか（短く試す） */
   async available(){
-    try {
-      const list = await this.fetchJson('', null, 2500);
-      if(Array.isArray(list)){ this.lastError = ''; return true; }
-      this.lastError = '通信モジュールが応答しませんでした';
-      return false;
-    } catch(e){
+    const list = await this.fetchJson('', null, 2500);
+    if(Array.isArray(list)){ this.lastError = ''; return true; }
+    if(list && list.__err){
       // https のページから localhost を呼ぶのをブラウザが止めることがある
       this.lastError = (location.protocol === 'https:')
-        ? 'つながりません。通信モジュールが起動していないか、ブラウザが止めています'
-        : 'つながりません。テプラ クリエイターの「WebAPI用通信モジュール」が起動していますか';
-      return false;
+        ? 'つながりません。通信モジュールが起動していないか、ブラウザが止めています（' + list.__err + '）'
+        : 'つながりません。テプラ クリエイターの「WebAPI用通信モジュール」が起動していますか（' + list.__err + '）';
+    } else if(list && list.__http){
+      this.lastError = '通信モジュールがエラーを返しました（コード ' + list.__http + '）';
+    } else {
+      this.lastError = '通信モジュールの応答を読めませんでした';
     }
+    return false;
   },
 
   /** 名前に Bluetooth / BT が入っていれば Bluetooth 接続とみなす */
@@ -5437,11 +5460,10 @@ const TepraWin = {
 
   /** そのプリンターが今つながっているか */
   async isOnline(name){
-    try {
-      const r = await this.fetchJson('/onlinestatus/' + encodeURIComponent(name), null, 4000);
-      if(r && r.__http) return false;
-      return !!(r && r.online);
-    } catch(e){ return false; }
+    const r = await this.fetchJson('/onlinestatus/' + encodeURIComponent(name), null, 4000);
+    if(!r || r.__http || r.__err) return false;
+    // online が返ってこない版でも止まらないよう、分からなければ「つながっている」とみなす
+    return ('online' in r) ? !!r.online : true;
   },
 
   /**
@@ -5452,7 +5474,12 @@ const TepraWin = {
    */
   async candidates(){
     const list = await this.fetchJson('', null, 5000);
-    if(!Array.isArray(list) || !list.length) return [];
+    if(!Array.isArray(list) || !list.length){
+      this.lastError = (list && list.__err)
+        ? 'テプラの一覧を取れませんでした（' + list.__err + '）'
+        : 'テプラが見つかりません';
+      return [];
+    }
     const names = list.map(p => p.printerName).filter(Boolean);
     const tepra = names.filter(n => /TEPRA|テプラ|SR-|KING\s*JIM/i.test(n));
     const pool = tepra.length ? tepra : names;
@@ -5479,10 +5506,11 @@ const TepraWin = {
 
   async status(){
     if(!this.printerName && !(await this.pick())){
-      return { ok:false, error:'テプラが見つかりません（パソコンにプリンターとして入っていますか）' };
+      return { ok:false, error: this.lastError || 'テプラが見つかりません（パソコンにプリンターとして入っていますか）' };
     }
     const st = await this.fetchJson('/lwstatus/' + encodeURIComponent(this.printerName), null, 8000);
-    if(st.__http) return { ok:false, error:'テプラの状態を取得できませんでした' };
+    if(st.__err) return { ok:false, error:'テプラと通信できませんでした（' + st.__err + '）' };
+    if(st.__http) return { ok:false, error:'テプラの状態を取得できませんでした（コード ' + st.__http + '）' };
     const mm = TEPRA_TAPEID_MM[st.tapeID] || 0;
     const c = (this.lastCandidates || []).find(x => x.name === this.printerName);
     const out = { ok:true, connected:true, printer:this.printerName, tapeMM:mm,
@@ -5505,9 +5533,9 @@ const TepraWin = {
     const hs = weights.map(w => usable * w / total);
 
     const ctx0 = cv.getContext('2d');
-    // 行の高さいっぱいまで使う（0.86 → 0.98）
+    const scale = tepraFontScale();
     const fonts = lines.map((t, i) =>
-      `${i === 0 ? '700' : '500'} ${Math.round(hs[i] * 0.98)}px "Noto Sans JP", sans-serif`);
+      `${i === 0 ? '700' : '500'} ${Math.round(hs[i] * scale)}px "Noto Sans JP", sans-serif`);
     let content = 0;
     lines.forEach((t, i) => { ctx0.font = fonts[i]; content = Math.max(content, ctx0.measureText(t).width); });
 
@@ -5603,20 +5631,18 @@ const TepraWin = {
           stretchImage: 1
         }
       };
-      let res;
-      try {
-        res = await this.fetchJson('/print/' + encodeURIComponent(this.printerName), {
-          method: 'POST',
-          headers: { 'accept': 'application/json', 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
-        }, 180000);   // Bluetoothは目覚めるまで時間がかかることがある
-      } catch(e){
-        // 待っても返事が来なかった場合。送れてはいるかもしれないので、そう伝える
-        const aborted = e && (e.name === 'AbortError');
-        return { ok:false, __noRetry: aborted,
-          error: aborted
+      const res = await this.fetchJson('/print/' + encodeURIComponent(this.printerName), {
+        method: 'POST',
+        headers: { 'accept': 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      }, 180000);   // Bluetoothは目覚めるまで時間がかかることがある
+
+      if(res.__err){
+        const timeout = res.__err === 'timeout';
+        return { ok:false, __noRetry: timeout,
+          error: timeout
             ? 'テプラの返事を待ちましたが、時間内に返ってきませんでした。\nWindowsの印刷キューを開いて、たまっていないか確認してください'
-            : 'テプラに送れませんでした（' + (e && e.message ? e.message : e) + '）' };
+            : 'テプラに送れませんでした（' + res.__err + '）' };
       }
       if(res.__http){
         return { ok:false,
@@ -5788,6 +5814,13 @@ async function renderTepraBar(){
       <span>余白</span>
       <input type="number" id="tepraMargin" min="0" max="20" step="1" value="${tepraMarginMM()}">
       <span>mm</span></label>
+    <label class="tepra-auto" title="ラベルの文字の大きさ">
+      <span>文字</span>
+      <select id="tepraFont">
+        <option value="0.74" ${tepraFontScale() === 0.74 ? 'selected' : ''}>小さめ</option>
+        <option value="0.86" ${tepraFontScale() === 0.86 ? 'selected' : ''}>ふつう</option>
+        <option value="0.98" ${tepraFontScale() === 0.98 ? 'selected' : ''}>大きめ</option>
+      </select></label>
     <label class="tepra-auto" title="2行にすると文字が大きくなります">
       <span>行数</span>
       <select id="tepraRows">
@@ -5797,10 +5830,10 @@ async function renderTepraBar(){
     <label class="tepra-auto" title="大きくするとラベルが長くなります">
       <span>長さ</span>
       <select id="tepraLen">
-        <option value="2.5" ${tepraMinLenRatio() === 2.5 ? 'selected' : ''}>ふつう</option>
+        <option value="1.8" ${tepraMinLenRatio() === 1.8 ? 'selected' : ''}>短め</option>
+        <option value="2.4" ${tepraMinLenRatio() === 2.4 ? 'selected' : ''}>ふつう</option>
         <option value="3.5" ${tepraMinLenRatio() === 3.5 ? 'selected' : ''}>長め</option>
         <option value="4.5" ${tepraMinLenRatio() === 4.5 ? 'selected' : ''}>もっと長く</option>
-        <option value="6" ${tepraMinLenRatio() === 6 ? 'selected' : ''}>いちばん長い</option>
       </select></label>
     <label class="tepra-auto" title="白いテープが余分に出るときは「最後に1回」を試してください">
       <span>切り方</span>
@@ -5811,6 +5844,10 @@ async function renderTepraBar(){
       </select></label>
     <button id="regTepraConnect" class="btn btn-ghost btn-sm">${on ? '接続し直す' : '接続する'}</button>`;
   $('#tepraAuto').onchange = (e) => setTepraAuto(e.target.checked);
+  $('#tepraFont').onchange = (e) => {
+    setTepraFontScale(e.target.value);
+    toast('ラベルの文字の大きさを変えました', 'ok');
+  };
   $('#tepraRows').onchange = (e) => {
     setTepraRows(+e.target.value);
     toast('ラベルの行数を変えました', 'ok');
@@ -5826,6 +5863,10 @@ async function renderTepraBar(){
   $('#tepraMargin').onchange = (e) => {
     setTepraMarginMM(e.target.value);
     toast(`ラベルの余白を ${tepraMarginMM()}mm にしました`, 'ok');
+  };
+  $('#tepraFont').onchange = (e) => {
+    setTepraFontScale(e.target.value);
+    toast('ラベルの文字の大きさを変えました', 'ok');
   };
   $('#tepraRows').onchange = (e) => {
     setTepraRows(+e.target.value);
@@ -5855,8 +5896,13 @@ async function renderTepraBar(){
 /** 登録した1件をその場で印刷する */
 async function tepraPrintOne(item){
   const r = await TepraLink.print([item]);
-  setPrintLog({ 経路: TepraLink.kind(), プリンター: TepraWin.printerName || '(アプリ内)',
-                内容: labelLinesOf(item).join(' / '), 結果: r.ok ? '成功' : ('失敗: ' + (r.error || '')) });
+  setPrintLog({
+    経路: TepraLink.kind(),
+    プリンター: TepraWin.printerName || '(アプリ内)',
+    内容: fitLabelRows(labelLinesOf(item)).join(' / '),
+    設定: `行数${tepraRows()} / 長さ${tepraMinLenRatio()}倍 / 余白${tepraMarginMM()}mm / 切り方${tepraCutMode()}`,
+    結果: r.ok ? '成功' : ('失敗: ' + (r.error || ''))
+  });
   if(r.ok){
     const list = regItems();
     const t = list.find(x => x.controlNo === item.controlNo);

@@ -1,5 +1,17 @@
 # 動作確認（自動テスト）
 
+## まとめて実行する
+
+```bash
+cd tests
+python3 runall.py      # 順番に気をつけて全部を実行する
+```
+
+`resptest.py` と `wintest.py` は、途中で偽モジュールをわざと止める確認を
+含むため、いちばん最後に実行する必要があります。`runall.py` はその順番と
+偽モジュールの起動・停止をまとめて面倒を見ます。
+
+
 Chrome を裏で動かして `index.html` を実際に操作し、結果を確かめます。
 
 ```bash
@@ -54,6 +66,8 @@ pkill -f fake_webapi.py
 | `labeltest.py` | ラベルの余白設定／Android・Windows双方への反映／古いアプリでも動くこと／ランクを選ぶと数量へ進むこと |
 | `blanktest.py` | 中身の無いラベルを送らないこと／白紙の画像を作らないこと／二重に印刷しないこと |
 | `usbtest.py` | USB機を優先して選ぶこと／印刷に失敗したらBluetoothへ切り替えること／余白が二重にかからないこと／テープの切り方 |
+| `structtest.py` | 関数88個・画面の部品27個がそろっているか（書き換えで消える事故を止める）／印刷の入口がどんな時も結果を返すこと |
+| `resptest.py` | 通信モジュールの返事が本文なし・JSONでない場合でも失敗にしないこと／止まっているときの理由 |
 | `phonetest.py` | iPhone SE・iPhone 15・Pixel 8・360px端末で、横にはみ出さないか／指で押せる大きさか |
 | `fake_webapi.py` | Windowsの通信モジュール（localhost:29108）を真似たもの。送られた画像を `/tmp/fake_tepra/` に保存する |
 | `wintest.py` | Windows経路：経路の判定／ラベル画像の大きさ／印刷パラメータ／まとめ印刷／モジュール停止時の扱い |

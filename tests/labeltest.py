@@ -56,8 +56,8 @@ size = b.ev("""(async()=>{ const b64=TepraWin.makePng(['幹之','特上 1ペア'
   const bmp=await createImageBitmap(new Blob([buf],{type:'image/png'}));
   return {w:bmp.width,h:bmp.height}; })()""")
 r.check("高さはテープの印字ドット数", size["h"], 128)
-r.expect("短すぎるラベルにならない（テープ幅の2.5倍以上）", size["w"] >= 128 * 2.5,
-         f"{size['w']}px（最低 {int(128*2.5)}px）")
+r.expect("短すぎるラベルにならない（設定した長さ以上）", size["w"] >= 128 * 1.8,
+         f"{size['w']}px（テープ幅の {size['w']/128:.1f}倍 ＝ 約{size['w']/180*25.4:.0f}mm）")
 b.ev("setTepraMarginMM(0)"); time.sleep(0.4)
 size0 = b.ev("""(async()=>{ const b64=TepraWin.makePng(['幹之','特上 1ペア','MD-1'],128);
   const bin=atob(b64); const buf=new Uint8Array(bin.length);
@@ -94,8 +94,8 @@ def band_heights(b64):
 
 b.ev("setTepraRows(3); setTepraMinLenRatio(3.5)"); time.sleep(0.4)
 h3 = band_heights(b.ev("TepraWin.makePng(fitLabelRows(['忘却の翼','通常 雄5 雌8','MD-260902-004']), 128)"))
-r.expect("3行でも品種名は6mm以上", h3 and h3[0] >= 42, f"{h3[0]}ドット = {h3[0]/180*25.4:.1f}mm")
-r.expect("3行の管理番号も3.5mm以上", len(h3) >= 3 and h3[2] >= 25, f"{h3[-1]}ドット = {h3[-1]/180*25.4:.1f}mm")
+r.expect("3行でも品種名は5mm以上", h3 and h3[0] >= 36, f"{h3[0]}ドット = {h3[0]/180*25.4:.1f}mm")
+r.expect("3行の管理番号も3mm以上", len(h3) >= 3 and h3[2] >= 21, f"{h3[-1]}ドット = {h3[-1]/180*25.4:.1f}mm")
 
 b.ev("setTepraRows(2)"); time.sleep(0.4)
 lines2 = b.ev("fitLabelRows(['忘却の翼','通常 雄5 雌8','MD-260902-004'])")
@@ -106,14 +106,14 @@ r.expect("2行目に数量と管理番号が入る",
 h2 = band_heights(b.ev("TepraWin.makePng(fitLabelRows(['忘却の翼','通常 雄5 雌8','MD-260902-004']), 128)"))
 r.expect("2行にすると文字が大きくなる", h2[0] > h3[0] and h2[1] > h3[1],
          f"3行 {h3[0]}/{h3[1]}ドット → 2行 {h2[0]}/{h2[1]}ドット")
-r.expect("2行目でも6mm以上", h2[1] >= 42, f"{h2[1]}ドット = {h2[1]/180*25.4:.1f}mm")
+r.expect("2行目でも5mm以上", h2[1] >= 36, f"{h2[1]}ドット = {h2[1]/180*25.4:.1f}mm")
 
 print("■ 長さの選択")
-b.ev("setTepraRows(3); setTepraMinLenRatio(2.5)"); time.sleep(0.3)
+b.ev("setTepraRows(3); setTepraMinLenRatio(1.8)"); time.sleep(0.3)
 w25 = b.ev("(async()=>{const b64=TepraWin.makePng(['あ','い','う'],128);const bin=atob(b64);const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);const m=await createImageBitmap(new Blob([u],{type:'image/png'}));return m.width;})()")
-b.ev("setTepraMinLenRatio(6)"); time.sleep(0.3)
+b.ev("setTepraMinLenRatio(4.5)"); time.sleep(0.3)
 w6 = b.ev("(async()=>{const b64=TepraWin.makePng(['あ','い','う'],128);const bin=atob(b64);const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);const m=await createImageBitmap(new Blob([u],{type:'image/png'}));return m.width;})()")
-r.expect("長さを変えられる", w6 > w25, f"ふつう {w25}px → いちばん長い {w6}px")
+r.expect("長さを変えられる", w6 > w25, f"短め {w25}px → もっと長く {w6}px")
 r.expect("画面から選べる", b.ev("!!document.getElementById('tepraLen')") and b.ev("!!document.getElementById('tepraRows')"), "")
 
 b.close(); r.finish()
