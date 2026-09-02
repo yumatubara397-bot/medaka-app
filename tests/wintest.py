@@ -35,7 +35,7 @@ print("■ Windowsの通信モジュールを見つける")
 check("経路の判定", ev("TepraLink.probe()"), "windows")
 check("直接印刷できる", ev("TepraLink.available()"), True)
 st = ev("TepraLink.status()")
-check("プリンター名", st.get("printer"), "TEPRA PRO SR-R5600P")
+check("プリンター名", st.get("printer"), "KING JIM SR-R5600P")
 check("テープ幅を読む", st.get("tapeMM"), 24)
 ev("renderRegisterPanel()"); time.sleep(1.2)
 expect("状態バーに出る", "SR-R5600P" in (ev("document.getElementById('regTepraBar').textContent") or ""),

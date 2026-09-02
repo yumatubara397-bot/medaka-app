@@ -5384,19 +5384,44 @@ const TepraWin = {
     }
   },
 
-  /** 見つかったテプラを、USB→Bluetooth の順に並べる */
+  /** 名前に Bluetooth / BT が入っていれば Bluetooth 接続とみなす */
+  isBluetoothName(n){ return /bluetooth|[-_ ]bt\b|\bbt[-_ ]/i.test(n); },
+
+  /** そのプリンターが今つながっているか */
+  async isOnline(name){
+    try {
+      const r = await this.fetchJson('/onlinestatus/' + encodeURIComponent(name), null, 4000);
+      if(r && r.__http) return false;
+      return !!(r && r.online);
+    } catch(e){ return false; }
+  },
+
+  /**
+   * 見つかったテプラを、使う順に並べる。
+   *   ① つながっている USB   ② つながっている Bluetooth
+   *   ③ オフラインの USB     ④ オフラインの Bluetooth
+   * オフラインのものを先に選ぶと印刷できないので、まず「つながっているか」で分ける。
+   */
   async candidates(){
     const list = await this.fetchJson('', null, 5000);
     if(!Array.isArray(list) || !list.length) return [];
     const names = list.map(p => p.printerName).filter(Boolean);
-    const tepra = names.filter(n => /TEPRA|テプラ|SR-/i.test(n));
+    const tepra = names.filter(n => /TEPRA|テプラ|SR-|KING\s*JIM/i.test(n));
     const pool = tepra.length ? tepra : names;
-    // 名前に Bluetooth / BT が入っているものは後回しにする
-    const isBt = n => /bluetooth|\bbt\b/i.test(n);
-    return pool.filter(n => !isBt(n)).concat(pool.filter(isBt));
+
+    const info = [];
+    for(const n of pool){
+      info.push({ name: n, bt: this.isBluetoothName(n), online: await this.isOnline(n) });
+    }
+    const rank = x => (x.online ? 0 : 2) + (x.bt ? 1 : 0);
+    info.sort((a, b) => rank(a) - rank(b));
+    this.lastCandidates = info;
+    return info.map(x => x.name);
   },
 
-  /** 使うプリンターを決める（USBを優先） */
+  lastCandidates: [],
+
+  /** 使うプリンターを決める（つながっているもの→USBの順） */
   async pick(){
     const list = await this.candidates();
     if(!list.length) return null;
@@ -5411,7 +5436,9 @@ const TepraWin = {
     const st = await this.fetchJson('/lwstatus/' + encodeURIComponent(this.printerName), null, 8000);
     if(st.__http) return { ok:false, error:'テプラの状態を取得できませんでした' };
     const mm = TEPRA_TAPEID_MM[st.tapeID] || 0;
-    const out = { ok:true, connected:true, printer:this.printerName, tapeMM:mm };
+    const c = (this.lastCandidates || []).find(x => x.name === this.printerName);
+    const out = { ok:true, connected:true, printer:this.printerName, tapeMM:mm,
+                  route: c ? (c.bt ? 'Bluetooth' : 'USB') : '' };
     if(st.error) out.error = 'テプラのエラー（コード ' + st.error + '）';
     return out;
   },
@@ -5677,7 +5704,7 @@ async function renderTepraBar(){
   const on = st.ok && st.connected;
   const msg = !st.ok ? (st.error || '確認できませんでした')
             : !st.connected ? 'テプラ未接続'
-            : `テプラ接続済み（${st.printer || 'テプラ'}${st.tapeMM ? ' / テープ ' + st.tapeMM + 'mm' : ''}）`;
+            : `テプラ接続済み（${st.printer || 'テプラ'}${st.route ? ' / ' + st.route : ''}${st.tapeMM ? ' / テープ ' + st.tapeMM + 'mm' : ''}）`;
   box.innerHTML = `<span class="dot ${on ? 'on' : ''}"></span>
     <span class="txt">${escapeHtml(msg)}</span>
     ${st.error && st.connected ? `<span class="err">${escapeHtml(st.error)}</span>` : ''}

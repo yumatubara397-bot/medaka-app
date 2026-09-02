@@ -26,8 +26,8 @@ python3 phonetest.py        # 携帯の画面幅での見え方（8項目）
 
 # Windows経路（テプラ クリエイター WebAPI）
 python3 fake_webapi.py &    # 偽の通信モジュールを立てる
-python3 wintest.py          # 25項目
-python3 usbtest.py          # USB優先とBluetoothへの切替（17項目）
+python3 usbtest.py          # USB優先とBluetoothへの切替（21項目）
+python3 wintest.py          # 25項目（※最後に偽モジュールを止めるので、いちばん最後に実行する）
 pkill -f fake_webapi.py
 ```
 

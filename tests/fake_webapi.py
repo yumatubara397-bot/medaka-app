@@ -27,12 +27,21 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         p = self.path
         if p == "/api/printer":
-            names = ["TEPRA PRO SR-R5600P", "TEPRA PRO SR-R5600P (Bluetooth)"]
+            names = ["KING JIM SR-R5600P", "KING JIM SR-R5600P-BT"]
             if pathlib.Path("/tmp/fake_tepra_usb_gone").exists():
                 names = names[1:]
             self._send([{"printerName": n} for n in names])
         elif p.startswith("/api/printer/info/"):
             self._send({"driverName": "SR-R5600P", "dpi": 180, "tapeList": [263]})
+        elif p.startswith("/api/printer/onlinestatus/"):
+            # 実機と同じく、USB側はオフライン・BT側はオンライン にできる
+            name = p.split("/")[-1]
+            offline_usb = pathlib.Path("/tmp/fake_tepra_usb_offline").exists()
+            is_bt = name.upper().endswith("BT") or "BLUETOOTH" in name.upper()
+            online = True
+            if offline_usb and not is_bt: online = False
+            if pathlib.Path("/tmp/fake_tepra_bt_offline").exists() and is_bt: online = False
+            self._send({"online": online})
         elif p.startswith("/api/printer/lwstatus/"):
             self._send({"tapeID": 263, "tapeKind": 0, "error": 0, "brTapeKind": 0})
         else:
@@ -58,7 +67,7 @@ class H(BaseHTTPRequestHandler):
                         "missing": missing, "bad": bad}, 400)
             return
         # USB機が「印刷だけ失敗する」状態を作れるようにする
-        if pathlib.Path("/tmp/fake_tepra_usb_fail").exists() and "Bluetooth" not in self.path:
+        if pathlib.Path("/tmp/fake_tepra_usb_fail").exists() and not self.path.upper().endswith("BT"):
             self._send({"error": "printer offline"}, 500)
             return
         img = body.get("printFile", {}).get("imageFile", {})
