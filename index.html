@@ -649,6 +649,9 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 
 .wheels.flash .wheel{border-color:var(--accent,#39d0ff);box-shadow:0 0 0 3px rgba(57,208,255,.25);
   transition:box-shadow .2s,border-color .2s}
+
+.reg-tepra .tepra-auto select{height:32px;padding:2px 6px;border-radius:6px;
+  border:1px solid var(--line,#2a3350);background:var(--bg,#0d1220);color:inherit;font-size:13px}
 </style>
 </head>
 <body>
@@ -5321,8 +5324,19 @@ const TEPRA_WEBAPI = 'http://localhost:29108/api/printer';
 const TEPRA_MARGIN_KEY = 'medaka_tepra_margin';
 function tepraMarginMM(){
   const v = parseInt(localStorage.getItem(TEPRA_MARGIN_KEY) || '', 10);
-  return Number.isFinite(v) ? Math.max(0, Math.min(20, v)) : 6;   // 既定 6mm
+  return Number.isFinite(v) ? Math.max(0, Math.min(20, v)) : 0;   // 既定 0mm（余白を足すほど、切り落とされる白い紙も長くなる）
 }
+// テープの切り方。1=切らない / 2=ラベルごと / 3=まとめて最後に1回
+const TEPRA_CUT_KEY = 'medaka_tepra_cut';
+function tepraCutMode(){
+  const v = parseInt(localStorage.getItem(TEPRA_CUT_KEY) || '', 10);
+  return (v === 1 || v === 2 || v === 3) ? v : 2;
+}
+function setTepraCutMode(v){
+  localStorage.setItem(TEPRA_CUT_KEY, String(v));
+  renderTepraBar();
+}
+
 function setTepraMarginMM(v){
   localStorage.setItem(TEPRA_MARGIN_KEY, String(Math.max(0, Math.min(20, +v || 0))));
   renderTepraBar();
@@ -5370,13 +5384,23 @@ const TepraWin = {
     }
   },
 
-  /** 使うプリンターを決める */
-  async pick(){
+  /** 見つかったテプラを、USB→Bluetooth の順に並べる */
+  async candidates(){
     const list = await this.fetchJson('', null, 5000);
-    if(!Array.isArray(list) || !list.length) return null;
-    // テプラらしい名前を優先する
-    const hit = list.find(p => /TEPRA|テプラ|SR-/i.test(p.printerName || '')) || list[0];
-    this.printerName = hit.printerName;
+    if(!Array.isArray(list) || !list.length) return [];
+    const names = list.map(p => p.printerName).filter(Boolean);
+    const tepra = names.filter(n => /TEPRA|テプラ|SR-/i.test(n));
+    const pool = tepra.length ? tepra : names;
+    // 名前に Bluetooth / BT が入っているものは後回しにする
+    const isBt = n => /bluetooth|\bbt\b/i.test(n);
+    return pool.filter(n => !isBt(n)).concat(pool.filter(isBt));
+  },
+
+  /** 使うプリンターを決める（USBを優先） */
+  async pick(){
+    const list = await this.candidates();
+    if(!list.length) return null;
+    this.printerName = list[0];
     return this.printerName;
   },
 
@@ -5395,8 +5419,9 @@ const TepraWin = {
   /** ラベルを画像にする。テプラは「テープ幅＝画像の高さ」 */
   makePng(lines, heightDots){
     const cv = document.createElement('canvas');
-    // 余白(mm)をドットに直す。テプラは 180dpi なので 1mm ≒ 7.09ドット
-    const pad = Math.round(12 + tepraMarginMM() * 180 / 25.4);
+    // 余白は本体側(marginLeftRight)で付ける。ここで足すと二重になり、
+    // 白い部分が倍になってしまう
+    const pad = 12;
     const gap = heightDots * 0.10;
     const weights = lines.map((l, i) => i === 0 ? 1.5 : 1.0);
     const total = weights.reduce((a, b) => a + b, 0);
@@ -5435,6 +5460,19 @@ const TepraWin = {
   },
 
   async print(labels){
+    const first = await this.printOnce(labels);
+    if(first.ok || first.__noRetry) return first;
+    // USBが抜けている等で失敗したときは、次の候補（Bluetoothなど）に切り替えて1度だけやり直す
+    const list = await this.candidates();
+    const next = list.find(n => n !== this.printerName);
+    if(!next) return first;
+    this.printerName = next;
+    const second = await this.printOnce(labels);
+    if(second.ok) second.switched = next;
+    return second.ok ? second : first;
+  },
+
+  async printOnce(labels){
     const st = await this.status();
     if(!st.ok) return st;
     const mm = st.tapeMM || 24;
@@ -5445,7 +5483,8 @@ const TepraWin = {
       try {
         png = this.makePng(labels[i].lines, dots);
       } catch(e){
-        return { ok:false, error:(e && e.message ? e.message : '画像を作れませんでした')
+        return { ok:false, __noRetry:true,
+                 error:(e && e.message ? e.message : '画像を作れませんでした')
                  + '（' + (labels[i].lines[0] || '') + '）' };
       }
       const body = {
@@ -5458,7 +5497,7 @@ const TepraWin = {
         // 項目名と値は、キングジムのSDKが送っているものに合わせる
         printParameter: {
           copies: 1,
-          tapeCut: 2,                       // 1=切らない / 2=ラベルごと / 3=ジョブごと
+          tapeCut: tepraCutMode(),          // 1=切らない / 2=ラベルごと / 3=まとめて最後に1回
           halfCut: 1,                       // 1=しない / 2=する
           printSpeed: 1,                    // 1=高速 / 2=低速 / 3=中速
           density: { mode: 1, value: 0 },
@@ -5645,15 +5684,30 @@ async function renderTepraBar(){
     <label class="tepra-auto" title="登録ボタンを押したら、そのままテプラから1枚出します">
       <input type="checkbox" id="tepraAuto" ${tepraAutoOn() ? 'checked' : ''}>
       <span>登録したらすぐ出す</span></label>
-    <label class="tepra-auto" title="大きくするとラベルが長くなります">
+    <label class="tepra-auto" title="ラベルが長くなりますが、印刷前に切り落とされる白いテープも長くなります">
       <span>余白</span>
       <input type="number" id="tepraMargin" min="0" max="20" step="1" value="${tepraMarginMM()}">
       <span>mm</span></label>
+    <label class="tepra-auto" title="白いテープが余分に出るときは「最後に1回」を試してください">
+      <span>切り方</span>
+      <select id="tepraCut">
+        <option value="2" ${tepraCutMode() === 2 ? 'selected' : ''}>ラベルごと</option>
+        <option value="3" ${tepraCutMode() === 3 ? 'selected' : ''}>最後に1回</option>
+        <option value="1" ${tepraCutMode() === 1 ? 'selected' : ''}>切らない</option>
+      </select></label>
     <button id="regTepraConnect" class="btn btn-ghost btn-sm">${on ? '接続し直す' : '接続する'}</button>`;
   $('#tepraAuto').onchange = (e) => setTepraAuto(e.target.checked);
+  $('#tepraCut').onchange = (e) => {
+    setTepraCutMode(+e.target.value);
+    toast('テープの切り方を変えました', 'ok');
+  };
   $('#tepraMargin').onchange = (e) => {
     setTepraMarginMM(e.target.value);
     toast(`ラベルの余白を ${tepraMarginMM()}mm にしました`, 'ok');
+  };
+  $('#tepraCut').onchange = (e) => {
+    setTepraCutMode(+e.target.value);
+    toast('テープの切り方を変えました', 'ok');
   };
   $('#tepraMargin').onchange = (e) => {
     setTepraMarginMM(e.target.value);

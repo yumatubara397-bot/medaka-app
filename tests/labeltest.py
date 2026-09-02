@@ -16,22 +16,22 @@ TepraLink._kind=null;""")
 b.ev("renderRegisterPanel()"); time.sleep(1.0)
 
 print("■ 余白（ラベルの長さ）の設定")
-r.check("既定は6mm", b.ev("tepraMarginMM()"), 6)
+r.check("既定は0mm", b.ev("tepraMarginMM()"), 0)
 r.expect("設定欄が出ている", b.ev("!!document.getElementById('tepraMargin')"), "")
-r.check("欄の値も6", b.ev("document.getElementById('tepraMargin').value"), "6")
+r.check("欄の値も0", b.ev("document.getElementById('tepraMargin').value"), "0")
 b.ev("setTepraMarginMM(12)"); time.sleep(0.6)
 r.check("変えられる", b.ev("tepraMarginMM()"), 12)
 r.check("覚えている", b.ev("localStorage.getItem('medaka_tepra_margin')"), "12")
 b.ev("setTepraMarginMM(99)"); time.sleep(0.4)
 r.check("大きすぎる値は20に収める", b.ev("tepraMarginMM()"), 20)
-b.ev("setTepraMarginMM(6)"); time.sleep(0.4)
+b.ev("setTepraMarginMM(0)"); time.sleep(0.4)
 
 print("■ Androidへ余白を渡す")
 b.ev("""{ regSel.mode='fish'; regSel.breed=regMasters().breeds.find(x=>x.name==='幹之');
   regSel.rank='特上'; regSel.qtyMode='pair'; regSel.qtyN=1; regSel.step=3; renderRegisterPanel(); }""")
 time.sleep(0.5)
 b.ev("window.__sent=[]; document.getElementById('regDoRegister').click()"); time.sleep(1.8)
-r.check("余白つきで送る", b.ev("window.__sent[0].m"), 6)
+r.check("余白つきで送る", b.ev("window.__sent[0].m"), 0)
 b.ev("setTepraMarginMM(10)"); time.sleep(0.4)
 b.ev("""{ const l=regItems(); l.forEach(x=>x.tepraExportedAt=null); saveRegItems(l);
    window.__sent=[]; tepraPrintPending(); }""")
@@ -62,8 +62,7 @@ size0 = b.ev("""(async()=>{ const b64=TepraWin.makePng(['幹之','特上 1ペア
   for(let i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i);
   const bmp=await createImageBitmap(new Blob([buf],{type:'image/png'}));
   return {w:bmp.width,h:bmp.height}; })()""")
-r.expect("余白を増やすとラベルが長くなる", size["w"] > size0["w"],
-         f"余白0mm→{size0['w']}px / 余白8mm→{size['w']}px")
+r.check("画像の幅は余白で変わらない（本体側で付けるため）", size["w"], size0["w"])
 
 print("■ ランクを選ぶと数量へ進む")
 b.ev("""{ regSel.mode='fish'; regSel.breed=regMasters().breeds.find(x=>x.name==='夜桜');

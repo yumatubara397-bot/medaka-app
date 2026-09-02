@@ -27,7 +27,10 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         p = self.path
         if p == "/api/printer":
-            self._send([{"printerName": "TEPRA PRO SR-R5600P"}])
+            names = ["TEPRA PRO SR-R5600P", "TEPRA PRO SR-R5600P (Bluetooth)"]
+            if pathlib.Path("/tmp/fake_tepra_usb_gone").exists():
+                names = names[1:]
+            self._send([{"printerName": n} for n in names])
         elif p.startswith("/api/printer/info/"):
             self._send({"driverName": "SR-R5600P", "dpi": 180, "tapeList": [263]})
         elif p.startswith("/api/printer/lwstatus/"):
@@ -53,6 +56,10 @@ class H(BaseHTTPRequestHandler):
         if missing or bad:
             self._send({"error": "invalid parameter",
                         "missing": missing, "bad": bad}, 400)
+            return
+        # USB機が「印刷だけ失敗する」状態を作れるようにする
+        if pathlib.Path("/tmp/fake_tepra_usb_fail").exists() and "Bluetooth" not in self.path:
+            self._send({"error": "printer offline"}, 500)
             return
         img = body.get("printFile", {}).get("imageFile", {})
         idx = len(list(OUT.glob("*.png"))) + 1

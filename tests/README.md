@@ -26,7 +26,8 @@ python3 phonetest.py        # 携帯の画面幅での見え方（8項目）
 
 # Windows経路（テプラ クリエイター WebAPI）
 python3 fake_webapi.py &    # 偽の通信モジュールを立てる
-python3 wintest.py          # 21項目
+python3 wintest.py          # 25項目
+python3 usbtest.py          # USB優先とBluetoothへの切替（17項目）
 pkill -f fake_webapi.py
 ```
 
@@ -52,6 +53,7 @@ pkill -f fake_webapi.py
 | `goodsprinttest.py` | 用品は登録時に出ないこと／選んだものだけ発行されること／何度でも出せること／魚のまとめ印刷に混ざらないこと |
 | `labeltest.py` | ラベルの余白設定／Android・Windows双方への反映／古いアプリでも動くこと／ランクを選ぶと数量へ進むこと |
 | `blanktest.py` | 中身の無いラベルを送らないこと／白紙の画像を作らないこと／二重に印刷しないこと |
+| `usbtest.py` | USB機を優先して選ぶこと／印刷に失敗したらBluetoothへ切り替えること／余白が二重にかからないこと／テープの切り方 |
 | `phonetest.py` | iPhone SE・iPhone 15・Pixel 8・360px端末で、横にはみ出さないか／指で押せる大きさか |
 | `fake_webapi.py` | Windowsの通信モジュール（localhost:29108）を真似たもの。送られた画像を `/tmp/fake_tepra/` に保存する |
 | `wintest.py` | Windows経路：経路の判定／ラベル画像の大きさ／印刷パラメータ／まとめ印刷／モジュール停止時の扱い |
