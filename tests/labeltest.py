@@ -78,4 +78,42 @@ r.check("ランクが決まる", b.ev("regSel.rank"), "上物")
 r.check("数量へ進む処理が走る", b.ev("window.__jumped"), 1)
 r.expect("数量の枠が光る（一瞬）", True, "光らせて場所を知らせる")
 
+print("■ 文字の大きさ（読みやすさ）")
+def band_heights(b64):
+    import base64 as _b, io as _io
+    from PIL import Image as _I
+    im = _I.open(_io.BytesIO(_b.b64decode(b64))).convert("L")
+    w, h = im.size; px = im.load()
+    rows = [any(px[x, y] < 128 for x in range(0, w, 2)) for y in range(h)]
+    out, st = [], None
+    for y, on in enumerate(rows):
+        if on and st is None: st = y
+        if not on and st is not None: out.append(y - st); st = None
+    if st is not None: out.append(h - st)
+    return out
+
+b.ev("setTepraRows(3); setTepraMinLenRatio(3.5)"); time.sleep(0.4)
+h3 = band_heights(b.ev("TepraWin.makePng(fitLabelRows(['忘却の翼','通常 雄5 雌8','MD-260902-004']), 128)"))
+r.expect("3行でも品種名は6mm以上", h3 and h3[0] >= 42, f"{h3[0]}ドット = {h3[0]/180*25.4:.1f}mm")
+r.expect("3行の管理番号も3.5mm以上", len(h3) >= 3 and h3[2] >= 25, f"{h3[-1]}ドット = {h3[-1]/180*25.4:.1f}mm")
+
+b.ev("setTepraRows(2)"); time.sleep(0.4)
+lines2 = b.ev("fitLabelRows(['忘却の翼','通常 雄5 雌8','MD-260902-004'])")
+r.check("2行にまとまる", len(lines2 or []), 2)
+r.check("1行目は品種名のまま", (lines2 or [""])[0], "忘却の翼")
+r.expect("2行目に数量と管理番号が入る",
+         "雄5" in (lines2 or ["",""])[1] and "MD-260902-004" in (lines2 or ["",""])[1], str(lines2))
+h2 = band_heights(b.ev("TepraWin.makePng(fitLabelRows(['忘却の翼','通常 雄5 雌8','MD-260902-004']), 128)"))
+r.expect("2行にすると文字が大きくなる", h2[0] > h3[0] and h2[1] > h3[1],
+         f"3行 {h3[0]}/{h3[1]}ドット → 2行 {h2[0]}/{h2[1]}ドット")
+r.expect("2行目でも6mm以上", h2[1] >= 42, f"{h2[1]}ドット = {h2[1]/180*25.4:.1f}mm")
+
+print("■ 長さの選択")
+b.ev("setTepraRows(3); setTepraMinLenRatio(2.5)"); time.sleep(0.3)
+w25 = b.ev("(async()=>{const b64=TepraWin.makePng(['あ','い','う'],128);const bin=atob(b64);const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);const m=await createImageBitmap(new Blob([u],{type:'image/png'}));return m.width;})()")
+b.ev("setTepraMinLenRatio(6)"); time.sleep(0.3)
+w6 = b.ev("(async()=>{const b64=TepraWin.makePng(['あ','い','う'],128);const bin=atob(b64);const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);const m=await createImageBitmap(new Blob([u],{type:'image/png'}));return m.width;})()")
+r.expect("長さを変えられる", w6 > w25, f"ふつう {w25}px → いちばん長い {w6}px")
+r.expect("画面から選べる", b.ev("!!document.getElementById('tepraLen')") and b.ev("!!document.getElementById('tepraRows')"), "")
+
 b.close(); r.finish()

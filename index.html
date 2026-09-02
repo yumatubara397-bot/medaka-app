@@ -5355,6 +5355,36 @@ function setTepraCutMode(v){
   renderTepraBar();
 }
 
+// ラベルの並べ方。3=3行（今までどおり） / 2=2行（文字が大きい）
+const TEPRA_ROWS_KEY = 'medaka_tepra_rows';
+function tepraRows(){
+  const v = parseInt(localStorage.getItem(TEPRA_ROWS_KEY) || '', 10);
+  return v === 2 ? 2 : 3;
+}
+function setTepraRows(v){
+  localStorage.setItem(TEPRA_ROWS_KEY, String(v === 2 ? 2 : 3));
+  renderTepraBar();
+}
+
+/** 設定に合わせて行をまとめる。2行にすると1行あたりが大きくなる */
+function fitLabelRows(lines){
+  const src = (lines || []).map(t => String(t || '').trim()).filter(Boolean);
+  if(tepraRows() !== 2 || src.length <= 2) return src;
+  // 1行目はそのまま、残りを1行にまとめる
+  return [src[0], src.slice(1).join('  ')];
+}
+
+// ラベルの長さ。テープ幅の何倍を最低とするか
+const TEPRA_LEN_KEY = 'medaka_tepra_len';
+function tepraMinLenRatio(){
+  const v = parseFloat(localStorage.getItem(TEPRA_LEN_KEY) || '');
+  return Number.isFinite(v) ? Math.max(1.5, Math.min(8, v)) : 3.5;
+}
+function setTepraMinLenRatio(v){
+  localStorage.setItem(TEPRA_LEN_KEY, String(Math.max(1.5, Math.min(8, +v || 3.5))));
+  renderTepraBar();
+}
+
 function setTepraMarginMM(v){
   localStorage.setItem(TEPRA_MARGIN_KEY, String(Math.max(0, Math.min(20, +v || 0))));
   renderTepraBar();
@@ -5467,21 +5497,23 @@ const TepraWin = {
     // 余白は本体側(marginLeftRight)で付ける。ここで足すと二重になり、
     // 白い部分が倍になってしまう
     const pad = 12;
-    const gap = heightDots * 0.10;
-    const weights = lines.map((l, i) => i === 0 ? 1.5 : 1.0);
+    // 行間を詰めて、そのぶん文字を大きくする
+    const gap = heightDots * 0.03;
+    const weights = lines.map((l, i) => i === 0 ? 1.45 : 1.0);
     const total = weights.reduce((a, b) => a + b, 0);
     const usable = heightDots - gap * (lines.length - 1);
     const hs = weights.map(w => usable * w / total);
 
     const ctx0 = cv.getContext('2d');
+    // 行の高さいっぱいまで使う（0.86 → 0.98）
     const fonts = lines.map((t, i) =>
-      `${i === 0 ? '700' : '400'} ${Math.round(hs[i] * 0.86)}px "Noto Sans JP", sans-serif`);
+      `${i === 0 ? '700' : '500'} ${Math.round(hs[i] * 0.98)}px "Noto Sans JP", sans-serif`);
     let content = 0;
     lines.forEach((t, i) => { ctx0.font = fonts[i]; content = Math.max(content, ctx0.measureText(t).width); });
 
     // 短すぎるラベルは、印刷されずテープだけ出てしまうことがある。
     // テープ幅の2.5倍を最低の長さとして確保する
-    const minWidth = Math.ceil(heightDots * 2.5);
+    const minWidth = Math.ceil(heightDots * tepraMinLenRatio());
     cv.width = Math.ceil(Math.max(minWidth, content + pad * 2));
     cv.height = heightDots;
     const ctx = cv.getContext('2d');
@@ -5663,7 +5695,7 @@ const TepraLink = {
     const labels = [];
     const empty = [];
     (items || []).forEach(it => {
-      const lines = labelLinesOf(it);
+      const lines = fitLabelRows(labelLinesOf(it));
       if(lines.length) labels.push({ lines });
       else empty.push(it.controlNo || '(番号なし)');
     });
@@ -5756,6 +5788,20 @@ async function renderTepraBar(){
       <span>余白</span>
       <input type="number" id="tepraMargin" min="0" max="20" step="1" value="${tepraMarginMM()}">
       <span>mm</span></label>
+    <label class="tepra-auto" title="2行にすると文字が大きくなります">
+      <span>行数</span>
+      <select id="tepraRows">
+        <option value="3" ${tepraRows() === 3 ? 'selected' : ''}>3行</option>
+        <option value="2" ${tepraRows() === 2 ? 'selected' : ''}>2行（大きい）</option>
+      </select></label>
+    <label class="tepra-auto" title="大きくするとラベルが長くなります">
+      <span>長さ</span>
+      <select id="tepraLen">
+        <option value="2.5" ${tepraMinLenRatio() === 2.5 ? 'selected' : ''}>ふつう</option>
+        <option value="3.5" ${tepraMinLenRatio() === 3.5 ? 'selected' : ''}>長め</option>
+        <option value="4.5" ${tepraMinLenRatio() === 4.5 ? 'selected' : ''}>もっと長く</option>
+        <option value="6" ${tepraMinLenRatio() === 6 ? 'selected' : ''}>いちばん長い</option>
+      </select></label>
     <label class="tepra-auto" title="白いテープが余分に出るときは「最後に1回」を試してください">
       <span>切り方</span>
       <select id="tepraCut">
@@ -5765,6 +5811,14 @@ async function renderTepraBar(){
       </select></label>
     <button id="regTepraConnect" class="btn btn-ghost btn-sm">${on ? '接続し直す' : '接続する'}</button>`;
   $('#tepraAuto').onchange = (e) => setTepraAuto(e.target.checked);
+  $('#tepraRows').onchange = (e) => {
+    setTepraRows(+e.target.value);
+    toast('ラベルの行数を変えました', 'ok');
+  };
+  $('#tepraLen').onchange = (e) => {
+    setTepraMinLenRatio(e.target.value);
+    toast('ラベルの長さを変えました', 'ok');
+  };
   $('#tepraCut').onchange = (e) => {
     setTepraCutMode(+e.target.value);
     toast('テープの切り方を変えました', 'ok');
@@ -5772,6 +5826,14 @@ async function renderTepraBar(){
   $('#tepraMargin').onchange = (e) => {
     setTepraMarginMM(e.target.value);
     toast(`ラベルの余白を ${tepraMarginMM()}mm にしました`, 'ok');
+  };
+  $('#tepraRows').onchange = (e) => {
+    setTepraRows(+e.target.value);
+    toast('ラベルの行数を変えました', 'ok');
+  };
+  $('#tepraLen').onchange = (e) => {
+    setTepraMinLenRatio(e.target.value);
+    toast('ラベルの長さを変えました', 'ok');
   };
   $('#tepraCut').onchange = (e) => {
     setTepraCutMode(+e.target.value);
