@@ -28,7 +28,7 @@ b.ev("setTepraMarginMM(0)"); time.sleep(0.4)
 
 print("■ Androidへ余白を渡す")
 b.ev("""{ regSel.mode='fish'; regSel.breed=regMasters().breeds.find(x=>x.name==='幹之');
-  regSel.rank='特上'; regSel.qtyMode='pair'; regSel.qtyN=1; regSel.step=3; renderRegisterPanel(); }""")
+  regSel.rank='特上'; regSel.qtyMode='pair'; regSel.qtyN=1; regSel.step=4; renderRegisterPanel(); }""")
 time.sleep(0.5)
 b.ev("window.__sent=[]; document.getElementById('regDoRegister').click()"); time.sleep(1.8)
 r.check("余白つきで送る", b.ev("window.__sent[0].m"), 0)
@@ -66,17 +66,18 @@ size0 = b.ev("""(async()=>{ const b64=TepraWin.makePng(['幹之','特上 1ペア
   return {w:bmp.width,h:bmp.height}; })()""")
 r.check("画像の幅は余白で変わらない（本体側で付けるため）", size["w"], size0["w"])
 
-print("■ ランクを選ぶと数量へ進む")
+print("■ ランクを選ぶと数量の項目へ自動で進む")
 b.ev("""{ regSel.mode='fish'; regSel.breed=regMasters().breeds.find(x=>x.name==='夜桜');
-   regSel.step=2; renderRegisterPanel(); }""")
+   regSel.rank=''; regSel.step=2; renderRegisterPanel(); }""")
 time.sleep(0.8)
-r.expect("数量の見出しに目印がある", b.ev("!!document.getElementById('regQtyTitle')"), "")
-b.ev("window.__jumped=0; const _j=jumpToQuantity; jumpToQuantity=()=>{window.__jumped++; return _j();};")
+r.check("いまはランクの画面", b.ev("regSel.step"), 2)
+r.expect("ランクのホイールが出ている", b.ev("!!document.getElementById('wheelRank')"), "")
 b.ev("[...document.querySelectorAll('#wheelRank .wheel-item')].find(e=>e.textContent==='上物').click()")
-time.sleep(0.8)
+time.sleep(1.0)
 r.check("ランクが決まる", b.ev("regSel.rank"), "上物")
-r.check("数量へ進む処理が走る", b.ev("window.__jumped"), 1)
-r.expect("数量の枠が光る（一瞬）", True, "光らせて場所を知らせる")
+r.check("数量の画面（③）へ進む", b.ev("regSel.step"), 3)
+r.expect("数量のホイールが出ている", b.ev("!!document.getElementById('wheelQty')"), "")
+r.expect("ランクのホイールはもう無い", not b.ev("!!document.getElementById('wheelRank')"), "")
 
 print("■ 文字の大きさ（読みやすさ）")
 def band_heights(b64):

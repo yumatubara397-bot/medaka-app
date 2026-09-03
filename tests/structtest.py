@@ -32,11 +32,13 @@ FUNCS = [
   "pushGoodsPhotos","ensureThumb",
   # 拡大・やり直し
   "openLightbox","closeLightbox","renderLightbox","applyLbSize","syncZoomBar","lbVisibleRect",
-  "lbSaveCrop","redoOnePhoto","addRedoReason","redoTopReasons","jumpToQuantity",
+  "lbSaveCrop","redoOnePhoto","addRedoReason","redoTopReasons",
   # 出品
   "buildTitle","planImages","buildAuctownExport","validateForExport","buildTepraCsv","exportTepraCsv",
   # ホイール・かな
   "wheelHtml","bindWheel","kanaGroupOf","estimateReading","normKana","regRange",
+  "regSteps","regConfirmStep","regQtyStep","regRankHtml","bindRegRank","regQtyHtml","bindRegQty",
+  "bindGoodsFixed","warmUpTepra",
 ]
 missing = [f for f in FUNCS if has(f) != "function"]
 r.expect(f"{len(FUNCS)}個の関数がすべてある", not missing, "無い: " + ", ".join(missing) if missing else "")
@@ -67,7 +69,7 @@ im = [i for i in IDS if not b.ev(f"!!document.getElementById('{i}')")]
 r.expect(f"{len(IDS)}個の部品がすべてある", not im, "無い: " + ", ".join(im) if im else "")
 
 print("■ 起動して例外が出ていないか")
-r.check("登録タブが描かれている", b.ev("document.querySelectorAll('#regSteps .reg-step').length"), 3)
+r.check("登録タブが描かれている（品種/ランク/数量/確認）", b.ev("document.querySelectorAll('#regSteps .reg-step').length"), 4)
 nBreeds = b.ev("document.querySelectorAll('#regBreedList button').length") or 0
 r.expect("品種が並んでいる", nBreeds > 0, str(nBreeds) + "件")
 

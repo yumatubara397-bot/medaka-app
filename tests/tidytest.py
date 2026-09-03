@@ -45,7 +45,7 @@ r.check("一覧も38件", b.ev("document.querySelectorAll('#regBreedList button'
 print("■ 消しても登録ずみの商品は残る")
 b.ev("""{ TepraLink._kind='none';
   regSel.breed=regMasters().breeds.find(x=>x.name==='幹之');
-  regSel.rank='特上'; regSel.qtyMode='pair'; regSel.qtyN=1; regSel.step=3; regDoRegister(); }""")
+  regSel.rank='特上'; regSel.qtyMode='pair'; regSel.qtyN=1; regSel.step=4; regDoRegister(); }""")
 time.sleep(1.0)
 b.ev("[...document.querySelectorAll('#regBreedList button.tidy')].find(x=>x.querySelector('.bn').textContent==='幹之').click()")
 time.sleep(0.4)

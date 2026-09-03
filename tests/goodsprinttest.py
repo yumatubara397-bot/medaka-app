@@ -21,7 +21,7 @@ b.ev("""{ regSel.mode='goods';
     regSel.qtyN=q; regSel.step=3; regDoRegister(); }); }""")
 time.sleep(1.5)
 b.ev("""{ regSel.mode='fish'; regSel.breed=regMasters().breeds.find(x=>x.name==='幹之');
-  regSel.rank='特上'; regSel.qtyMode='pair'; regSel.qtyN=1; regSel.step=3; regDoRegister(); }""")
+  regSel.rank='特上'; regSel.qtyMode='pair'; regSel.qtyN=1; regSel.step=4; regDoRegister(); }""")
 time.sleep(1.5)
 r.check("4件登録", b.ev("regItems().length"), 4)
 r.check("登録時に出たのは魚の1枚だけ", b.ev("window.__sent.length"), 1)

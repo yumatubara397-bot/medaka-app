@@ -7,9 +7,11 @@ today = datetime.date.today().strftime("%y%m%d")
 b.ev("localStorage.clear();switchTab('register');renderRegisterPanel()"); time.sleep(0.8)
 
 print("■ ステップは3つになった")
-r.check("ステップ数", b.ev("document.querySelectorAll('#regSteps .reg-step').length"), 3)
-r.expect("②の名前", (b.ev("document.querySelectorAll('#regSteps .reg-step')[1].textContent.replace(/\\s+/g,'')") or "").startswith("2ランク・数量"),
+r.check("ステップ数（品種/ランク/数量/確認）", b.ev("document.querySelectorAll('#regSteps .reg-step').length"), 4)
+r.expect("②はランク", (b.ev("document.querySelectorAll('#regSteps .reg-step')[1].textContent.replace(/\\s+/g,'')") or "").startswith("2ランク"),
          b.ev("document.querySelectorAll('#regSteps .reg-step')[1].textContent.replace(/\\s+/g,'')"))
+r.expect("③は数量", (b.ev("document.querySelectorAll('#regSteps .reg-step')[2].textContent.replace(/\\s+/g,'')") or "").startswith("3数量"),
+         b.ev("document.querySelectorAll('#regSteps .reg-step')[2].textContent.replace(/\\s+/g,'')"))
 
 print("■ 品種を選ぶと②へ")
 b.ev("[...document.querySelectorAll('#regBreedList button')].find(x=>x.querySelector('.bn').textContent==='幹之').click()")
@@ -20,11 +22,12 @@ print("■ ランクのホイール")
 ranks = b.ev("[...document.querySelectorAll('#wheelRank .wheel-item')].map(e=>e.textContent)")
 r.check("ランクの中身", ranks, ["特上","上物","通常","若魚"])
 r.check("最初は特上", b.ev("regSel.rank"), "特上")
-b.ev("[...document.querySelectorAll('#wheelRank .wheel-item')].find(e=>e.textContent==='上物').click()"); time.sleep(0.5)
+b.ev("[...document.querySelectorAll('#wheelRank .wheel-item')].find(e=>e.textContent==='上物').click()"); time.sleep(0.8)
 r.check("押して選べる", b.ev("regSel.rank"), "上物")
-r.expect("選んだ行が強調される",
-         "on" in (b.ev("[...document.querySelectorAll('#wheelRank .wheel-item')].find(e=>e.textContent==='上物').className") or ""),
-         b.ev("[...document.querySelectorAll('#wheelRank .wheel-item')].find(e=>e.textContent==='上物').className"))
+
+print("■ ランクを選ぶと自動で数量へ進む")
+r.check("数量の画面（③）へ進む", b.ev("regSel.step"), 3)
+r.expect("ランクのホイールは無い", not b.ev("!!document.getElementById('wheelRank')"), "")
 
 print("■ 数量：ペア")
 r.check("最初はペア", b.ev("regSel.qtyMode"), "pair")
@@ -48,12 +51,15 @@ b.ev("[...document.querySelectorAll('#wheelFemale .wheel-item')].find(e=>e.textC
 r.check("雄2 雌5 になる", b.ev("regQuantityText()"), "雄2 雌5")
 r.expect("いま選んでいる内容に出る", "雄2 雌5" in (b.ev("document.getElementById('regStep2Now').textContent") or ""),
          b.ev("document.getElementById('regStep2Now').textContent"))
-r.expect("ステップの見出しにも出る", "雄2 雌5" in (b.ev("document.querySelectorAll('#regSteps .reg-step')[1].textContent") or ""),
+r.expect("ステップの見出しにも出る（③数量）",
+         "雄2 雌5" in (b.ev("document.querySelectorAll('#regSteps .reg-step')[2].textContent") or ""),
+         b.ev("document.querySelectorAll('#regSteps .reg-step')[2].textContent").strip())
+r.expect("②にはランクが出る", "上物" in (b.ev("document.querySelectorAll('#regSteps .reg-step')[1].textContent") or ""),
          b.ev("document.querySelectorAll('#regSteps .reg-step')[1].textContent").strip())
 
 print("■ 確認へ進んで登録")
 b.ev("document.getElementById('regStep2Next').click()"); time.sleep(0.6)
-r.check("ステップ③", b.ev("regSel.step"), 3)
+r.check("確認（④）へ", b.ev("regSel.step"), 4)
 r.expect("確認に内容が出る",
          all(x in (b.ev("document.getElementById('regStepBody').textContent") or "") for x in ["幹之","上物","雄2 雌5","MD-"]),
          (b.ev("document.getElementById('regStepBody').textContent") or "").replace("\n"," ")[:90])

@@ -45,7 +45,7 @@ print("■ 登録するとフォルダができる")
 b.ev("""{ TepraLink._kind='none';
   [['幹之','特上'],['夜桜','上物']].forEach(([nm,rk])=>{
     regSel.breed=regMasters().breeds.find(x=>x.name===nm);
-    regSel.rank=rk; regSel.qtyMode='pair'; regSel.qtyN=1; regSel.step=3; regDoRegister(); }); }""")
+    regSel.rank=rk; regSel.qtyMode='pair'; regSel.qtyN=1; regSel.step=4; regDoRegister(); }); }""")
 time.sleep(1.5)
 dirs = b.ev("Object.keys(window.__fb.dirs)")
 r.check("2つできた", len(dirs or []), 2)

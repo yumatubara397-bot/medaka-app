@@ -16,7 +16,7 @@ b.ev("renderRegisterPanel()"); time.sleep(1.0)
 
 print("■ 魚は今までどおり出る")
 b.ev("""{ regSel.mode='fish'; regSel.breed=regMasters().breeds.find(x=>x.name==='幹之');
-  regSel.rank='特上'; regSel.qtyMode='pair'; regSel.qtyN=2; regSel.step=3; renderRegisterPanel(); }""")
+  regSel.rank='特上'; regSel.qtyMode='pair'; regSel.qtyN=2; regSel.step=4; renderRegisterPanel(); }""")
 time.sleep(0.5)
 b.ev("document.getElementById('regDoRegister').click()"); time.sleep(1.5)
 r.check("魚は1枚出る", b.ev("window.__sent.length"), 1)

@@ -7,7 +7,7 @@ b.ev("localStorage.clear();switchTab('register');renderRegisterPanel()"); time.s
 b.ev("""{ TepraLink._kind='none';
   [['幹之','特上'],['夜桜','上物']].forEach(([nm,rk])=>{
     regSel.breed=regMasters().breeds.find(x=>x.name===nm);
-    regSel.rank=rk; regSel.qtyMode='pair'; regSel.qtyN=2; regSel.step=3; regDoRegister(); }); }""")
+    regSel.rank=rk; regSel.qtyMode='pair'; regSel.qtyN=2; regSel.step=4; regDoRegister(); }); }""")
 time.sleep(1.2)
 b.ev("""{ const mk=(c)=>{const cv=document.createElement('canvas');cv.width=800;cv.height=600;
     const x=cv.getContext('2d');x.fillStyle=c;x.fillRect(0,0,800,600);

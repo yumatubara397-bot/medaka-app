@@ -22,7 +22,7 @@ r.check("最初からチェック済み", b.ev("!!(document.getElementById('tepr
 
 print("■ 登録を押すとすぐ出る（魚）")
 b.ev("""{ regSel.mode='fish'; regSel.breed=regMasters().breeds.find(x=>x.name==='幹之');
-  regSel.rank='特上'; regSel.qtyMode='pair'; regSel.qtyN=2; regSel.step=3; renderRegisterPanel(); }""")
+  regSel.rank='特上'; regSel.qtyMode='pair'; regSel.qtyN=2; regSel.step=4; renderRegisterPanel(); }""")
 time.sleep(0.6)
 b.ev("document.getElementById('regDoRegister').click()"); time.sleep(1.5)
 r.check("1枚出た", b.ev("window.__sent.length"), 1)
@@ -32,7 +32,7 @@ r.check("印刷済みになる", b.ev("regUnprinted().length"), 0)
 print("■ 経路の判定がまだでも出る")
 b.ev("TepraLink._kind = null; window.__sent = [];")
 b.ev("""{ regSel.breed=regMasters().breeds.find(x=>x.name==='夜桜');
-  regSel.rank='上物'; regSel.qtyN=1; regSel.step=3; renderRegisterPanel(); }""")
+  regSel.rank='上物'; regSel.qtyN=1; regSel.step=4; renderRegisterPanel(); }""")
 time.sleep(0.5)
 b.ev("document.getElementById('regDoRegister').click()"); time.sleep(2.0)
 r.check("判定してから出す", b.ev("window.__sent.length"), 1)
@@ -60,7 +60,7 @@ print("■ 切り替えを外すと出ない")
 b.ev("window.__sent = []; setTepraAuto(false)"); time.sleep(0.5)
 r.check("設定が切れる", b.ev("tepraAutoOn()"), False)
 b.ev("""{ regSel.mode='fish'; regSel.breed=regMasters().breeds.find(x=>x.name==='オロチ');
-  regSel.rank='通常'; regSel.qtyN=1; regSel.step=3; renderRegisterPanel(); }""")
+  regSel.rank='通常'; regSel.qtyN=1; regSel.step=4; renderRegisterPanel(); }""")
 time.sleep(0.5)
 b.ev("document.getElementById('regDoRegister').click()"); time.sleep(1.5)
 r.check("出ない", b.ev("window.__sent.length"), 0)
@@ -73,7 +73,7 @@ r.expect("設定は覚えている", b.ev("localStorage.getItem('medaka_tepra_au
 print("■ テプラが無い端末では静かに何もしない")
 b.ev("window.TepraBridge = undefined; TepraLink._kind = null; window.__sent = [];")
 b.ev("""{ regSel.breed=regMasters().breeds.find(x=>x.name==='紅白');
-  regSel.rank='通常'; regSel.qtyN=1; regSel.step=3; renderRegisterPanel(); }""")
+  regSel.rank='通常'; regSel.qtyN=1; regSel.step=4; renderRegisterPanel(); }""")
 time.sleep(0.5)
 b.ev("document.getElementById('regDoRegister').click()"); time.sleep(1.5)
 r.check("登録はできる", (b.ev("regItems()") or [])[-1]["variety"], "紅白")

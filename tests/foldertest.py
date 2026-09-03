@@ -9,7 +9,7 @@ b.ev("localStorage.clear();switchTab('register');renderRegisterPanel()"); time.s
 b.ev("""{ TepraLink._kind='none';
   [['幹之','特上'],['夜桜','上物'],['オロチ','通常']].forEach(([nm,rk])=>{
     regSel.breed=regMasters().breeds.find(x=>x.name===nm);
-    regSel.rank=rk; regSel.qtyMode='pair'; regSel.qtyN=1; regSel.step=3; regDoRegister(); }); }""")
+    regSel.rank=rk; regSel.qtyMode='pair'; regSel.qtyN=1; regSel.step=4; regDoRegister(); }); }""")
 time.sleep(1.0)
 r.check("3件登録した", b.ev("regItems().length"), 3)
 

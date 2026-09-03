@@ -21,12 +21,14 @@ r.expect("切り替えがある", b.ev("document.querySelectorAll('#regStepBody 
          b.ev("document.querySelector('#regStepBody .reg-mode').textContent"))
 r.check("最初はメダカ", b.ev("regSel.mode"), "fish")
 r.check("メダカは40件", b.ev("document.querySelectorAll('#regBreedList button').length"), 40)
+r.check("メダカは4ステップ", b.ev("document.querySelectorAll('#regSteps .reg-step').length"), 4)
 b.ev("[...document.querySelectorAll('#regStepBody .reg-mode button')].find(x=>x.textContent.includes('用品')).click()")
 time.sleep(0.8)
 r.check("用品に切り替わる", b.ev("regSel.mode"), "goods")
 r.check("用品23件が並ぶ", b.ev("document.querySelectorAll('#regBreedList button').length"), 23)
 r.expect("見出しが商品になる", "商品を選ぶ" in (b.ev("document.querySelector('#regStepBody .card-title').textContent") or ""),
          b.ev("document.querySelector('#regStepBody .card-title').textContent"))
+r.check("用品は3ステップ", b.ev("document.querySelectorAll('#regSteps .reg-step').length"), 3)
 r.expect("ステップ名も変わる",
          "商品" in (b.ev("document.querySelectorAll('#regSteps .reg-step')[0].textContent") or "")
          and "数量" in (b.ev("document.querySelectorAll('#regSteps .reg-step')[1].textContent") or ""),
@@ -79,7 +81,7 @@ r.expect("出品タイトルは用品向けになる",
 # 魚のほうは従来どおり
 b.ev("""{ switchTab('register'); regSel.mode='fish';
   regSel.breed=regMasters().breeds.find(x=>x.name==='幹之');
-  regSel.rank='特上'; regSel.qtyMode='pair'; regSel.qtyN=2; regSel.step=3; regDoRegister();
+  regSel.rank='特上'; regSel.qtyMode='pair'; regSel.qtyN=2; regSel.step=4; regDoRegister();
   photos.push({name:'b.jpg',handle:null,blobUrl:null});
   switchTab('import'); document.getElementById('assignPerItem').value=1; assignPhotosToRegistered(); }""")
 time.sleep(1.2)

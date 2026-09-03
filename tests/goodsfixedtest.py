@@ -40,7 +40,7 @@ r.check("番号は同じ", b.ev("regItems()[0].controlNo"), hotei_no)
 
 print("■ 魚の通し番号は用品に食われない")
 b.ev("""{ regSel.mode='fish'; regSel.breed=regMasters().breeds.find(x=>x.name==='幹之');
-  regSel.rank='特上'; regSel.qtyMode='pair'; regSel.qtyN=1; regSel.step=3; regDoRegister(); }""")
+  regSel.rank='特上'; regSel.qtyMode='pair'; regSel.qtyN=1; regSel.step=4; regDoRegister(); }""")
 time.sleep(0.8)
 fish = [x for x in b.ev("regItems().map(x=>({no:x.controlNo,kind:x.kind}))") if x["kind"] != "goods"]
 r.check("魚は001から", fish[0]["no"], f"MD-{today}-001")

@@ -6047,8 +6047,12 @@ function regQuantityText(){
 function regSteps(){
   return regIsGoods()
     ? [{ n:1, label:'商品' }, { n:2, label:'数量' }, { n:3, label:'確認' }]
-    : [{ n:1, label:'品種' }, { n:2, label:'ランク・数量' }, { n:3, label:'確認' }];
+    : [{ n:1, label:'品種' }, { n:2, label:'ランク' }, { n:3, label:'数量' }, { n:4, label:'確認' }];
 }
+/** 確認の画面が何番目か（メダカは4番目、用品は3番目） */
+function regConfirmStep(){ return regIsGoods() ? 3 : 4; }
+/** 数量の画面が何番目か */
+function regQtyStep(){ return regIsGoods() ? 2 : 3; }
 
 function renderRegisterPanel(){
   const m = regMasters();
@@ -6065,8 +6069,10 @@ function renderRegisterPanel(){
 
 /** 上の進み具合。押すとそこまで戻れる */
 function renderRegSteps(){
-  const both = regIsGoods() ? regSel.qty : [regSel.rank, regSel.qty].filter(Boolean).join(' ');
-  const chosen = { 1: regSel.breed ? regSel.breed.name : '', 2: both, 3: '' };
+  const name = regSel.breed ? regSel.breed.name : '';
+  const chosen = regIsGoods()
+    ? { 1: name, 2: regSel.qty, 3: '' }
+    : { 1: name, 2: regSel.rank, 3: regSel.qty, 4: '' };
   $('#regSteps').innerHTML = regSteps().map(st => {
     const cls = st.n === regSel.step ? 'on' : (chosen[st.n] ? 'done' : '');
     const val = chosen[st.n] ? `<span class="v">${escapeHtml(chosen[st.n])}</span>` : '';
@@ -6081,8 +6087,9 @@ function renderRegSteps(){
 function renderRegStepBody(){
   const box = $('#regStepBody');
   if(regSel.step === 1){ box.innerHTML = regStep1Html(); bindRegStep1(); }
-  else if(regSel.step === 2){ box.innerHTML = regStep2Html(); bindRegStep2(); }
-  else { box.innerHTML = regStep4Html(); bindRegStep4(); }
+  else if(regSel.step === regConfirmStep()){ box.innerHTML = regStep4Html(); bindRegStep4(); }
+  else if(!regIsGoods() && regSel.step === 2){ box.innerHTML = regRankHtml(); bindRegRank(); }
+  else { box.innerHTML = regQtyHtml(); bindRegQty(); }
 }
 
 // --- ① 品種 ---
@@ -6324,21 +6331,90 @@ function bindWheel(id, items, current, onPick){
 }
 
 
-/** ランクを選んだあと、数量のところまで自動で送る */
-function jumpToQuantity(){
-  const title = $('#regQtyTitle');
-  const wheel = $('#wheelQty') || $('#wheelMale');
-  if(!title) return;
-  title.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  // どこに来たか分かるよう、数量の枠を一瞬光らせる
-  const box = wheel ? wheel.closest('.wheels') : null;
-  if(box){
-    box.classList.add('flash');
-    setTimeout(() => box.classList.remove('flash'), 900);
+
+/** 用品の固定写真と管理番号の操作をつなぐ */
+function bindGoodsFixed(name){
+  goodsPhotoKeys(name).forEach(async k => {
+    const blob = await goodsPhotoGet(k);
+    const img = document.querySelector(`#goodsPhotos img[data-key="${CSS.escape(k)}"]`);
+    if(blob && img) img.src = URL.createObjectURL(blob);
+  });
+  $$('#goodsPhotos .gp-del').forEach(b => {
+    b.onclick = async () => {
+      if(!confirm('この写真を消しますか？')) return;
+      await goodsRemovePhoto(name, b.dataset.k);
+      renderRegStepBody();
+      toast('写真を消しました', 'ok');
+    };
+  });
+  if($('#goodsPhotoAdd')){
+    $('#goodsPhotoAdd').onclick = () => $('#goodsPhotoInput').click();
+    $('#goodsPhotoInput').onchange = async (e) => {
+      const files = Array.from(e.target.files || []);
+      e.target.value = '';
+      if(!files.length) return;
+      const n = await goodsAddPhotos(name, files);
+      renderRegStepBody();
+      toast(`${n}枚を登録しました`, 'ok');
+    };
+  }
+  if($('#goodsNoEdit')){
+    $('#goodsNoEdit').onclick = () => {
+      const g = goodsOf(name) || {};
+      const v = prompt('この用品の管理番号を入れてください', g.fixedNo || '');
+      if(v === null) return;
+      const r = setGoodsNumber(name, v);
+      if(!r.ok){ toast(r.error, 'err'); return; }
+      renderRegStepBody();
+      toast('管理番号を変えました', 'ok');
+    };
   }
 }
 
-function regStep2Html(){
+/** ② ランクを選ぶ（選んだら自動で数量へ進む） */
+function regRankHtml(){
+  const ranks = regMasters().ranks;
+  return `<h3 class="card-title">ランクを選ぶ</h3>
+    <p class="hint" style="margin:0 0 12px">選ぶと、そのまま数量に進みます。</p>
+    <div class="wheels">${wheelHtml('wheelRank', '', ranks, regSel.rank || ranks[0])}</div>
+    <div class="reg-add-row">
+      <button id="regRankAdd" class="btn btn-ghost">＋ ランクを追加する</button>
+      <button id="regRankNext" class="btn btn-primary">数量へ進む →</button>
+    </div>`;
+}
+
+function bindRegRank(){
+  const ranks = regMasters().ranks;
+  if(!regSel.rank) regSel.rank = ranks[0];
+
+  bindWheel('wheelRank', ranks, regSel.rank, v => {
+    const changed = regSel.rank !== v;
+    regSel.rank = v;
+    renderRegSteps();
+    if(changed){
+      // 選んだら、そのまま数量の項目へ進む
+      regSel.step = regQtyStep();
+      renderRegisterPanel();
+    }
+  });
+
+  $('#regRankAdd').onclick = () => {
+    const v = prompt('追加するランクを入力してください');
+    if(!v || !v.trim()) return;
+    if(regAddSimple('ranks', v)){
+      regSel.rank = v.trim();
+      regSel.step = regQtyStep();
+      renderRegisterPanel();
+    }
+  };
+  $('#regRankNext').onclick = () => {
+    regSel.step = regQtyStep();
+    renderRegisterPanel();
+  };
+}
+
+/** ③ 数量を選ぶ（用品では②） */
+function regQtyHtml(){
   if(regIsGoods()){
     const g = goodsOf(regSel.breed ? regSel.breed.name : '') || {};
     const keys = g.photoKeys || [];
@@ -6369,27 +6445,18 @@ function regStep2Html(){
       </div>
       <button id="regStep2Next" class="btn btn-primary reg-next-step">確認へ進む →</button>`;
   }
-  const ranks = regMasters().ranks;
+
   const mode = regSel.qtyMode;
   const modeBtn = (key, label) =>
     `<button data-m="${key}" class="${mode === key ? 'on' : ''}">${escapeHtml(label)}</button>`;
-
   const qtyWheels = (mode === 'sex')
     ? wheelHtml('wheelMale', '雄', regRange(100), regSel.qtyMale)
       + wheelHtml('wheelFemale', '雌', regRange(100), regSel.qtyFemale)
     : wheelHtml('wheelQty', 'ペア数', regRange(100), regSel.qtyN);
 
-  return `<h3 class="card-title">ランクと数量を選ぶ</h3>
-    <div class="reg-sub-title">ランク</div>
-    <div class="wheels">${wheelHtml('wheelRank', '', ranks, regSel.rank || ranks[0])}</div>
-    <button id="regRankAdd" class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:16px">＋ ランクを追加する</button>
-
-    <div class="reg-sub-title" id="regQtyTitle">数量</div>
-    <div class="qty-modes">
-      ${modeBtn('pair', 'ペア')}${modeBtn('sex', '雄・雌べつべつ')}
-    </div>
+  return `<h3 class="card-title">数量を選ぶ</h3>
+    <div class="qty-modes">${modeBtn('pair', 'ペア')}${modeBtn('sex', '雄・雌べつべつ')}</div>
     <div class="wheels">${qtyWheels}</div>
-
     <div class="reg-summary">
       <div class="reg-sum-line"><span>いま選んでいる内容</span>
         <b id="regStep2Now">${escapeHtml([regSel.rank, regQuantityText()].filter(Boolean).join('　'))}</b></div>
@@ -6397,72 +6464,26 @@ function regStep2Html(){
     <button id="regStep2Next" class="btn btn-primary reg-next-step">確認へ進む →</button>`;
 }
 
-function bindRegStep2(){
-  if(regIsGoods()){
-    const name = regSel.breed ? regSel.breed.name : '';
-    const refresh = () => {
-      const el = $('#regStep2Now');
-      if(el) el.textContent = regQuantityText();
-      renderRegSteps();
-    };
-    bindWheel('wheelQty', regRange(100), regSel.qtyN, v => { regSel.qtyN = +v; refresh(); });
-    $('#regStep2Next').onclick = () => { regSel.step = 3; renderRegisterPanel(); };
-
-    // 固定写真を読み込んで並べる
-    goodsPhotoKeys(name).forEach(async k => {
-      const blob = await goodsPhotoGet(k);
-      const img = document.querySelector(`#goodsPhotos img[data-key="${CSS.escape(k)}"]`);
-      if(blob && img) img.src = URL.createObjectURL(blob);
-    });
-    $$('#goodsPhotos .gp-del').forEach(b => {
-      b.onclick = async () => {
-        if(!confirm('この写真を消しますか？')) return;
-        await goodsRemovePhoto(name, b.dataset.k);
-        renderRegStepBody();
-        toast('写真を消しました', 'ok');
-      };
-    });
-    $('#goodsPhotoAdd').onclick = () => $('#goodsPhotoInput').click();
-    $('#goodsPhotoInput').onchange = async (e) => {
-      const files = Array.from(e.target.files || []);
-      e.target.value = '';
-      if(!files.length) return;
-      const n = await goodsAddPhotos(name, files);
-      renderRegStepBody();
-      toast(`${n}枚を登録しました`, 'ok');
-    };
-    $('#goodsNoEdit').onclick = () => {
-      const g = goodsOf(name) || {};
-      const v = prompt('この用品の管理番号を入れてください', g.fixedNo || '');
-      if(v === null) return;
-      const r = setGoodsNumber(name, v);
-      if(!r.ok){ toast(r.error, 'err'); return; }
-      renderRegStepBody();
-      toast('管理番号を変えました', 'ok');
-    };
-    return;
-  }
-  const ranks = regMasters().ranks;
-  if(!regSel.rank) regSel.rank = ranks[0];
-
+function bindRegQty(){
   const refresh = () => {
+    regSel.qty = regQuantityText();          // ステップの見出しにも今の値を出す
     const el = $('#regStep2Now');
-    if(el) el.textContent = [regSel.rank, regQuantityText()].filter(Boolean).join('　');
+    if(el){
+      el.textContent = regIsGoods() ? regSel.qty
+        : [regSel.rank, regSel.qty].filter(Boolean).join('　');
+    }
     renderRegSteps();
   };
 
-  bindWheel('wheelRank', ranks, regSel.rank, v => {
-    const changed = regSel.rank !== v;
-    regSel.rank = v;
-    refresh();
-    if(changed) jumpToQuantity();   // ランクを選んだら、そのまま数量へ進む
-  });
-
-  if(regSel.qtyMode === 'sex'){
-    bindWheel('wheelMale', regRange(100), regSel.qtyMale, v => { regSel.qtyMale = +v; regSel.qty = regQuantityText(); refresh(); });
-    bindWheel('wheelFemale', regRange(100), regSel.qtyFemale, v => { regSel.qtyFemale = +v; regSel.qty = regQuantityText(); refresh(); });
+  if(regIsGoods()){
+    const name = regSel.breed ? regSel.breed.name : '';
+    bindWheel('wheelQty', regRange(100), regSel.qtyN, v => { regSel.qtyN = +v; refresh(); });
+    bindGoodsFixed(name);
+  } else if(regSel.qtyMode === 'sex'){
+    bindWheel('wheelMale', regRange(100), regSel.qtyMale, v => { regSel.qtyMale = +v; refresh(); });
+    bindWheel('wheelFemale', regRange(100), regSel.qtyFemale, v => { regSel.qtyFemale = +v; refresh(); });
   } else {
-    bindWheel('wheelQty', regRange(100), regSel.qtyN, v => { regSel.qtyN = +v; regSel.qty = regQuantityText(); refresh(); });
+    bindWheel('wheelQty', regRange(100), regSel.qtyN, v => { regSel.qtyN = +v; refresh(); });
   }
   regSel.qty = regQuantityText();
 
@@ -6470,24 +6491,14 @@ function bindRegStep2(){
     b.onclick = () => {
       regSel.qtyMode = b.dataset.m;
       regSel.qty = regQuantityText();
-      renderRegStepBody();           // ホイールの数が変わるので描き直す
+      renderRegStepBody();
       renderRegSteps();
     };
   });
 
-  $('#regRankAdd').onclick = () => {
-    const v = prompt('追加するランクを入力してください');
-    if(!v || !v.trim()) return;
-    if(regAddSimple('ranks', v)){
-      regSel.rank = v.trim();
-      renderRegStepBody();
-      renderRegSteps();
-    }
-  };
-
   $('#regStep2Next').onclick = () => {
     regSel.qty = regQuantityText();
-    regSel.step = 3;
+    regSel.step = regConfirmStep();
     renderRegisterPanel();
   };
 }

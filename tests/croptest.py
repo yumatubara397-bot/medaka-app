@@ -8,7 +8,7 @@ b = Browser(9360, 1300, 1100); r = Report()
 b.ev("localStorage.clear();switchTab('register');renderRegisterPanel()"); time.sleep(0.8)
 b.ev("""{ TepraLink._kind='none';
   regSel.breed=regMasters().breeds.find(x=>x.name==='幹之');
-  regSel.rank='特上'; regSel.qtyMode='pair'; regSel.qtyN=1; regSel.step=3; regDoRegister(); }""")
+  regSel.rank='特上'; regSel.qtyMode='pair'; regSel.qtyN=1; regSel.step=4; regDoRegister(); }""")
 time.sleep(1.0)
 # 四隅と中央で色を変えた写真を作る（どこが切り取られたか分かるように）
 b.ev("""(async()=>{ const cv=document.createElement('canvas'); cv.width=1000; cv.height=1000;
