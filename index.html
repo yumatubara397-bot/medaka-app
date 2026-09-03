@@ -5492,7 +5492,12 @@ const TepraWin = {
    *   ③ オフラインの USB     ④ オフラインの Bluetooth
    * オフラインのものを先に選ぶと印刷できないので、まず「つながっているか」で分ける。
    */
-  async candidates(){
+  _candAt: 0,
+  async candidates(force){
+    // 直前に調べていれば、それを使う
+    if(!force && this.lastCandidates.length && (Date.now() - this._candAt) < this.MEMO_MS){
+      return this.lastCandidates.map(x => x.name);
+    }
     const list = await this.fetchJson('', null, 5000);
     if(!Array.isArray(list) || !list.length){
       this.lastError = (list && list.__err)
@@ -5504,29 +5509,45 @@ const TepraWin = {
     const tepra = names.filter(n => /TEPRA|テプラ|SR-|KING\s*JIM/i.test(n));
     const pool = tepra.length ? tepra : names;
 
-    const info = [];
-    for(const n of pool){
-      info.push({ name: n, bt: this.isBluetoothName(n), online: await this.isOnline(n) });
-    }
+    // 1台ずつ順番に待つと遅いので、まとめて同時に調べる
+    const info = await Promise.all(pool.map(async n => ({
+      name: n, bt: this.isBluetoothName(n), online: await this.isOnline(n)
+    })));
     const rank = x => (x.online ? 0 : 2) + (x.bt ? 1 : 0);
     info.sort((a, b) => rank(a) - rank(b));
     this.lastCandidates = info;
+    this._candAt = Date.now();
     return info.map(x => x.name);
   },
 
   lastCandidates: [],
 
+  // 調べた結果を少しの間だけ覚えておく。押すたびに問い合わせると遅いため
+  _memo: { at: 0, printer: '', tapeMM: 0, route: '' },
+  MEMO_MS: 60000,
+  memoFresh(){
+    return this._memo.printer && this._memo.printer === this.printerName
+           && (Date.now() - this._memo.at) < this.MEMO_MS;
+  },
+  forgetMemo(){ this._memo = { at: 0, printer: '', tapeMM: 0, route: '' }; },
+
   /** 使うプリンターを決める（つながっているもの→USBの順） */
-  async pick(){
-    const list = await this.candidates();
+  async pick(force){
+    const list = await this.candidates(force);
     if(!list.length) return null;
+    if(this.printerName !== list[0]) this.forgetMemo();
     this.printerName = list[0];
     return this.printerName;
   },
 
-  async status(){
+  async status(opt){
     if(!this.printerName && !(await this.pick())){
       return { ok:false, error: this.lastError || 'テプラが見つかりません（パソコンにプリンターとして入っていますか）' };
+    }
+    // 直前に調べた結果があれば、それを使う（印刷を待たせないため）
+    if(!(opt && opt.fresh) && this.memoFresh()){
+      return { ok:true, connected:true, printer:this.printerName,
+               tapeMM:this._memo.tapeMM, route:this._memo.route, memo:true };
     }
     const st = await this.fetchJson('/lwstatus/' + encodeURIComponent(this.printerName), null, 8000);
     if(st.__err) return { ok:false, error:'テプラと通信できませんでした（' + st.__err + '）' };
@@ -5535,6 +5556,7 @@ const TepraWin = {
     const c = (this.lastCandidates || []).find(x => x.name === this.printerName);
     const out = { ok:true, connected:true, printer:this.printerName, tapeMM:mm,
                   route: c ? (c.bt ? 'Bluetooth' : 'USB') : '' };
+    this._memo = { at: Date.now(), printer: this.printerName, tapeMM: mm, route: out.route };
     if(st.error) out.error = 'テプラのエラー（コード ' + st.error + '）';
     return out;
   },
@@ -5601,25 +5623,24 @@ const TepraWin = {
   async print(labels){
     const first = await this.printOnce(labels);
     if(first.ok || first.__noRetry) return first;
-    // USBが抜けている等で失敗したときは、次の候補（Bluetoothなど）に切り替えて1度だけやり直す
-    const list = await this.candidates();
+    // USBが抜けている等で失敗したときは、いったん覚えたことを捨てて調べ直し、
+    // 次の候補（Bluetoothなど）に切り替えて1度だけやり直す
+    this.forgetMemo();
+    const list = await this.candidates(true);
     const next = list.find(n => n !== this.printerName);
     if(!next) return first;
     this.printerName = next;
+    this.forgetMemo();
     const second = await this.printOnce(labels);
     if(second.ok) second.switched = next;
     return second.ok ? second : first;
   },
 
   async printOnce(labels){
+    // 印刷のたびに何度も問い合わせると遅くなるので、覚えている内容を使う。
+    // つながっているかは、プリンターを選ぶときに確認済み
     const st = await this.status();
     if(!st.ok) return st;
-    // オフラインのまま送ると、Windowsの印刷キューにたまって出てこない
-    if(!(await this.isOnline(this.printerName))){
-      return { ok:false,
-        error:'「' + this.printerName + '」がオフラインです。\n'
-              + 'テプラの電源とつなぎ方を確認してください' };
-    }
     const mm = st.tapeMM || 24;
     const dots = TEPRA_DOTS_5600P[mm] || 128;
 
@@ -5736,7 +5757,7 @@ const TepraLink = {
   async connect(){
     const k = await this.probe();
     if(k === 'android') return this.android('connect');
-    if(k === 'windows'){ await TepraWin.pick(); return TepraWin.status(); }
+    if(k === 'windows'){ TepraWin.forgetMemo(); await TepraWin.pick(true); return TepraWin.status({ fresh:true }); }
     return { ok:false, error:'テプラにつながる経路が見つかりません' };
   },
 
@@ -6039,6 +6060,7 @@ function renderRegisterPanel(){
   renderRegDone();
   renderTepraBar();
   renderFsBar();
+  warmUpTepra();
 }
 
 /** 上の進み具合。押すとそこまで戻れる */
@@ -7356,6 +7378,21 @@ function getPrintLog(){
   try { return JSON.parse(localStorage.getItem('medaka_last_print') || 'null'); } catch(e){ return null; }
 }
 
+/**
+ * 画面を開いた時点で、テプラの下ごしらえをしておく。
+ * 登録ボタンを押してから調べ始めると、そのぶん待たせてしまうため。
+ */
+let tepraWarmed = 0;
+async function warmUpTepra(){
+  if(!tepraAutoOn()) return;
+  if(Date.now() - tepraWarmed < 30000) return;   // 何度も走らせない
+  tepraWarmed = Date.now();
+  try {
+    if(TepraLink._kind === null) await TepraLink.probe();
+    if(TepraLink.kind() === 'windows') await TepraWin.status();   // テープ幅まで覚えておく
+  } catch(e){ /* 下ごしらえなので、失敗しても黙って進む */ }
+}
+
 /** 登録ボタンを押した直後に呼ぶ。テプラが使えるなら、そのまま1枚出す */
 async function tepraPrintOnRegister(item){
   if(!item || !tepraAutoOn()) return;
@@ -7367,6 +7404,7 @@ async function tepraPrintOnRegister(item){
   if(stale){
     try { await TepraLink.probe(); } catch(e){ return; }
   }
+  tepraWarmed = Date.now();   // いま使ったので、下ごしらえはしばらく不要
   if(!TepraLink.available()) return;
   toast('テプラから出しています…', 'ok');
   await tepraPrintOne(item);

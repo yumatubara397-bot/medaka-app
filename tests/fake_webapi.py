@@ -1,12 +1,17 @@
 """テプラ クリエイター WebAPI の通信モジュールを真似たもの（検証用）。
 実際の Windows と同じ URL・同じ応答を返し、送られてきた画像を保存する。"""
-import json, base64, pathlib
+import json, base64, pathlib, time, os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 OUT = pathlib.Path("/tmp/fake_tepra"); OUT.mkdir(exist_ok=True)
 for f in OUT.glob("*"): f.unlink()
 
+REQLOG = OUT / "requests.log"
+
 class H(BaseHTTPRequestHandler):
+    def _log_req(self):
+        with open(REQLOG, "a") as f: f.write(self.command + " " + self.path + "\n")
+
     def log_message(self, *a): pass
     def _send(self, obj, code=200):
         b = json.dumps(obj).encode()
@@ -25,6 +30,7 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Private-Network", "true")
         self.end_headers()
     def do_GET(self):
+        self._log_req()
         p = self.path
         if p == "/api/printer":
             names = ["KING JIM SR-R5600P", "KING JIM SR-R5600P-BT"]
@@ -38,6 +44,7 @@ class H(BaseHTTPRequestHandler):
                                               if (OUT / "tapefeed.log").exists() else p + "\n")
             self._send({"errorCode": 0})
         elif p.startswith("/api/printer/onlinestatus/"):
+            time.sleep(float(os.environ.get("FAKE_DELAY", "0")))
             # 実機と同じく、USB側はオフライン・BT側はオンライン にできる
             name = p.split("/")[-1]
             offline_usb = pathlib.Path("/tmp/fake_tepra_usb_offline").exists()
@@ -47,10 +54,12 @@ class H(BaseHTTPRequestHandler):
             if pathlib.Path("/tmp/fake_tepra_bt_offline").exists() and is_bt: online = False
             self._send({"online": online})
         elif p.startswith("/api/printer/lwstatus/"):
+            time.sleep(float(os.environ.get("FAKE_DELAY", "0")))
             self._send({"tapeID": 263, "tapeKind": 0, "error": 0, "brTapeKind": 0})
         else:
             self._send({"error": "not found"}, 404)
     def do_POST(self):
+        self._log_req()
         n = int(self.headers.get("Content-Length", 0))
         body = json.loads(self.rfile.read(n) or b"{}")
         # 公式SDKが送っている項目がそろっているか調べ、足りなければ本物と同じく 400 を返す

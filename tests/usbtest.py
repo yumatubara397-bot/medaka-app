@@ -21,13 +21,13 @@ r.check("選ばれるのはUSB側", b.ev("TepraWin.printerName"), "KING JIM SR-R
 print("■ USBがオフラインなら、つながっているBluetoothを選ぶ")
 import os as _os
 open("/tmp/fake_tepra_usb_offline","w").close()
-b.ev("TepraWin.printerName=null; TepraWin.lastCandidates=[]; TepraWin.pick()"); time.sleep(1.5)
+b.ev("TepraWin.printerName=null; TepraWin.lastCandidates=[]; TepraWin._candAt=0; TepraWin.forgetMemo(); TepraWin.pick(true)"); time.sleep(1.5)
 r.expect("Bluetoothが選ばれる", (b.ev("TepraWin.printerName") or "").upper().endswith("BT"),
          b.ev("TepraWin.printerName"))
 st = b.ev("TepraWin.status()")
 r.check("どちらに繋がっているか分かる", st.get("route"), "Bluetooth")
 _os.unlink("/tmp/fake_tepra_usb_offline")
-b.ev("TepraWin.printerName=null; TepraWin.lastCandidates=[]; TepraWin.pick()"); time.sleep(1.5)
+b.ev("TepraWin.printerName=null; TepraWin.lastCandidates=[]; TepraWin._candAt=0; TepraWin.forgetMemo(); TepraWin.pick(true)"); time.sleep(1.5)
 r.check("USBが戻ればUSBを使う", b.ev("TepraWin.printerName"), "KING JIM SR-R5600P")
 st = b.ev("TepraWin.status()")
 r.check("USBと表示される", st.get("route"), "USB")
@@ -45,7 +45,7 @@ os.unlink("/tmp/fake_tepra_usb_fail")
 
 print("■ USBが抜けたらBluetoothだけを使う")
 open("/tmp/fake_tepra_usb_gone", "w").close()
-b.ev("TepraWin.printerName=null; TepraWin.pick()"); time.sleep(1.0)
+b.ev("TepraWin.printerName=null; TepraWin.lastCandidates=[]; TepraWin._candAt=0; TepraWin.forgetMemo(); TepraWin.pick(true)"); time.sleep(1.5)
 r.expect("Bluetoothだけが残る", (b.ev("TepraWin.printerName") or "").upper().endswith("BT"), b.ev("TepraWin.printerName"))
 os.unlink("/tmp/fake_tepra_usb_gone")
 
