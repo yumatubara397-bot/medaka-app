@@ -32,6 +32,7 @@ function makeSub(name, node){
     kind:'directory', name,
     async getDirectoryHandle(n,opt){ if(!node.dirs[n]){ if(!opt||!opt.create) throw Object.assign(new Error('x'),{name:'NotFoundError'}); node.dirs[n]={files:{},dirs:{}};} return makeSub(n,node.dirs[n]); },
     async *entries(){
+      for(const [dn, dv] of Object.entries(node.dirs)) yield [dn, makeSub(dn, dv)];
       for(const [fn, blob] of Object.entries(node.files)){
         yield [fn, { kind:'file', name:fn, getFile: async () => blob }];
       }
@@ -52,8 +53,8 @@ b.ev("fsChooseRoot()"); time.sleep(1.0)
 r.expect("選ぶと保存先が出る", "デスクトップ" in (b.ev("document.getElementById('regFsBar').textContent") or ""),
          (b.ev("document.getElementById('regFsBar').textContent") or "").strip()[:70])
 r.check("覚えている名前", b.ev("localStorage.getItem('medaka_fs_root_name')"), "デスクトップ")
-# 商品のフォルダは、選んだフォルダの中の「魚」にできる
-b.ev("window.WORK = () => (window.__fs.dirs['魚'] ? window.__fs.dirs['魚'].dirs : {});")
+# 商品のフォルダは、選んだフォルダの中の「編集前」にできる
+b.ev("window.WORK = () => (window.__fs.dirs['編集前'] ? window.__fs.dirs['編集前'].dirs : {});")
 
 print("■ 登録するとフォルダができる")
 b.ev("""{ TepraLink._kind='none';
@@ -64,7 +65,7 @@ time.sleep(1.5)
 made = b.ev("Object.keys(WORK())")
 r.check("2つできた", len(made or []), 2)
 no1 = b.ev("regItems()[0].controlNo")
-r.expect("名前は 魚名_管理番号", ("幹之_" + no1) in (made or []), str(made))
+r.expect("名前は 品種名_管理番号", ("幹之_" + no1) in (made or []), str(made))
 r.expect("2件目も同じ形", any(x.startswith("夜桜_") for x in (made or [])), str(made))
 
 print("■ フォルダ名に使えない文字は落とす")

@@ -79,6 +79,34 @@ IDS = ["fsStatusDialog","btnEditFsStatus","btnEditFsStatus2","panel-register","r
 im = [i for i in IDS if not b.ev(f"!!document.getElementById('{i}')")]
 r.expect(f"{len(IDS)}個の部品がすべてある", not im, "無い: " + ", ".join(im) if im else "")
 
+
+print("■ ソースに定義そのものが残っているか（まとめ書き換えで消える事故を止める）")
+import os, re
+SRC = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "index.html"),
+           encoding="utf-8").read()
+# const で作った入れ物は評価用スクリプトから見えないので、文字として確かめる
+DEFS = ["FsLink", "TepraLink", "TepraWin",
+        "ensureGoodsNumbers", "setGoodsNumber", "goodsPhotoPut", "goodsPhotoGet",
+        "goodsPhotoDelete", "goodsOf", "goodsPhotoKeys", "goodsAddPhotos", "goodsRemovePhoto",
+        "shrinkImage", "sharpenToBlackWhite", "hasTepraBridge", "hasInk", "labelLinesOf",
+        "fsLoadFromFolders", "fsLoadFromFoldersAndroid", "fsArchiveOne", "fsArchiveAll",
+        "fsDiagnose", "fsCleanNested", "showFsStatus", "fsParseFolderName", "fsWhy"]
+lost = [d for d in DEFS
+        if not re.search(r"^(?:async )?function " + d + r"\b|^(?:const|let|var) " + d + r"\s*=", SRC, re.M)]
+r.expect(f"{len(DEFS)}個の定義がすべて残っている", not lost, ("消えている: " + ", ".join(lost)) if lost else "")
+
+# 呼んでいるのに定義が無い、を見つける
+called = set(re.findall(r"\b([A-Z][A-Za-z]+)\.[a-z]", SRC))
+known = {"Object","Array","Math","JSON","String","Number","Promise","Date","Boolean","Image",
+         "Map","Set","URL","Intl","RegExp","Blob","File","Error","TypeError","Uint8Array",
+         "Uint8ClampedArray","Int32Array","Float32Array","ArrayBuffer","DataView","CSS",
+         "FileReader","XMLHttpRequest","FormData","Notification","OffscreenCanvas","TextEncoder",
+         "TextDecoder","WeakMap","WeakSet","Symbol","BigInt","Response","Request","Headers"}
+undef = [c for c in sorted(called - known)
+         if not re.search(r"^(?:const|let|var|function|class) " + c + r"\b", SRC, re.M)
+         and ("window." + c) not in SRC]
+r.expect("使っているのに定義が無い入れ物は無い", not undef, ("見当たらない: " + ", ".join(undef)) if undef else "")
+
 print("■ 起動して例外が出ていないか")
 r.check("登録タブが描かれている（品種/ランク/数量/確認）", b.ev("document.querySelectorAll('#regSteps .reg-step').length"), 4)
 nBreeds = b.ev("document.querySelectorAll('#regBreedList button').length") or 0

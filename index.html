@@ -742,7 +742,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
         <div class="icon">🎨</div>
         <h2 id="editEmptyTitle">写真フォルダを読み込みます</h2>
         <p id="editEmptyMsg">
-          「① 登録」した魚のフォルダ（<b>魚</b>）から、写真を自動で読み込みます。<br>
+          「① 登録」した商品のフォルダから、写真を自動で読み込みます。<br>
           写真をフォルダに入れてから、このタブを開いてください。</p>
         <button class="btn btn-primary" id="btnEditReload">🐟 いま読み込む</button>
         <button class="btn btn-ghost" id="btnEditPickRoot">保存先フォルダを選ぶ</button>
@@ -4976,7 +4976,7 @@ async function buildAuctownExport(){
 
     await historyAdd({
       ts: now.toISOString(),
-      folderName: (folderHandle && folderHandle.name) || '魚',
+      folderName: (folderHandle && folderHandle.name) || FS_WORK_NAME,
       count: targets.length,
       imageCount: files.length,
       encoding, htmlDesc: htmlMode,
@@ -6801,12 +6801,12 @@ $('#regTepraCsvUtf8').onclick = () => exportTepraCsv('utf8', false);
 
 // ===== 保存先フォルダ（管理番号のフォルダを自動で作る） =====
 // パソコンのChrome / Edge でだけ使える。
-// 一度「魚」フォルダを選んでおくと、登録するたびに
+// 一度 保存先フォルダを選んでおくと、登録するたびに
 // 「管理番号_品種名」のフォルダをその中に作る。写真はそこへ入れてもらう。
 
 const FS_SUPPORTED = typeof window.showDirectoryPicker === 'function';
 const FS_ROOT_NAME_KEY = 'medaka_fs_root_name';
-let fsRoot = null;            // 選んでもらった「魚」フォルダ
+let fsRoot = null;            // 選んでもらった保存先フォルダ
 
 async function fsHandlePut(key, handle){
   const db = await openEditDb();
@@ -6830,21 +6830,21 @@ async function fsHandleGet(key){
 function fsSafeName(t){
   return String(t || '').replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim().slice(0, 80);
 }
-/** 「魚名_管理番号」 */
+/** 「品種名_管理番号」 */
 function fsFolderName(item){
   const name = fsSafeName(item.variety);
   const no = fsSafeName(item.controlNo);
   return name ? (name + '_' + no) : no;
 }
 
-/** 覚えている「魚」フォルダを呼び戻す。使えなければ null */
+/** 覚えている保存先フォルダを呼び戻す。使えなければ null */
 /**
- * 覚えている「魚」フォルダを呼び戻す。
+ * 覚えている保存先フォルダを呼び戻す。
  * ブラウザの決まりで、しばらく使わないと許可が外れることがある。
  * その場合は自分で取り直すので、登録のたびに選び直す必要はない。
  */
 let fsConnected = false;     // 写真フォルダにつながっているか（画面の出し分けに使う）
-let fsRootIsWork = false;    // 「魚」そのものを選んでしまっているか
+let fsRootIsWork = false;    // 作業フォルダそのものを選んでしまっているか
 
 /** つながっているかを調べ直す */
 async function refreshFsConnected(){
@@ -6855,7 +6855,7 @@ async function refreshFsConnected(){
   return fsConnected;
 }
 
-/** 「魚」の1つ上を選び直してもらう */
+/** 作業フォルダの1つ上を選び直してもらう */
 async function fsFixRootChoice(){
   alert(`いま「${FS_WORK_NAME}」そのものが保存先になっています。\n\n`
     + `次の画面で、その1つ上のフォルダ（デスクトップなど）を選んでください。\n`
@@ -6902,7 +6902,7 @@ async function fsRestoreRoot(ask){
   finally { fsRestoring = null; }
 }
 
-/** 「魚」フォルダを選び直す（許可を取り直すときにも使う） */
+/** 保存先フォルダを選び直す（許可を取り直すときにも使う） */
 async function fsChooseRoot(){
   if(!FS_SUPPORTED){
     toast('このブラウザではフォルダを作れません（パソコンのChrome / Edgeが必要です）', 'err');
@@ -6957,7 +6957,9 @@ function renderPhotoGrid(){ /* 写真の一覧は編集タブで見る */ }
 //   魚/        … これから編集するもの（登録すると管理番号のフォルダができる）
 //   魚編集後/  … 編集を終えたもの（原本と編集後の両方）
 // を作る。無ければ自動で作る。
-const FS_WORK_NAME = '魚';
+const FS_WORK_NAME = '編集前';
+// 前に使っていた名前。残っていたら気づけるようにする
+const FS_OLD_NAMES = ['魚', '魚編集後'];
 let fsWorkWarnedAt = 0;   // 同じ注意を続けて出さないための時刻
 let fsLastReason = '';    // 直前につまずいた理由（画面に出して原因が分かるようにする）
 /** ブラウザが返した理由を、そのまま分かる言葉にする */
@@ -6971,13 +6973,13 @@ function fsWhy(e){
   if(n === 'TypeMismatchError') return '同じ名前のファイルがあってフォルダを作れません';
   return (n ? n + '：' : '') + (e.message || String(e));
 }
-const FS_DONE_NAME = '魚編集後';
+const FS_DONE_NAME = '編集後';
 
 async function fsSubDir(name){
   let root = await fsRestoreRoot();
   if(!root) root = await fsRestoreRoot(true);
   if(!root) return null;
-  // 「魚」そのものが選ばれていると、その中にもう1つ「魚」を作ってしまう
+  // 作業フォルダそのものが選ばれていると、その中にもう1つ同じ名前を作ってしまう
   if(root.name === FS_WORK_NAME){
     fsLastReason = `「${FS_WORK_NAME}」そのものが保存先になっています。`
       + `その1つ上のフォルダ（デスクトップなど）を選び直してください`;
@@ -7029,71 +7031,110 @@ async function fsCreateMissingFolders(){
 }
 
 /** 各フォルダの中の写真を読み込んで、そのまま商品に割り当てる */
+/** 「品種名_管理番号」のフォルダ名を、品種と管理番号に分ける */
+function fsParseFolderName(name){
+  const at = name.lastIndexOf('_');
+  if(at <= 0) return { variety: name, controlNo: '' };
+  return { variety: name.slice(0, at), controlNo: name.slice(at + 1) };
+}
+
+/**
+ * 「編集前」の中にあるフォルダを、そのまま1商品ずつ読み込む。
+ * 登録した商品と名前が合えばランクや数量も引き継ぎ、
+ * 登録が残っていないフォルダも、名前から品種と管理番号を読み取って編集できるようにする。
+ */
 async function fsLoadFromFolders(){
   const work = await fsWorkDir();
-  if(!work){ toast('先に保存先フォルダを選んでください', 'err'); return; }
-  const root = work;
+  if(!work){
+    toast(fsLastReason || '先に保存先フォルダを選んでください', 'err');
+    return;
+  }
+
+  // 「編集前」に入っているフォルダを、名前順に並べる
+  const dirs = [];
+  for await (const [name, handle] of work.entries()){
+    if(handle.kind === 'directory') dirs.push({ name, handle });
+  }
+  dirs.sort((a, b) => a.name.localeCompare(b.name, 'ja', { numeric: true }));
+
   const items = regItems();
-  if(!items.length){ toast('登録した商品がありません', 'err'); return; }
+  const goods = items.filter(x => x.kind === 'goods');
+  if(!dirs.length && !goods.length){
+    toast(`「${FS_WORK_NAME}」の中に商品のフォルダがありません`, 'err');
+    return;
+  }
+
+  // 登録済みの商品を、フォルダ名で引けるようにしておく
+  const byFolder = new Map();
+  items.filter(x => x.kind !== 'goods').forEach(x => byFolder.set(fsFolderName(x), x));
 
   photos.forEach(p => p.blobUrl && URL.revokeObjectURL(p.blobUrl));
   photos = [];
   const built = [];
-  let missing = 0;
 
-  for(const it of items){
-    if(it.kind === 'goods'){                 // 用品は固定写真をそのまま使う
-      const g = await pushGoodsPhotos(it);
-      built.push({
-        labelIdx: g.length ? g[0] : -1, specimenIdxs: g,
-        variety: it.variety, rank: it.rank, quantityText: it.quantityText,
-        male:'', female:'', controlNo: it.controlNo,
-        manualEdits: { variety:true, rank:true, quantityText:true, male:false, female:false, controlNo:true }
-      });
-      continue;
-    }
-    let dir = null;
-    try { dir = await root.getDirectoryHandle(fsFolderName(it), { create: false }); }
-    catch(e){ missing++; }
+  for(const it of goods){                    // 用品は固定写真をそのまま使う
+    const g = await pushGoodsPhotos(it);
+    built.push({
+      labelIdx: g.length ? g[0] : -1, specimenIdxs: g,
+      variety: it.variety, rank: it.rank, quantityText: it.quantityText,
+      male:'', female:'', controlNo: it.controlNo,
+      manualEdits: { variety:true, rank:true, quantityText:true, male:false, female:false, controlNo:true }
+    });
+  }
 
-    const idxs = [];
-    if(dir){
-      const files = [];
-      for await (const [name, handle] of dir.entries()){
+  let unregistered = 0, empty = 0;
+  for(const d of dirs){
+    const it = byFolder.get(d.name);
+    if(!it) unregistered++;
+    const parsed = fsParseFolderName(d.name);
+
+    const files = [];
+    try {
+      for await (const [name, handle] of d.handle.entries()){
         if(handle.kind === 'file' && /\.(jpe?g|png)$/i.test(name)) files.push({ name, handle });
       }
-      files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-      for(const f of files){
-        idxs.push(photos.length);
-        photos.push({ name: f.name, handle: f.handle, blobUrl: null });
-      }
+    } catch(e){
+      toast(`「${d.name}」を開けません — ${fsWhy(e)}`, 'err');
+      continue;
+    }
+    files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    if(!files.length) empty++;
+
+    const idxs = [];
+    for(const f of files){
+      idxs.push(photos.length);
+      photos.push({ name: f.name, handle: f.handle, blobUrl: null });
     }
     built.push({
       labelIdx: idxs.length ? idxs[0] : -1, specimenIdxs: idxs,
-      variety: it.variety, rank: it.rank, quantityText: it.quantityText,
-      male: '', female: '', controlNo: it.controlNo,
-      manualEdits: { variety:true, rank:true, quantityText:true, male:false, female:false, controlNo:true }
+      variety: it ? it.variety : parsed.variety,
+      rank: it ? it.rank : '',
+      quantityText: it ? it.quantityText : '',
+      male: '', female: '',
+      controlNo: it ? it.controlNo : parsed.controlNo,
+      folderName: d.name,
+      manualEdits: { variety:true, rank:!!it, quantityText:!!it, male:false, female:false, controlNo:true }
     });
   }
 
   products = built;
   assignMode = true;
   leftoverIdxs = [];
-  folderHandle = { name: root.name };
-  showLoadedUi();
-  $('#folderName').textContent = root.name;
-  $('#photoCount').textContent = photos.length;
+  folderHandle = { name: work.name };
+  showLoadedUi();   // 件数と枚数は renderEditFolderBar() が出す
 
   await Promise.all(built.flatMap(b => b.specimenIdxs).map(ensureThumb));
   syncFolderPhotos();
+  renderEditPanel();   // 読み込みが済んだ画面に切り替える
   renderFolders(); renderProductList(); renderWarnings(); renderPhotoGrid(); refreshAssignBar();
 
   const withPhotos = built.filter(b => b.specimenIdxs.length).length;
+  const extra = [];
+  if(empty) extra.push(`写真がまだ無いフォルダ ${empty}件`);
+  if(unregistered) extra.push(`登録が残っていないフォルダ ${unregistered}件`);
   toast(`${withPhotos}件 / ${photos.length}枚 を読み込みました`
-        + (missing ? `（フォルダが無い商品 ${missing}件）` : ''), 'ok');
+        + (extra.length ? `（${extra.join('、')}）` : ''), 'ok');
 }
-
-
 // ===== 用品の固定写真と固定の管理番号 =====
 // 用品は毎回撮り直す必要がないので、商品ごとに写真と管理番号を持たせておく。
 
@@ -7385,7 +7426,7 @@ async function fsLoadFromFoldersAndroid(){
   leftoverIdxs = [];
   folderHandle = { name: st.rootName || '保存先' };
   showLoadedUi();
-  showLoadedUi();
+  renderEditPanel();   // 読み込みが済んだ画面に切り替える
   syncFolderPhotos();
   renderFolders(); renderProductList(); renderWarnings(); renderPhotoGrid(); refreshAssignBar();
   const withPhotos = built.filter(b => b.specimenIdxs.length).length;
@@ -7485,8 +7526,8 @@ async function renderFsBar(){
     if($('#fsInstall2')) $('#fsInstall2').onclick = installApp;
   } else {
     box.innerHTML = `<span class="dot"></span>
-      <span class="txt">写真の置き場（デスクトップなど）を決めてください。
-        その中に「魚」と「魚編集後」を作ります</span>
+      <span class="txt">写真の置き場（デスクトップの「めだか写真」など）を決めてください。
+        その中の「${FS_WORK_NAME}」と「${FS_DONE_NAME}」を使います</span>
       <button id="fsPick" class="btn btn-primary btn-sm">📁 保存先を選ぶ</button>`;
     $('#fsPick').onclick = async () => { await FsLink.chooseRoot(); await refreshFsConnected(); renderRegisterPanel(); };
   }
@@ -7885,8 +7926,9 @@ async function autoLoadForEdit(){
   if(!st.hasRoot){
     $('#editEmptyTitle').textContent = '保存先フォルダを決めてください';
     $('#editEmptyMsg').innerHTML =
-      'デスクトップなど、写真を置く場所を選んでください。<br>'
-      + 'その中に <b>魚</b>（これから編集するもの）と <b>魚編集後</b>（編集を終えたもの）を作ります。';
+      'デスクトップの「めだか写真」など、写真を置く場所を選んでください。<br>'
+      + `その中の <b>${FS_WORK_NAME}</b>（これから編集するもの）と `
+      + `<b>${FS_DONE_NAME}</b>（編集を終えたもの）を使います。`;
     renderEditPanel();
     return;
   }
@@ -7970,6 +8012,15 @@ async function fsDiagnose(){
   if(w){ out.hasWork = true; out.workItems = w; }
   const d = await look(FS_DONE_NAME);
   if(d){ out.hasDone = true; out.doneItems = d; }
+
+  // 前の名前のフォルダが残っていたら知らせる（中身の移し忘れを防ぐ）
+  for(const oldName of FS_OLD_NAMES){
+    const o = await look(oldName);
+    if(o && o.length){
+      out.notes.push(`前の名前の「${oldName}」に ${o.length}件 残っています。`
+        + `中身を「${oldName === '魚' ? FS_WORK_NAME : FS_DONE_NAME}」へ移してください`);
+    }
+  }
 
   if(!out.hasWork) out.notes.push(`「${FS_WORK_NAME}」フォルダがまだありません（登録すると作られます）`);
   if(out.hasWork && !out.workItems.length) out.notes.push(`「${FS_WORK_NAME}」の中は空です`);
@@ -8057,10 +8108,12 @@ async function fsWriteFile(dir, name, blob){
 
 /** その商品の編集を終えて、保管フォルダへ移す */
 async function fsArchiveOne(prod, doneRoot, workRoot){
-  const folder = fsFolderName({ variety: prod.variety, controlNo: prod.controlNo });
+  // 読み込んだときの名前が分かっていれば、それを使う（作り直して取り違えない）
+  const folder = prod.folderName
+    || fsFolderName({ variety: prod.variety, controlNo: prod.controlNo });
   const dst = await doneRoot.getDirectoryHandle(folder, { create: true });
   const org = await dst.getDirectoryHandle('原本', { create: true });
-  const edt = await dst.getDirectoryHandle('編集後', { create: true });
+  const edt = await dst.getDirectoryHandle('加工後', { create: true });
 
   let saved = 0;
   for(const i of prod.specimenIdxs){
@@ -8071,7 +8124,7 @@ async function fsArchiveOne(prod, doneRoot, workRoot){
       const file = await ph.handle.getFile();
       await fsWriteFile(org, ph.name, file);
     } catch(e){ /* 読めない写真は飛ばす */ }
-    // 編集後（加工していなければ原本と同じものを入れる）
+    // 加工後（加工していなければ原本と同じものを入れる）
     const st = editState[i];
     try {
       let blob;
@@ -8098,7 +8151,8 @@ async function fsArchiveAll(){
   const workRoot = await fsWorkDir();
   if(!doneRoot || !workRoot){ toast('保存先フォルダを選んでください', 'err'); return; }
 
-  const names = targets.map(p => fsFolderName({ variety: p.variety, controlNo: p.controlNo }));
+  const names = targets.map(p => p.folderName
+    || fsFolderName({ variety: p.variety, controlNo: p.controlNo }));
   const head = names.slice(0, 8).join('、') + (names.length > 8 ? ` ほか${names.length - 8}件` : '');
   if(!confirm(`${targets.length}件を「${FS_DONE_NAME}」へ移します。\n\n${head}\n\n`
             + `原本と編集後の両方を保存し、「${FS_WORK_NAME}」の中は空になります。よろしいですか？`)) return;
@@ -8142,8 +8196,9 @@ function renderFolders(){
   if(!box) return;
   const items = regItems();
 
-  if(!items.length){
-    box.innerHTML = '<div class="placeholder">「① 登録」で商品を登録すると、ここに管理番号のフォルダが出ます。</div>';
+  if(!items.length && !products.length){
+    box.innerHTML = `<div class="placeholder">「① 登録」で商品を登録するか、`
+      + `「${FS_WORK_NAME}」に商品のフォルダを置くと、ここに並びます。</div>`;
     $('#leftoverBox') && $('#leftoverBox').remove();
     return;
   }
