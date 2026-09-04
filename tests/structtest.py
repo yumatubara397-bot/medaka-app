@@ -41,6 +41,7 @@ FUNCS = [
   "regSteps","regConfirmStep","regQtyStep","regRankHtml","bindRegRank","regQtyHtml","bindRegQty",
   "bindGoodsFixed","warmUpTepra","sharpenToBlackWhite","tepraFontScale",
   "tepraPrintableDots","tepraPrintableMM","showPrintImage","setPrintImage",
+  "refreshFsConnected","installApp","isInstalledApp",
 ]
 missing = [f for f in FUNCS if has(f) != "function"]
 r.expect(f"{len(FUNCS)}個の関数がすべてある", not missing, "無い: " + ", ".join(missing) if missing else "")

@@ -673,6 +673,10 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .pi-table td:first-child{opacity:.65;width:40%}
 .pi-acts{display:flex;gap:10px;flex-wrap:wrap}
 .pi-acts .btn{flex:1;min-width:140px;min-height:46px}
+
+.fs-need{display:flex;flex-direction:column;gap:10px;margin:14px 0;padding:14px;border-radius:12px;
+  background:rgba(248,113,113,.10);border:1px solid rgba(248,113,113,.4);font-size:14px}
+.fs-need .btn{min-height:52px}
 </style>
 </head>
 <body>
@@ -5528,10 +5532,12 @@ const TepraWin = {
     const pad = 12;
     // 行間を詰めて、そのぶん文字を大きくする
     const gap = heightDots * 0.03;
+    // 上下が切れないよう、わずかに余白を残す
+    const safe = Math.max(2, Math.round(heightDots * 0.03));
     // 1行目（商品名）は少しだけ大きく。大きすぎると他の行が読めなくなる
     const weights = lines.map((l, i) => i === 0 ? 1.15 : 1.0);
     const total = weights.reduce((a, b) => a + b, 0);
-    const usable = heightDots - gap * (lines.length - 1);
+    const usable = heightDots - gap * (lines.length - 1) - safe * 2;
     const hs = weights.map(w => usable * w / total);
 
     const ctx0 = cv.getContext('2d');
@@ -5557,7 +5563,7 @@ const TepraWin = {
     bx.fillStyle = '#fff'; bx.fillRect(0, 0, big.width, big.height);
     bx.fillStyle = '#000'; bx.textBaseline = 'middle';
 
-    let y = 0;
+    let y = safe;
     lines.forEach((t, i) => {
       const size = parseInt(fonts[i].match(/(\d+)px/)[1], 10);
       const weight = fonts[i].startsWith('700') ? '700' : '500';
@@ -5565,9 +5571,26 @@ const TepraWin = {
       let use = size;
       ctx0.font = fonts[i];
       const w = ctx0.measureText(t).width;
-      if(w > limit) use = Math.floor(size * limit / w);   // はみ出す行だけ縮める
+      if(w > limit) use = Math.floor(size * limit / w);   // 横にはみ出す行は縮める
+
+      // 縦にはみ出さないよう、その文字が実際に占める高さを測って合わせる
+      ctx0.font = `${weight} ${use}px "Noto Sans JP", sans-serif`;
+      let m = ctx0.measureText(t);
+      let asc = m.actualBoundingBoxAscent, desc = m.actualBoundingBoxDescent;
+      if(!(asc > 0)) { asc = use * 0.8; desc = use * 0.2; }   // 測れない場合の目安
+      if(asc + desc > hs[i]){
+        use = Math.max(8, Math.floor(use * hs[i] / (asc + desc)));
+        ctx0.font = `${weight} ${use}px "Noto Sans JP", sans-serif`;
+        m = ctx0.measureText(t);
+        asc = m.actualBoundingBoxAscent || use * 0.8;
+        desc = m.actualBoundingBoxDescent || use * 0.2;
+      }
+      // 行の高さの中で、文字が上下中央に来る位置
+      const baseline = y + (hs[i] - (asc + desc)) / 2 + asc;
+
       bx.font = `${weight} ${use * SS}px "Noto Sans JP", sans-serif`;
-      bx.fillText(t, pad * SS, (y + hs[i] / 2) * SS);
+      bx.textBaseline = 'alphabetic';
+      bx.fillText(t, pad * SS, baseline * SS);
       y += hs[i] + gap;
     });
 
@@ -6041,7 +6064,12 @@ function renderRegisterPanel(){
   renderTepraBar();
   renderFsBar();
   warmUpTepra();
+  // つながり具合が変わっていたら、確認画面の出し分けを更新する
+  refreshFsConnected().then(now => {
+    if(now !== fsConnectedShown){ fsConnectedShown = now; renderRegStepBody(); renderRegSteps(); }
+  });
 }
+let fsConnectedShown = false;
 
 /** 上の進み具合。押すとそこまで戻れる */
 function renderRegSteps(){
@@ -6493,11 +6521,25 @@ function regStep4Html(){
     <div class="hint">${regIsGoods()
       ? '用品の管理番号は決まっています。同じ用品を登録し直すと、数量だけ書き替わります。'
       : '「登録する」を押すまで管理番号は確定しません'}</div>
+    ${(!regIsGoods() && FsLink.available() && !fsConnected)
+      ? `<div class="fs-need">
+           <div>写真フォルダにつながっていません。<br>
+             このまま登録すると、写真を入れるフォルダが作られません。</div>
+           <button id="regFsConnectNow" class="btn btn-primary">📁 フォルダにつなぐ</button>
+         </div>`
+      : ''}
     <button id="regDoRegister" class="btn btn-primary reg-go" ${b ? '' : 'disabled'}>登録する</button>`;
 }
 
 function bindRegStep4(){
   $('#regDoRegister').onclick = regDoRegister;
+  if($('#regFsConnectNow')){
+    $('#regFsConnectNow').onclick = async () => {
+      await FsLink.chooseRoot();
+      await refreshFsConnected();
+      renderRegisterPanel();
+    };
+  }
 }
 
 // --- 登録した商品の一覧 ---
@@ -6644,9 +6686,20 @@ function regDoRegister(){
   // 保存先が決まっていれば、その商品のフォルダを用意しておく
   if(FsLink.available()){
     const target = list[list.length - 1];
-    FsLink.ensureFolder(target).then(r => {
-      if(r && r.ok === false && FsLink.kind() === 'pc'){
-        toast('写真フォルダを作れませんでした。上の「保存先」から選び直してください', 'err');
+    // 1件目から確実に作る。作り終わってから次へ進む
+    FsLink.ensureFolder(target).then(async r => {
+      if(r && r.ok === false){
+        // つながっていないだけなら、その場でつないでもう一度試す
+        await refreshFsConnected();
+        if(!fsConnected){
+          toast('写真フォルダを作れませんでした。「📁 フォルダにつなぐ」から選んでください', 'err');
+          renderRegisterPanel();
+          return;
+        }
+        const again = await FsLink.ensureFolder(target);
+        if(!again || again.ok === false){
+          toast('写真フォルダを作れませんでした', 'err');
+        }
       }
     });
   }
@@ -6769,6 +6822,16 @@ function fsFolderName(item){
  * ブラウザの決まりで、しばらく使わないと許可が外れることがある。
  * その場合は自分で取り直すので、登録のたびに選び直す必要はない。
  */
+let fsConnected = false;     // 写真フォルダにつながっているか（画面の出し分けに使う）
+
+/** つながっているかを調べ直す */
+async function refreshFsConnected(){
+  if(!FsLink.available()){ fsConnected = false; return false; }
+  const st = await FsLink.status();
+  fsConnected = !!(st && st.hasRoot);
+  return fsConnected;
+}
+
 let fsRestoring = null;      // 取り直しが同時に何本も走らないようにする
 
 async function fsRestoreRoot(ask){
@@ -7283,6 +7346,47 @@ function fsLoadAuto(){
   return fsLoading;
 }
 
+
+// ===== アプリとして入れる（許可をずっと保持するため） =====
+// ブラウザの決まりで、ふつうに開いているとフォルダの許可はその場かぎり。
+// アプリとして入れると、Chrome / Edge は許可を覚えておけるようになる。
+let installPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  installPrompt = e;
+  renderFsBar();
+});
+window.addEventListener('appinstalled', () => { installPrompt = null; renderFsBar(); });
+
+/** アプリとして入っているか */
+function isInstalledApp(){
+  return window.matchMedia('(display-mode: standalone)').matches
+      || window.navigator.standalone === true;
+}
+
+async function installApp(){
+  if(!installPrompt){
+    alert([
+      'アプリとして入れると、写真フォルダの許可をずっと覚えておけます。',
+      '',
+      '【Chrome / Edge】',
+      'アドレスバーの右にある「インストール」の印（⊕ や 画面のマーク）を押す',
+      'または 右上の … →「アプリ」→「このサイトをアプリとしてインストール」',
+      '',
+      '入れたあと、アプリの画面から保存先フォルダを選び直してください。',
+      'そのとき「毎回許可する」を選ぶと、次からは聞かれなくなります。'
+    ].join('\n'));
+    return;
+  }
+  installPrompt.prompt();
+  const r = await installPrompt.userChoice;
+  installPrompt = null;
+  if(r && r.outcome === 'accepted'){
+    toast('アプリとして入れました。保存先を選び直すと、許可が覚えられます', 'ok');
+  }
+  renderFsBar();
+}
+
 /** 保存先の案内バー */
 async function renderFsBar(){
   const box = $('#regFsBar');
@@ -7298,22 +7402,28 @@ async function renderFsBar(){
 
   const st = await FsLink.status();
   if(st.hasRoot){
+    const needInstall = (kind === 'pc') && !isInstalledApp();
     box.innerHTML = `<span class="dot on"></span>
       <span class="txt">保存先「${escapeHtml(st.rootName || '')}」… 登録するとフォルダを自動で作ります</span>
+      ${needInstall ? '<button id="fsInstall" class="btn btn-ghost btn-sm" title="アプリとして入れると、許可をずっと覚えておけます">📌 許可を覚えさせる</button>' : ''}
       <button id="fsMake" class="btn btn-ghost btn-sm">足りないフォルダを作る</button>
       <button id="fsChange" class="btn btn-ghost btn-sm">変更</button>`;
+    if($('#fsInstall')) $('#fsInstall').onclick = installApp;
     $('#fsMake').onclick = fsCreateMissingFoldersAuto;
-    $('#fsChange').onclick = () => FsLink.chooseRoot();
+    $('#fsChange').onclick = async () => { await FsLink.chooseRoot(); await refreshFsConnected(); renderRegisterPanel(); };
   } else if(kind === 'pc' && localStorage.getItem(FS_ROOT_NAME_KEY)){
     box.innerHTML = `<span class="dot"></span>
       <span class="txt">保存先「${escapeHtml(localStorage.getItem(FS_ROOT_NAME_KEY))}」を覚えています。使うには許可が要ります</span>
-      <button id="fsConnect" class="btn btn-primary btn-sm">つなぐ</button>`;
-    $('#fsConnect').onclick = fsReconnect;
+      <button id="fsConnect" class="btn btn-primary btn-sm">📁 つなぐ</button>
+      ${(kind === 'pc' && !isInstalledApp()) ? '<button id="fsInstall2" class="btn btn-ghost btn-sm">📌 毎回聞かれないようにする</button>' : ''}`;
+    $('#fsConnect').onclick = async () => { await fsReconnect(); await refreshFsConnected(); renderRegisterPanel(); };
+    if($('#fsInstall2')) $('#fsInstall2').onclick = installApp;
   } else {
     box.innerHTML = `<span class="dot"></span>
-      <span class="txt">写真の保存先フォルダ（例：「魚」）を決めると、登録のたびにフォルダを作ります</span>
-      <button id="fsPick" class="btn btn-primary btn-sm">保存先を選ぶ</button>`;
-    $('#fsPick').onclick = () => FsLink.chooseRoot();
+      <span class="txt">写真の置き場（デスクトップなど）を決めてください。
+        その中に「魚」と「魚編集後」を作ります</span>
+      <button id="fsPick" class="btn btn-primary btn-sm">📁 保存先を選ぶ</button>`;
+    $('#fsPick').onclick = async () => { await FsLink.chooseRoot(); await refreshFsConnected(); renderRegisterPanel(); };
   }
 }
 
