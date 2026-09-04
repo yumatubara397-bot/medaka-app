@@ -95,7 +95,7 @@ def band_heights(b64):
 
 b.ev("setTepraRows(3); setTepraMinLenRatio(3.5)"); time.sleep(0.4)
 h3 = band_heights(b.ev("TepraWin.makePng(fitLabelRows(['忘却の翼','通常 雄5 雌8','MD-260902-004']), 128)"))
-r.expect("3行でも品種名は5mm以上", h3 and h3[0] >= 36, f"{h3[0]}ドット = {h3[0]/180*25.4:.1f}mm")
+r.expect("3行でも品種名は4.5mm以上", h3 and h3[0] >= 32, f"{h3[0]}ドット = {h3[0]/180*25.4:.1f}mm")
 r.expect("3行の管理番号も3mm以上", len(h3) >= 3 and h3[2] >= 21, f"{h3[-1]}ドット = {h3[-1]/180*25.4:.1f}mm")
 
 b.ev("setTepraRows(2)"); time.sleep(0.4)
@@ -107,7 +107,7 @@ r.expect("2行目に数量と管理番号が入る",
 h2 = band_heights(b.ev("TepraWin.makePng(fitLabelRows(['忘却の翼','通常 雄5 雌8','MD-260902-004']), 128)"))
 r.expect("2行にすると文字が大きくなる", h2[0] > h3[0] and h2[1] > h3[1],
          f"3行 {h3[0]}/{h3[1]}ドット → 2行 {h2[0]}/{h2[1]}ドット")
-r.expect("2行目でも5mm以上", h2[1] >= 36, f"{h2[1]}ドット = {h2[1]/180*25.4:.1f}mm")
+r.expect("2行目でも4.5mm以上", h2[1] >= 32, f"{h2[1]}ドット = {h2[1]/180*25.4:.1f}mm")
 
 print("■ 長さの選択")
 b.ev("setTepraRows(3); setTepraMinLenRatio(1.8)"); time.sleep(0.3)

@@ -5580,7 +5580,8 @@ const TepraWin = {
     const pad = 12;
     // 行間を詰めて、そのぶん文字を大きくする
     const gap = heightDots * 0.03;
-    const weights = lines.map((l, i) => i === 0 ? 1.45 : 1.0);
+    // 1行目（商品名）は少しだけ大きく。大きすぎると他の行が読めなくなる
+    const weights = lines.map((l, i) => i === 0 ? 1.15 : 1.0);
     const total = weights.reduce((a, b) => a + b, 0);
     const usable = heightDots - gap * (lines.length - 1);
     const hs = weights.map(w => usable * w / total);
@@ -5597,25 +5598,37 @@ const TepraWin = {
     const minWidth = Math.ceil(heightDots * tepraMinLenRatio());
     cv.width = Math.ceil(Math.max(minWidth, content + pad * 2));
     cv.height = heightDots;
-    const ctx = cv.getContext('2d');
-    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
-    ctx.fillStyle = '#000'; ctx.textBaseline = 'middle';
+
+    // 小さい文字は、そのまま白黒にすると穴がつぶれる。
+    // いったん3倍の大きさで描いてから縮めると、形が残る
+    const SS = 3;
+    const big = document.createElement('canvas');
+    big.width = cv.width * SS;
+    big.height = cv.height * SS;
+    const bx = big.getContext('2d');
+    bx.fillStyle = '#fff'; bx.fillRect(0, 0, big.width, big.height);
+    bx.fillStyle = '#000'; bx.textBaseline = 'middle';
+
     let y = 0;
     lines.forEach((t, i) => {
-      ctx.font = fonts[i];
+      const size = parseInt(fonts[i].match(/(\d+)px/)[1], 10);
+      const weight = fonts[i].startsWith('700') ? '700' : '500';
       const limit = cv.width - pad * 2;
-      const w = ctx.measureText(t).width;
-      if(w > limit){    // はみ出す行だけ縮める
-        const size = Math.floor(parseInt(fonts[i].match(/(\d+)px/)[1], 10) * limit / w);
-        ctx.font = fonts[i].replace(/\d+px/, size + 'px');
-      }
-      ctx.fillText(t, pad, y + hs[i] / 2);
+      let use = size;
+      ctx0.font = fonts[i];
+      const w = ctx0.measureText(t).width;
+      if(w > limit) use = Math.floor(size * limit / w);   // はみ出す行だけ縮める
+      bx.font = `${weight} ${use * SS}px "Noto Sans JP", sans-serif`;
+      bx.fillText(t, pad * SS, (y + hs[i] / 2) * SS);
       y += hs[i] + gap;
     });
 
-    // テプラは「白か黒か」しか印字できない。
-    // 縁の灰色をそのまま送ると本体側で網点にされ、にじんで見えるので、
-    // ここで白と黒のどちらかに振り分けておく
+    const ctx = cv.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.drawImage(big, 0, 0, cv.width, cv.height);
+
     sharpenToBlackWhite(ctx, cv.width, cv.height);
     // 白紙のまま送ると、何も書かれていないラベルが出て切られてしまう。
     // 実際に黒い点が描けているか数えて、無ければ作り直しを促す
