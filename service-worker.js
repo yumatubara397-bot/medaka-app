@@ -5,7 +5,7 @@
  * v5: 編集タブ(Phase 2) 実装。AI加工 + ライトボックス + IndexedDB キャッシュ
  */
 
-const CACHE_VERSION = 'medaka-cache-v63';  // バージョン更新で古いキャッシュ自動削除
+const CACHE_VERSION = 'medaka-cache-v64';  // バージョン更新で古いキャッシュ自動削除
 const APP_SHELL = [
   './',
   './index.html',

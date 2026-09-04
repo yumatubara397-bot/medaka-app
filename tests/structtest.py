@@ -40,6 +40,7 @@ FUNCS = [
   "wheelHtml","bindWheel","kanaGroupOf","estimateReading","normKana","regRange",
   "regSteps","regConfirmStep","regQtyStep","regRankHtml","bindRegRank","regQtyHtml","bindRegQty",
   "bindGoodsFixed","warmUpTepra","sharpenToBlackWhite","tepraFontScale",
+  "tepraPrintableDots","tepraPrintableMM","showPrintImage","setPrintImage",
 ]
 missing = [f for f in FUNCS if has(f) != "function"]
 r.expect(f"{len(FUNCS)}個の関数がすべてある", not missing, "無い: " + ", ".join(missing) if missing else "")
@@ -73,7 +74,7 @@ IDS = ["panel-register","regSteps","regStepBody","regItemList","regTepraBar","re
        "panel-edit","editEmpty","editLoaded","editFolderInfo","btnEditReload","btnEditReload2",
        "btnEditPickRoot","btnArchive","editFolders",
        "lightbox","lbZoomRange","lbSaveCrop","lbRedo","redoDialog",
-       "btnPrintLog","btnSaveLocal","btnTapeFeed","btnTapeFeedCut","toast"]
+       "btnPrintLog","btnPrintImage","btnSaveLocal","btnTapeFeed","btnTapeFeedCut","printImageDialog","toast"]
 im = [i for i in IDS if not b.ev(f"!!document.getElementById('{i}')")]
 r.expect(f"{len(IDS)}個の部品がすべてある", not im, "無い: " + ", ".join(im) if im else "")
 

@@ -38,7 +38,8 @@ class H(BaseHTTPRequestHandler):
                 names = names[1:]
             self._send([{"printerName": n} for n in names])
         elif p.startswith("/api/printer/info/"):
-            self._send({"driverName": "SR-R5600P", "dpi": 180, "tapeList": [263]})
+            self._send({"driverName": "SR-R5600P",
+                        "dpi": int(os.environ.get("FAKE_DPI", "180")), "tapeList": [263]})
         elif p.startswith("/api/printer/tapefeed/"):
             (OUT / "tapefeed.log").write_text((OUT / "tapefeed.log").read_text() + p + "\n"
                                               if (OUT / "tapefeed.log").exists() else p + "\n")

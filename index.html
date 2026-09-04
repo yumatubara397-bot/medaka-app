@@ -661,6 +661,18 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .edit-folder-bar .btn + .btn{margin-left:0}
 .edit-folders{margin-bottom:16px}
 .edit-folders summary{cursor:pointer;opacity:.7;font-size:13px;margin-bottom:10px}
+
+/* 印刷データの確認 */
+.pi-box{width:min(720px,100%);max-height:90vh;overflow-y:auto;padding:22px;border-radius:16px;
+  background:var(--bg,#0d1220);border:1px solid var(--line,#2a3350)}
+.pi-box h3{margin:0 0 14px;font-size:18px}
+.pi-view{background:#fff;padding:10px;border-radius:8px;overflow-x:auto;margin-bottom:14px}
+.pi-view img{display:block;image-rendering:pixelated}
+.pi-table{width:100%;font-size:13px;border-collapse:collapse;margin-bottom:14px}
+.pi-table td{padding:6px 8px;border-bottom:1px solid var(--line,#2a3350)}
+.pi-table td:first-child{opacity:.65;width:40%}
+.pi-acts{display:flex;gap:10px;flex-wrap:wrap}
+.pi-acts .btn{flex:1;min-width:140px;min-height:46px}
 </style>
 </head>
 <body>
@@ -951,6 +963,9 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
     <!-- 1枚だけやり直すときの画面 -->
     <div id="redoDialog" class="redo-dialog hidden"></div>
 
+    <!-- プリンターへ渡す画像の確認 -->
+    <div id="printImageDialog" class="redo-dialog hidden"></div>
+
     <!-- ===== 出品タブ ===== -->
     <section id="panel-listing" class="panel hidden">
       <div id="listingEmpty" class="empty-state">
@@ -1138,6 +1153,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
           <span style="font-size:12px">直前の印刷でどこへ何を送り、どう返ってきたかが分かります。</span>
           <div class="btn-row" style="margin:8px 0 16px">
             <button id="btnPrintLog" class="btn btn-ghost btn-mini">🖨 直前の印刷を見る</button>
+            <button id="btnPrintImage" class="btn btn-ghost btn-mini">🔍 印刷データを見る</button>
           </div>
 
           <strong style="color:var(--ink)">このパソコンに保存</strong><br>
@@ -4447,6 +4463,8 @@ $('#btnTapeFeedCut').onclick = async () => {
   toast(r.ok ? 'テープを送って切りました' : (r.error || 'できませんでした'), r.ok ? 'ok' : 'err');
 };
 
+$('#btnPrintImage').onclick = () => showPrintImage(false);
+
 $('#btnPrintLog').onclick = () => {
   const g = getPrintLog();
   if(!g){ toast('まだ印刷していません', 'err'); return; }
@@ -5327,8 +5345,18 @@ function setTepraMarginMM(v){
   renderTepraBar();
 }
 
-// SR-R5600P の印字可能領域（テープ幅mm → ドット）。SDK付属の印字領域表より
-const TEPRA_DOTS_5600P = { 4:22, 6:36, 9:54, 12:72, 18:108, 24:128 };
+// SR-R5600P の印字可能領域。SDK付属の印字領域表（180dpi のときのドット数）
+const TEPRA_DOTS_180 = { 4:22, 6:36, 9:54, 12:72, 18:108, 24:128 };
+/** 印字できる高さ(mm)。ドット数と解像度から求める */
+function tepraPrintableMM(tapeMM){
+  const d = TEPRA_DOTS_180[tapeMM];
+  return d ? d / 180 * 25.4 : 18.06;
+}
+/** そのテープで印字できるドット数。プリンターの実際の解像度に合わせる */
+function tepraPrintableDots(tapeMM, dpi){
+  const use = (dpi && dpi >= 100 && dpi <= 1200) ? dpi : 180;
+  return Math.round(tepraPrintableMM(tapeMM) / 25.4 * use);
+}
 // WebAPI のテープID → mm
 const TEPRA_TAPEID_MM = { 274:4, 259:6, 260:9, 261:12, 262:18, 263:24, 264:36, 275:24, 276:36, 309:50 };
 const TEPRA_MM_TAPEID = { 4:274, 6:259, 9:260, 12:261, 18:262, 24:263, 36:264, 50:309 };
@@ -5383,6 +5411,17 @@ const TepraWin = {
 
   /** 名前に Bluetooth / BT が入っていれば Bluetooth 接続とみなす */
   isBluetoothName(n){ return /bluetooth|[-_ ]bt\b|\bbt[-_ ]/i.test(n); },
+
+  /** そのプリンターの解像度(dpi)。分からなければ 180 */
+  dpi: 180,
+  async fetchDpi(name){
+    const r = await this.fetchJson('/info/' + encodeURIComponent(name), null, 5000);
+    if(r && !r.__err && !r.__http && r.dpi){
+      this.dpi = +r.dpi;
+      this.driverName = r.driverName || '';
+    }
+    return this.dpi;
+  },
 
   /** そのプリンターが今つながっているか */
   async isOnline(name){
@@ -5453,7 +5492,8 @@ const TepraWin = {
     // 直前に調べた結果があれば、それを使う（印刷を待たせないため）
     if(!(opt && opt.fresh) && this.memoFresh()){
       return { ok:true, connected:true, printer:this.printerName,
-               tapeMM:this._memo.tapeMM, route:this._memo.route, memo:true };
+               tapeMM:this._memo.tapeMM, route:this._memo.route,
+               dpi:this._memo.dpi || this.dpi, memo:true };
     }
     const st = await this.fetchJson('/lwstatus/' + encodeURIComponent(this.printerName), null, 8000);
     if(st.__err) return { ok:false, error:'テプラと通信できませんでした（' + st.__err + '）' };
@@ -5462,7 +5502,9 @@ const TepraWin = {
     const c = (this.lastCandidates || []).find(x => x.name === this.printerName);
     const out = { ok:true, connected:true, printer:this.printerName, tapeMM:mm,
                   route: c ? (c.bt ? 'Bluetooth' : 'USB') : '' };
-    this._memo = { at: Date.now(), printer: this.printerName, tapeMM: mm, route: out.route };
+    await this.fetchDpi(this.printerName);     // 実際の解像度に合わせて画像を作る
+    out.dpi = this.dpi;
+    this._memo = { at: Date.now(), printer: this.printerName, tapeMM: mm, route: out.route, dpi: this.dpi };
     if(st.error) out.error = 'テプラのエラー（コード ' + st.error + '）';
     return out;
   },
@@ -5535,13 +5577,23 @@ const TepraWin = {
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
     ctx.drawImage(big, 0, 0, cv.width, cv.height);
 
-    sharpenToBlackWhite(ctx, cv.width, cv.height);
+    const th = sharpenToBlackWhite(ctx, cv.width, cv.height);
+
+    // プリンターへ渡す画像そのものを控えておく（設定タブから見られる）
+    const b64 = cv.toDataURL('image/png').split(',')[1];
+    setPrintImage({
+      base64: b64, w: cv.width, h: cv.height,
+      tapeMM: Object.keys(TEPRA_DOTS_180).find(k => tepraPrintableDots(+k, this.dpi) === heightDots) || 24,
+      dpi: this.dpi, driverName: this.driverName || '',
+      fontPx: fonts.map(f => parseInt(f.match(/(\d+)px/)[1], 10)),
+      threshold: th, resizes: 1
+    });
     // 白紙のまま送ると、何も書かれていないラベルが出て切られてしまう。
     // 実際に黒い点が描けているか数えて、無ければ作り直しを促す
     if(!hasInk(ctx, cv.width, cv.height)){
       throw new Error('ラベルの文字を描けませんでした');
     }
-    return cv.toDataURL('image/png').split(',')[1];   // base64だけ返す
+    return b64;
   },
 
   async print(labels){
@@ -5566,7 +5618,7 @@ const TepraWin = {
     const st = await this.status();
     if(!st.ok) return st;
     const mm = st.tapeMM || 24;
-    const dots = TEPRA_DOTS_5600P[mm] || 128;
+    const dots = tepraPrintableDots(mm, st.dpi || this.dpi);
 
     for(let i = 0; i < labels.length; i++){
       let png;
@@ -7034,18 +7086,19 @@ async function shrinkImage(file, maxEdge){
 
 /** 灰色をなくして、白か黒かだけの画像にする（テプラは中間色を出せない） */
 function sharpenToBlackWhite(ctx, w, h){
+  const TH = 128;   // 明るさの真ん中。低くすると線が細く、高くすると太くなる
   try {
     const img = ctx.getImageData(0, 0, w, h);
     const d = img.data;
     for(let i = 0; i < d.length; i += 4){
-      // 明るさが半分より暗ければ黒、そうでなければ白
       const v = (d[i] * 299 + d[i+1] * 587 + d[i+2] * 114) / 1000;
-      const bw = v < 150 ? 0 : 255;
+      const bw = v < TH ? 0 : 255;
       d[i] = d[i+1] = d[i+2] = bw;
       d[i+3] = 255;
     }
     ctx.putImageData(img, 0, 0);
-  } catch(e){ /* 調べられないときは、そのまま送る */ }
+    return TH;
+  } catch(e){ return null; }   /* 調べられないときは、そのまま送る */
 }
 
 /** 画像に黒い点があるか（白紙でないか）を調べる */
@@ -7391,6 +7444,67 @@ function tepraAutoOn(){ return localStorage.getItem(TEPRA_AUTO_KEY) !== '0'; }
 function setTepraAuto(on){
   localStorage.setItem(TEPRA_AUTO_KEY, on ? '1' : '0');
   renderTepraBar();
+}
+
+
+// ===== 印刷データの確認（デバッグ） =====
+// プリンターへ渡す直前の画像そのものを、100%の大きさで見せる。
+
+let lastPrintImage = null;   // { base64, w, h, tapeMM, dpi, lines, fontPx, threshold }
+
+function setPrintImage(o){ lastPrintImage = o; }
+
+/** 印刷品質を確かめるためのラベル */
+const TEPRA_TEST_LINES = ['あいうえお 漢字印刷確認', '0123456789 ABCDEFG', 'MD-260904-001'];
+
+async function showPrintImage(makeNew){
+  let info = lastPrintImage;
+  if(makeNew || !info){
+    const st = await TepraLink.status();
+    const mm = (st && st.tapeMM) || 24;
+    const dpi = (st && st.dpi) || TepraWin.dpi || 180;
+    const dots = tepraPrintableDots(mm, dpi);
+    try {
+      const png = TepraWin.makePng(fitLabelRows(TEPRA_TEST_LINES), dots);
+      info = lastPrintImage;
+      if(!info) info = { base64: png, w: 0, h: dots, tapeMM: mm, dpi: dpi };
+    } catch(e){
+      toast('確認用の画像を作れませんでした: ' + (e && e.message ? e.message : e), 'err');
+      return;
+    }
+  }
+  const dlg = $('#printImageDialog');
+  const mmW = info.w / info.dpi * 25.4, mmH = info.h / info.dpi * 25.4;
+  dlg.innerHTML = `
+    <div class="pi-box">
+      <h3>プリンターへ渡す画像</h3>
+      <div class="pi-view"><img src="data:image/png;base64,${info.base64}" alt=""></div>
+      <table class="pi-table">
+        <tr><td>画像の大きさ</td><td>${info.w} × ${info.h} px</td></tr>
+        <tr><td>ラベルの大きさ</td><td>${mmW.toFixed(1)} × ${mmH.toFixed(1)} mm</td></tr>
+        <tr><td>テープ幅</td><td>${info.tapeMM} mm（印字できる高さ ${tepraPrintableMM(info.tapeMM).toFixed(1)} mm）</td></tr>
+        <tr><td>解像度</td><td>${info.dpi} dpi${info.driverName ? '（' + escapeHtml(info.driverName) + '）' : ''}</td></tr>
+        <tr><td>文字の大きさ</td><td>${(info.fontPx || []).join(' / ')} px</td></tr>
+        <tr><td>白黒にする境目</td><td>${info.threshold != null ? info.threshold : '—'}</td></tr>
+        <tr><td>本体側の拡大縮小</td><td>しない（100%・1画素＝1ドット）</td></tr>
+        <tr><td>途中での拡大縮小</td><td>${info.resizes != null ? info.resizes : 0} 回</td></tr>
+      </table>
+      <div class="pi-acts">
+        <button id="piTest" class="btn btn-ghost">品質テストのラベルを作る</button>
+        <button id="piPrint" class="btn btn-primary">この内容で印刷してみる</button>
+        <button id="piClose" class="btn btn-ghost">閉じる</button>
+      </div>
+      <div class="hint" style="margin-top:8px">画像は原寸（100%）で表示しています。</div>
+    </div>`;
+  dlg.classList.remove('hidden');
+  $('#piClose').onclick = () => dlg.classList.add('hidden');
+  $('#piTest').onclick = () => showPrintImage(true);
+  $('#piPrint').onclick = async () => {
+    dlg.classList.add('hidden');
+    const r = await TepraLink.print([{ variety: TEPRA_TEST_LINES[0], rank: '',
+                                       quantityText: TEPRA_TEST_LINES[1], controlNo: TEPRA_TEST_LINES[2] }]);
+    toast(r.ok ? '品質テストのラベルを印刷しました' : (r.error || '印刷できませんでした'), r.ok ? 'ok' : 'err');
+  };
 }
 
 /** 直近の印刷でのやり取り（うまくいかないときの手がかり） */
