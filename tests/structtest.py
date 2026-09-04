@@ -38,7 +38,7 @@ FUNCS = [
   # ホイール・かな
   "wheelHtml","bindWheel","kanaGroupOf","estimateReading","normKana","regRange",
   "regSteps","regConfirmStep","regQtyStep","regRankHtml","bindRegRank","regQtyHtml","bindRegQty",
-  "bindGoodsFixed","warmUpTepra",
+  "bindGoodsFixed","warmUpTepra","sharpenToBlackWhite","tepraFontScale",
 ]
 missing = [f for f in FUNCS if has(f) != "function"]
 r.expect(f"{len(FUNCS)}個の関数がすべてある", not missing, "無い: " + ", ".join(missing) if missing else "")

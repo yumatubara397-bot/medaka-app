@@ -22,8 +22,9 @@ function makeDir(name, store){
       }
       return makeSub(n, store[n]);
     },
-    async queryPermission(){ return 'granted'; },
-    async requestPermission(){ return 'granted'; }
+    async queryPermission(){ return window.__permState || 'granted'; },
+    async requestPermission(){ window.__reqCount = (window.__reqCount||0)+1;
+                               window.__permState = 'granted'; return 'granted'; }
   };
 }
 function makeSub(name, node){
@@ -103,5 +104,36 @@ r.expect("撮り忘れが分かる",
 print("■ 順番に頼らない")
 r.expect("撮った順ではなくフォルダで決まる",
          b.ev("products.every(p=>p.specimenIdxs.every(i=>photos[i]))"), "各商品の写真が自分のフォルダのもの")
+
+print("■ 許可が外れても、選び直しにならない")
+# 本物はブラウザに手がかりを保存できるが、この偽物は保存できないので、
+# 取り出しだけ差し替えて同じ状況にする
+b.ev("window.fsHandleGet = async () => window.__rootHandle;")
+# ブラウザ側の都合で許可が外れた状態を作る
+b.ev("window.__permState='prompt'; window.__reqCount=0; fsRoot=null;")
+r.check("いったんは使えない", b.ev("(async()=>!!(await fsRestoreRoot()))()"), False)
+b.ev("fsRoot=null; window.__permState='prompt';")
+r.check("取り直せば使える", b.ev("(async()=>!!(await fsRestoreRoot(true)))()"), True)
+r.check("許可を求めたのは1回だけ", b.ev("window.__reqCount"), 1)
+
+print("■ 登録のたびに選び直さなくてよい")
+b.ev("window.__permState='prompt'; window.__reqCount=0; fsRoot=null;")
+before = len(b.ev("Object.keys(window.__fs.dirs)") or [])
+b.ev("""{ TepraLink._kind='none';
+  ['幹之','夜桜','オロチ'].forEach(nm=>{ regSel.mode='fish';
+    regSel.breed=regMasters().breeds.find(x=>x.name===nm);
+    regSel.rank='特上'; regSel.qtyMode='pair'; regSel.qtyN=1; regSel.step=4; regDoRegister(); }); }""")
+time.sleep(2.5)
+after = len(b.ev("Object.keys(window.__fs.dirs)") or [])
+r.expect("3件ぶんフォルダができる", after - before >= 3, f"{before} → {after}")
+r.expect("許可を求めたのは多くても1回", (b.ev("window.__reqCount") or 0) <= 1,
+         f"{b.ev('window.__reqCount')}回")
+
+print("■ 一度つながれば、次からは確認もしない")
+b.ev("window.__reqCount=0;")
+b.ev("""{ regSel.breed=regMasters().breeds.find(x=>x.name==='紅白');
+  regSel.rank='通常'; regSel.qtyN=1; regSel.step=4; regDoRegister(); }""")
+time.sleep(1.5)
+r.check("許可を求めない", b.ev("window.__reqCount"), 0)
 
 b.close(); r.finish()
