@@ -5,7 +5,7 @@
  * v5: 編集タブ(Phase 2) 実装。AI加工 + ライトボックス + IndexedDB キャッシュ
  */
 
-const CACHE_VERSION = 'medaka-cache-v68';  // バージョン更新で古いキャッシュ自動削除
+const CACHE_VERSION = 'medaka-cache-v69';  // バージョン更新で古いキャッシュ自動削除
 const APP_SHELL = [
   './',
   './index.html',
@@ -45,8 +45,15 @@ self.addEventListener('fetch', (event) => {
   if (url.hostname.includes('script.google.com')) return;
   if (url.hostname.includes('googleapis.com')) return;
 
+  // HTML はブラウザのHTTPキャッシュを通さず、必ず取り直す。
+  // これをしないと、公開し直しても古い画面が出続ける。
+  const isDoc = req.mode === 'navigate'
+    || (req.destination === 'document')
+    || url.pathname.endsWith('/')
+    || url.pathname.endsWith('.html');
+
   event.respondWith(
-    fetch(req)
+    fetch(isDoc ? new Request(req, { cache: 'reload' }) : req)
       .then((res) => {
         const copy = res.clone();
         caches.open(CACHE_VERSION).then((cache) => cache.put(req, copy));
