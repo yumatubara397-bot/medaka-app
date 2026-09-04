@@ -114,8 +114,16 @@ SW = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 app_v = (re.search(r"const APP_VERSION = '(v\d+)'", SRC) or [None, None])[1]
 sw_v  = (re.search(r"medaka-cache-(v\d+)", SW) or [None, None])[1]
 r.check("index.html と service-worker.js の版が同じ", app_v, sw_v)
-r.expect("画面にも版が出る", app_v and ("MEDAKA LISTING " + app_v) in SRC,
-         f"表示 = MEDAKA LISTING {app_v}")
+r.expect("画面に出す版も同じ", app_v and f'<span id="appVersion">{app_v}</span>' in SRC,
+         f"ボタンの表示 = {app_v}")
+r.expect("更新ボタンがある", b.ev("!!document.getElementById('btnUpdateApp')"), "🔄 ボタン")
+r.expect("押すと覚えている中身を捨てる", "caches.delete" in SRC, "caches.delete")
+r.expect("押すと古い仕掛けを外す", "unregister()" in SRC, "unregister")
+r.expect("押すと毎回ちがうURLで開き直す",
+         "searchParams.set('v'" in SRC and "location.replace" in SRC, "?v=時刻 で開き直す")
+r.expect("書体の読み込みで画面を待たせない", "media=\"print\" onload" in SRC, "非同期で読む")
+r.expect("書体が届く前も日本語が出る", "Hiragino Sans" in SRC and "Yu Gothic UI" in SRC,
+         "端末の書体を控えにする")
 r.expect("自動で新しい版に入れ替わる仕掛けがある",
          "controllerchange" in SRC and "SKIP_WAITING" in SRC, "controllerchange + SKIP_WAITING")
 r.expect("HTMLはHTTPキャッシュを通さず取り直す", "cache: 'reload'" in SW, "service-worker.js")
