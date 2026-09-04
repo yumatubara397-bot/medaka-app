@@ -73,7 +73,7 @@ b.ev("""window.__sent=[]; window.TepraBridge={ status(){return JSON.stringify({o
 b.ev("{const l=regItems(); l.forEach(x=>x.tepraExportedAt=null); saveRegItems(l);} tepraPrintPending()"); time.sleep(1.2)
 r.check("用品はテプラを出さない", b.ev("window.__sent.length"), 0)
 b.ev("""{ photos=[{name:'a.jpg',handle:null,blobUrl:null}]; folderHandle={name:'t'}; TepraLink._kind='none';
-  switchTab('import'); document.getElementById('assignPerItem').value=1; assignPhotosToRegistered(); }""")
+  switchTab('edit'); assignPhotosToRegistered(1); }""")
 time.sleep(1.0)
 t = b.ev("buildTitle(products[0], {})")
 r.expect("出品タイトルは用品向けになる",
@@ -83,7 +83,7 @@ b.ev("""{ switchTab('register'); regSel.mode='fish';
   regSel.breed=regMasters().breeds.find(x=>x.name==='幹之');
   regSel.rank='特上'; regSel.qtyMode='pair'; regSel.qtyN=2; regSel.step=4; regDoRegister();
   photos.push({name:'b.jpg',handle:null,blobUrl:null});
-  switchTab('import'); document.getElementById('assignPerItem').value=1; assignPhotosToRegistered(); }""")
+  switchTab('edit'); assignPhotosToRegistered(1); }""")
 time.sleep(1.2)
 t2 = b.ev("buildTitle(products[1], {})")
 r.expect("魚は【メダカ】のまま", (t2 or "").startswith("【メダカ】") and "幹之" in t2, t2)

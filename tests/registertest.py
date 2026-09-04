@@ -133,7 +133,7 @@ b.ev("""{ localStorage.setItem('medaka_reg_items','[]');
   photos = Array.from({length:9},(_,i)=>({name:'IMG_'+String(i+1).padStart(3,'0')+'.jpg',handle:null,blobUrl:null,isLabel:false}));
   folderHandle={name:'テスト'}; }""")
 time.sleep(0.6)
-b.ev("switchTab('import');document.getElementById('assignPerItem').value=3;refreshAssignBar();assignPhotosToRegistered()")
+b.ev("switchTab('edit'); assignPerItemValue=3; assignPhotosToRegistered(3)")
 time.sleep(0.6)
 r.check("商品が3件できる", b.ev("products.length"), 3)
 r.check("順番どおりに配る", b.ev("JSON.stringify(products.map(p=>p.specimenIdxs))"), "[[0,1,2],[3,4,5],[6,7,8]]")

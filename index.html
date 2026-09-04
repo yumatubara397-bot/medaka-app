@@ -652,6 +652,15 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 
 .reg-tepra .tepra-auto select{height:32px;padding:2px 6px;border-radius:6px;
   border:1px solid var(--line,#2a3350);background:var(--bg,#0d1220);color:inherit;font-size:13px}
+
+/* 編集タブの上の帯 */
+.edit-folder-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;
+  padding:10px 14px;border-radius:10px;background:var(--bg2,#141a2e);border:1px solid var(--line,#2a3350)}
+.edit-folder-bar .txt{font-size:14px}
+.edit-folder-bar .btn{margin-left:auto}
+.edit-folder-bar .btn + .btn{margin-left:0}
+.edit-folders{margin-bottom:16px}
+.edit-folders summary{cursor:pointer;opacity:.7;font-size:13px;margin-bottom:10px}
 </style>
 </head>
 <body>
@@ -663,9 +672,8 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
     </div>
     <nav class="tabs" role="tablist">
       <button class="tab active" data-tab="register" role="tab">① 登録</button>
-      <button class="tab" data-tab="import" role="tab">② 取込</button>
-      <button class="tab" data-tab="edit" role="tab">③ 編集</button>
-      <button class="tab" data-tab="listing" role="tab">④ 出品</button>
+      <button class="tab" data-tab="edit" role="tab">② 編集</button>
+      <button class="tab" data-tab="listing" role="tab">③ 出品</button>
       <button class="tab" data-tab="history" role="tab">履歴</button>
       <button class="tab" data-tab="settings" role="tab">⚙ 設定</button>
     </nav>
@@ -708,68 +716,29 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
       </div>
     </section>
 
-    <!-- ===== 取込タブ ===== -->
-    <section id="panel-import" class="panel hidden">
-      <div id="emptyImport" class="empty-state">
-        <div class="icon">📁</div>
-        <h2>撮った写真を取り込む</h2>
-        <p id="importIntro">「① 登録」した順に、1商品あたり決まった枚数ずつ撮ってください。<br>
-        取り込むと、管理番号のフォルダへ自動で振り分けます。</p>
-        <button id="btnFsLoad" class="btn btn-primary">🐟 保存先フォルダから読み込む</button>
-        <button id="btnPickFolder" class="btn btn-ghost">📂 別のフォルダを選ぶ</button>
-        <button id="btnPickFiles" class="btn btn-ghost">🖼 写真を選ぶ（Safari・iPad用）</button>
-        <input type="file" id="filePicker" accept="image/jpeg,image/png" multiple hidden>
-        <div class="hint" id="pickerHint">※ フォルダ選択は Chrome / Edge のみ。Safari・iPad では「写真を選ぶ」をお使いください</div>
-      </div>
-
-      <div id="importLoaded" class="hidden">
-        <div class="bar-row">
-          <div class="bar-info"><span id="folderName"></span> / <span id="photoCount"></span>枚</div>
-          <div class="bar-actions">
-            <button id="btnFsReload" class="btn btn-ghost">🐟 保存先から読み直す</button>
-            <button id="btnReimport" class="btn btn-ghost">フォルダを変更</button>
-            <button id="btnReimportFiles" class="btn btn-ghost">写真を選び直す</button>
-            <button id="btnClearImport" class="btn btn-ghost">クリア</button>
-          </div>
-        </div>
-        <div id="warningBanner" class="warn-banner hidden"></div>
-
-        <div id="assignBar" class="card hidden" style="margin-bottom:16px">
-          <h3 class="card-title">登録した商品に写真を割り当てる</h3>
-          <p class="hint" style="margin:4px 0 12px">
-            撮った順に上から割り当てます。</p>
-          <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
-            <label>1商品あたり
-              <input type="number" id="assignPerItem" min="1" max="20" value="3"
-                     style="width:70px;padding:8px;margin:0 4px">枚</label>
-            <button id="btnAssign" class="btn btn-primary">この順で割り当てる</button>
-            <span class="hint" id="assignHint"></span>
-          </div>
-        </div>
-
-        <h3>管理番号ごとのフォルダ</h3>
-        <div id="folderList" class="folders"></div>
-
-        <details id="advancedImport" style="margin-top:20px">
-          <summary style="cursor:pointer;opacity:.7;font-size:13px">こまかい編集（品種名や管理番号を直す）</summary>
-          <div id="productList" class="product-list"></div>
-        </details>
-
-        <h3>読み込んだ写真 <span style="color:var(--ink-dim);font-family:inherit;text-transform:none;font-size:11px">（取り込んだ順に並びます）</span></h3>
-        <div id="photoGrid" class="photo-grid"></div>
-      </div>
-    </section>
-
     <!-- ===== 編集タブ ===== -->
     <section id="panel-edit" class="panel hidden">
       <div id="editEmpty" class="empty-state">
         <div class="icon">🎨</div>
-        <h2>取込タブで写真を読み込んでください</h2>
-        <p>① 取込タブでフォルダを選び、商品グループを作ってからこのタブを開きます。</p>
-        <button class="btn btn-primary" id="btnGotoImport">① 取込タブへ</button>
+        <h2 id="editEmptyTitle">写真フォルダを読み込みます</h2>
+        <p id="editEmptyMsg">
+          「① 登録」した魚のフォルダ（<b>魚</b>）から、写真を自動で読み込みます。<br>
+          写真をフォルダに入れてから、このタブを開いてください。</p>
+        <button class="btn btn-primary" id="btnEditReload">🐟 いま読み込む</button>
+        <button class="btn btn-ghost" id="btnEditPickRoot">保存先フォルダを選ぶ</button>
       </div>
 
       <div id="editLoaded" class="hidden">
+        <div class="edit-folder-bar">
+          <span id="editFolderInfo" class="txt"></span>
+          <button id="btnEditReload2" class="btn btn-ghost btn-sm">🔄 読み込み直す</button>
+          <button id="btnArchive" class="btn btn-primary btn-sm">✅ 編集を終えて保存する</button>
+        </div>
+        <details id="editFolders" class="edit-folders">
+          <summary>管理番号ごとのフォルダを見る</summary>
+          <div id="folderList" class="folders"></div>
+        </details>
+
         <!-- マイスタイル: 💾保存で自動学習されたペアを Gemini に同送 -->
         <div class="mystyle-section" id="mystyleSection">
           <div class="mystyle-head">
@@ -988,7 +957,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
         <div class="icon">🛒</div>
         <h2>取込タブで写真を読み込んでください</h2>
         <p>① 取込タブでフォルダを選び、商品グループを作ってからこのタブを開きます。<br>② 編集タブで加工した画像があれば、そのまま出品画像として使えます。</p>
-        <button class="btn btn-primary" id="btnGotoImport2">① 取込タブへ</button>
+        <button class="btn btn-primary" id="btnGotoEdit">② 編集タブへ</button>
       </div>
 
       <div id="listingLoaded" class="hidden">
@@ -1242,73 +1211,26 @@ function switchTab(name){
   $$('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   $$('.panel').forEach(p => p.classList.toggle('hidden', p.id !== 'panel-'+name));
   if(name === 'register') renderRegisterPanel();
-  if(name === 'import'){ refreshAssignBar(); renderFolders(); }
-  if(name === 'edit') renderEditPanel();
+
+  if(name === 'edit'){ autoLoadForEdit(); }
   if(name === 'listing') renderListingPanel();
   if(name === 'history') renderHistoryPanel();
 }
 
 // ===== Folder pick =====
-$('#btnPickFolder').onclick = pickFolder;
-$('#btnReimport').onclick = pickFolder;
-$('#btnClearImport').onclick = clearImport;
 
 // Safari など showDirectoryPicker が無いブラウザでも使えるようにする
 const supportsFolderPicker = typeof window.showDirectoryPicker === 'function';
 
-$('#btnAssign').onclick = assignPhotosToRegistered;
-$('#btnFsLoad').onclick = fsLoadAuto;
-$('#btnFsReload').onclick = fsLoadAuto;
-$('#assignPerItem').oninput = refreshAssignBar;
 
-$('#btnPickFiles').onclick = () => $('#filePicker').click();
-$('#btnReimportFiles').onclick = () => $('#filePicker').click();
-$('#filePicker').addEventListener('change', async (e) => {
-  const files = Array.from(e.target.files || []);
-  e.target.value = '';                       // 同じ写真をもう一度選べるように
-  if(files.length === 0) return;
-  await loadPhotosFromFiles(files);
-});
+$('#btnEditReload').onclick  = () => { products = []; photos = []; autoLoadForEdit(); };
+$('#btnEditReload2').onclick = () => { products = []; photos = []; autoLoadForEdit(); };
+$('#btnEditPickRoot').onclick = async () => { await FsLink.chooseRoot(); autoLoadForEdit(); };
+$('#btnArchive').onclick = fsArchiveAll;
 
-// 写真を直接選んだ場合の取込（フォルダ選択と同じ形に揃える）
-async function loadPhotosFromFiles(files){
-  const imgs = files
-    .filter(f => /\.(jpe?g|png)$/i.test(f.name))
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-  if(imgs.length === 0){ toast('画像ファイルが選ばれていません', 'err'); return; }
 
-  photos.forEach(p => p.blobUrl && URL.revokeObjectURL(p.blobUrl));
-  // handle.getFile() で読む作りに合わせておく（以降の処理はフォルダ選択と共通）
-  photos = imgs.map((f, i) => ({
-    name: f.name,
-    handle: { getFile: async () => f },
-    blobUrl: null,
-  }));
-  folderHandle = { name: '選択した写真' };   // 表示と編集キャッシュのキーに使う
-  $('#folderName').textContent = `${imgs.length}枚を選択`;
-  $('#photoCount').textContent = photos.length;
-  $('#emptyImport').classList.add('hidden');
-  $('#importLoaded').classList.remove('hidden');
-  toast(`${photos.length}枚を読込`, 'ok');
-  await renderPhotoGrid();
-  computeProductsAndRender();
-}
 
-async function pickFolder(){
-  if(!supportsFolderPicker){
-    // Safari では写真を直接選ぶ方式に切り替える
-    toast('このブラウザはフォルダ選択に未対応です。写真を選んでください', 'err');
-    $('#filePicker').click();
-    return;
-  }
-  try {
-    folderHandle = await window.showDirectoryPicker({ mode:'read' });
-  } catch(e){
-    if(e.name === 'AbortError') return;
-    toast('フォルダ選択失敗: ' + e.message, 'err'); return;
-  }
-  await loadPhotosFromFolder();
-}
+
 
 async function loadPhotosFromFolder(){
   const entries = [];
@@ -1323,10 +1245,8 @@ async function loadPhotosFromFolder(){
   photos = entries.map((e, i) => ({
     name: e.name, handle: e, blobUrl: null,
   }));
-  $('#folderName').textContent = folderHandle.name;
-  $('#photoCount').textContent = photos.length;
-  $('#emptyImport').classList.add('hidden');
-  $('#importLoaded').classList.remove('hidden');
+  showLoadedUi();
+  showLoadedUi();
 
   if(photos.length === 0){
     toast('画像ファイルが見つかりません', 'err');
@@ -1337,14 +1257,6 @@ async function loadPhotosFromFolder(){
   computeProductsAndRender();
 }
 
-function clearImport(){
-  folderHandle = null;
-  photos.forEach(p => p.blobUrl && URL.revokeObjectURL(p.blobUrl));
-  photos = [];
-  products = [];
-  $('#importLoaded').classList.add('hidden');
-  $('#emptyImport').classList.remove('hidden');
-}
 
 // ===== Photo grid =====
 async function renderPhotoGrid(){
@@ -1830,15 +1742,6 @@ function loadSettings(){
 }
 loadSettings();
 
-// フォルダ選択に未対応なら、そちらのボタンは目立たせない
-(function adjustPickerUI(){
-  if(supportsFolderPicker) return;
-  $('#btnPickFolder').classList.remove('btn-primary');
-  $('#btnPickFolder').classList.add('btn-ghost');
-  $('#btnPickFiles').classList.remove('btn-ghost');
-  $('#btnPickFiles').classList.add('btn-primary');
-  $('#pickerHint').textContent = 'このブラウザではフォルダ選択が使えません。「写真を選ぶ」から、登録した順に並んだ写真をまとめて選んでください';
-})();
 
 // ============================================================
 // ===== 📚 お手本スタイル機能 — 廃止 =====
@@ -2073,7 +1976,7 @@ function updateCostHint(){
     : `加工対象: ${specCount}枚 / ${parts.join(' + ')} = 約${totalYen}円`;
 }
 
-$('#btnGotoImport').onclick = () => switchTab('import');
+
 
 // ===== マイスタイル UI 操作 =====
 async function refreshMystyleUi(){
@@ -2282,6 +2185,8 @@ async function renderEditPanel(){
   }
   $('#editEmpty').classList.add('hidden');
   $('#editLoaded').classList.remove('hidden');
+  renderEditFolderBar();
+  renderFolders();
   updateCostHint();
   updateAiCostHint();
   await refreshMystyleUi();
@@ -4517,7 +4422,7 @@ $('#btnLstImgReset').onclick = () => {
   fillImgForm();
   toast('初期値に戻しました', 'ok');
 };
-$('#btnGotoImport2').onclick = () => switchTab('import');
+
 $('#btnGotoListingSettings').onclick = () => { switchTab('settings'); $('#lstTitleFold').scrollIntoView({ behavior:'smooth', block:'start' }); };
 
 // ===== タイトルテンプレート =====
@@ -4900,6 +4805,7 @@ function downloadBlob(blob, filename){
 }
 
 // ===== ZIP生成メイン =====
+$('#btnGotoEdit').onclick = () => switchTab('edit');
 $('#btnBuildZip').onclick = buildAuctownExport;
 
 // 生成前チェック: errors があれば中止、warnings は確認ダイアログ
@@ -5035,7 +4941,7 @@ async function buildAuctownExport(){
 
     await historyAdd({
       ts: now.toISOString(),
-      folderName: (folderHandle && folderHandle.name) || '',
+      folderName: (folderHandle && folderHandle.name) || '魚',
       count: targets.length,
       imageCount: files.length,
       encoding, htmlDesc: htmlMode,
@@ -6624,7 +6530,7 @@ function renderRegDone(){
       <button class="btn btn-ghost" id="regGoNext">→ 次の魚を登録</button>
     </div>`;
   $('#panel-register').querySelector('.reg-main').prepend(div);
-  $('#regGoPhotos').onclick = () => switchTab('import');
+  $('#regGoPhotos').onclick = () => switchTab('edit');
   $('#regGoNext').onclick = () => {
     regSel.lastNo = ''; regSel.breed = null; regSel.step = 1;
     renderRegisterPanel();
@@ -6703,7 +6609,7 @@ $('#regClearAll').onclick = () => {
   saveRegItems([]); regSel.lastNo = '';
   renderRegisterPanel();
 };
-$('#regToImport').onclick = () => switchTab('import');
+$('#regToImport').onclick = () => switchTab('edit');
 // ===== テプラ用CSVの書き出し =====
 // キングジムの「TEPRA LINK 2」の流し込みフォームは CSV / TXT を読み込める。
 // 1行目を列タイトルにしておくと、アプリ側でその列をラベルに差し込める。
@@ -6798,10 +6704,11 @@ async function fsHandleGet(key){
 function fsSafeName(t){
   return String(t || '').replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim().slice(0, 80);
 }
-/** 「管理番号_品種名」 */
+/** 「魚名_管理番号」 */
 function fsFolderName(item){
   const name = fsSafeName(item.variety);
-  return fsSafeName(item.controlNo) + (name ? '_' + name : '');
+  const no = fsSafeName(item.controlNo);
+  return name ? (name + '_' + no) : no;
 }
 
 /** 覚えている「魚」フォルダを呼び戻す。使えなければ null */
@@ -6884,13 +6791,43 @@ async function fsReconnect(){
   return fsChooseRoot();
 }
 
+
+
+/** 取込タブを廃止したので、無くなった部品への指示は何もしない */
+function showLoadedUi(){ /* 編集タブが受け持つ */ }
+function showEmptyUi(){ /* 編集タブが受け持つ */ }
+function refreshAssignBar(){ /* 順番での割り当てはやめた */ }
+function renderPhotoGrid(){ /* 写真の一覧は編集タブで見る */ }
+
+// ===== 作業フォルダと保管フォルダ =====
+// 選んでもらうのは「デスクトップ」など親のフォルダ。その中に
+//   魚/        … これから編集するもの（登録すると管理番号のフォルダができる）
+//   魚編集後/  … 編集を終えたもの（原本と編集後の両方）
+// を作る。無ければ自動で作る。
+const FS_WORK_NAME = '魚';
+const FS_DONE_NAME = '魚編集後';
+
+async function fsSubDir(name){
+  let root = await fsRestoreRoot();
+  if(!root) root = await fsRestoreRoot(true);
+  if(!root) return null;
+  try { return await root.getDirectoryHandle(name, { create: true }); }
+  catch(e){
+    toast(`「${name}」フォルダを作れませんでした`, 'err');
+    return null;
+  }
+}
+/** これから編集するもの置き場 */
+function fsWorkDir(){ return fsSubDir(FS_WORK_NAME); }
+/** 編集を終えたもの置き場 */
+function fsDoneDir(){ return fsSubDir(FS_DONE_NAME); }
+
 /** その商品のフォルダを作る（すでにあればそれを返す） */
 async function fsEnsureFolder(item){
-  let root = await fsRestoreRoot();
-  if(!root) root = await fsRestoreRoot(true);   // 許可が外れていたら取り直す
-  if(!root) return null;
+  const work = await fsWorkDir();
+  if(!work) return null;
   try {
-    return await root.getDirectoryHandle(fsFolderName(item), { create: true });
+    return await work.getDirectoryHandle(fsFolderName(item), { create: true });
   } catch(e){
     toast('フォルダを作れませんでした: ' + (e && e.message ? e.message : e), 'err');
     return null;
@@ -6899,13 +6836,13 @@ async function fsEnsureFolder(item){
 
 /** 登録済みのぶんで、まだ無いフォルダをまとめて作る */
 async function fsCreateMissingFolders(){
-  const root = (await fsRestoreRoot()) || (await fsRestoreRoot(true));
-  if(!root){ toast('先に保存先フォルダを選んでください', 'err'); return; }
-  const items = regItems();
+  const work = await fsWorkDir();
+  if(!work){ toast('先に保存先フォルダを選んでください', 'err'); return; }
+  const items = regItems().filter(x => x.kind !== 'goods');
   let made = 0;
   for(const it of items){
     try {
-      await root.getDirectoryHandle(fsFolderName(it), { create: true });
+      await work.getDirectoryHandle(fsFolderName(it), { create: true });
       made++;
     } catch(e){ /* 1件ずつなので、失敗しても次へ進む */ }
   }
@@ -6915,8 +6852,9 @@ async function fsCreateMissingFolders(){
 
 /** 各フォルダの中の写真を読み込んで、そのまま商品に割り当てる */
 async function fsLoadFromFolders(){
-  const root = (await fsRestoreRoot()) || (await fsRestoreRoot(true));
-  if(!root){ toast('先に保存先フォルダを選んでください', 'err'); return; }
+  const work = await fsWorkDir();
+  if(!work){ toast('先に保存先フォルダを選んでください', 'err'); return; }
+  const root = work;
   const items = regItems();
   if(!items.length){ toast('登録した商品がありません', 'err'); return; }
 
@@ -6964,8 +6902,7 @@ async function fsLoadFromFolders(){
   assignMode = true;
   leftoverIdxs = [];
   folderHandle = { name: root.name };
-  $('#emptyImport').classList.add('hidden');
-  $('#importLoaded').classList.remove('hidden');
+  showLoadedUi();
   $('#folderName').textContent = root.name;
   $('#photoCount').textContent = photos.length;
 
@@ -7268,19 +7205,29 @@ async function fsLoadFromFoldersAndroid(){
   assignMode = true;
   leftoverIdxs = [];
   folderHandle = { name: st.rootName || '保存先' };
-  $('#emptyImport').classList.add('hidden');
-  $('#importLoaded').classList.remove('hidden');
-  $('#folderName').textContent = folderHandle.name;
-  $('#photoCount').textContent = photos.length;
+  showLoadedUi();
+  showLoadedUi();
   syncFolderPhotos();
   renderFolders(); renderProductList(); renderWarnings(); renderPhotoGrid(); refreshAssignBar();
   const withPhotos = built.filter(b => b.specimenIdxs.length).length;
   toast(`${withPhotos}件 / ${photos.length}枚 を読み込みました`, 'ok');
 }
 
-/** 端末に合わせて読み込み方を選ぶ */
+/** 端末に合わせて読み込み方を選ぶ。二重に走らないようにする */
+let fsLoading = null;
 function fsLoadAuto(){
-  return FsLink.kind() === 'android' ? fsLoadFromFoldersAndroid() : fsLoadFromFolders();
+  // タブの切り替えとボタンが重なると、同じ写真を二重に読み込んでしまう
+  if(fsLoading) return fsLoading;
+  fsLoading = (async () => {
+    try {
+      return FsLink.kind() === 'android'
+        ? await fsLoadFromFoldersAndroid()
+        : await fsLoadFromFolders();
+    } finally {
+      fsLoading = null;
+    }
+  })();
+  return fsLoading;
 }
 
 /** 保存先の案内バー */
@@ -7608,6 +7555,135 @@ function openRedoDialog(photoIdx, ph, prod, item){
   }
 }
 
+
+
+/** 編集タブを開いたときに、保存先の「魚」フォルダから自動で読み込む */
+let editAutoLoading = false;
+async function autoLoadForEdit(){
+  // すでに読み込んでいれば、そのまま編集を続ける
+  if(products.length && photos.length){ renderEditPanel(); renderFolders(); return; }
+  if(editAutoLoading) return;
+
+  if(!FsLink.available()){
+    $('#editEmptyTitle').textContent = 'この端末では自動で読み込めません';
+    $('#editEmptyMsg').innerHTML = 'パソコンのChrome / Edge、またはAndroidアプリでお使いください。';
+    renderEditPanel();
+    return;
+  }
+  const st = await FsLink.status();
+  if(!st.hasRoot){
+    $('#editEmptyTitle').textContent = '保存先フォルダを決めてください';
+    $('#editEmptyMsg').innerHTML =
+      'デスクトップなど、写真を置く場所を選んでください。<br>'
+      + 'その中に <b>魚</b>（これから編集するもの）と <b>魚編集後</b>（編集を終えたもの）を作ります。';
+    renderEditPanel();
+    return;
+  }
+
+  editAutoLoading = true;
+  try {
+    await fsLoadAuto();
+  } catch(e){
+    toast('写真を読み込めませんでした（' + (e && e.message ? e.message : e) + '）', 'err');
+  } finally {
+    editAutoLoading = false;
+    renderEditPanel();       // 何があっても画面は描き直す
+  }
+}
+
+/** 編集タブの上に出す案内 */
+function renderEditFolderBar(){
+  const el = $('#editFolderInfo');
+  if(!el) return;
+  const withPhotos = products.filter(p => p.specimenIdxs.length).length;
+  const none = products.length - withPhotos;
+  el.textContent = `${withPhotos}件 / 写真${photos.length}枚`
+    + (none ? `（写真がまだ無い商品 ${none}件）` : '');
+}
+
+// ===== 編集を終えて保管する =====
+// 「魚編集後/<魚名_管理番号>/」に、原本と編集後の両方を入れる。
+// 入れ終わったら「魚/」側のフォルダは消す（＝作業場が空になる）。
+
+/** フォルダの中の写真を1枚ずつ書き出す */
+async function fsWriteFile(dir, name, blob){
+  const fh = await dir.getFileHandle(name, { create: true });
+  const w = await fh.createWritable();
+  await w.write(blob);
+  await w.close();
+}
+
+/** その商品の編集を終えて、保管フォルダへ移す */
+async function fsArchiveOne(prod, doneRoot, workRoot){
+  const folder = fsFolderName({ variety: prod.variety, controlNo: prod.controlNo });
+  const dst = await doneRoot.getDirectoryHandle(folder, { create: true });
+  const org = await dst.getDirectoryHandle('原本', { create: true });
+  const edt = await dst.getDirectoryHandle('編集後', { create: true });
+
+  let saved = 0;
+  for(const i of prod.specimenIdxs){
+    const ph = photos[i];
+    if(!ph) continue;
+    // 原本
+    try {
+      const file = await ph.handle.getFile();
+      await fsWriteFile(org, ph.name, file);
+    } catch(e){ /* 読めない写真は飛ばす */ }
+    // 編集後（加工していなければ原本と同じものを入れる）
+    const st = editState[i];
+    try {
+      let blob;
+      if(st && st.editedBlobUrl) blob = await (await fetch(st.editedBlobUrl)).blob();
+      else blob = await ph.handle.getFile();
+      await fsWriteFile(edt, ph.name, blob);
+      saved++;
+    } catch(e){ /* 書けなければ次へ */ }
+  }
+
+  // 作業場のフォルダを消す
+  try { await workRoot.removeEntry(folder, { recursive: true }); }
+  catch(e){ /* すでに無ければそれでよい */ }
+
+  return saved;
+}
+
+/** 画面の「編集を終えて保存する」から呼ぶ */
+async function fsArchiveAll(){
+  const targets = products.filter(p => p.specimenIdxs.length);
+  if(!targets.length){ toast('保存するものがありません', 'err'); return; }
+
+  const doneRoot = await fsDoneDir();
+  const workRoot = await fsWorkDir();
+  if(!doneRoot || !workRoot){ toast('保存先フォルダを選んでください', 'err'); return; }
+
+  const names = targets.map(p => fsFolderName({ variety: p.variety, controlNo: p.controlNo }));
+  const head = names.slice(0, 8).join('、') + (names.length > 8 ? ` ほか${names.length - 8}件` : '');
+  if(!confirm(`${targets.length}件を「${FS_DONE_NAME}」へ移します。\n\n${head}\n\n`
+            + `原本と編集後の両方を保存し、「${FS_WORK_NAME}」の中は空になります。よろしいですか？`)) return;
+
+  toast(`${targets.length}件を保存しています…`, 'ok');
+  let done = 0, files = 0;
+  for(const prod of targets){
+    try {
+      files += await fsArchiveOne(prod, doneRoot, workRoot);
+      done++;
+    } catch(e){
+      toast(`${prod.controlNo} を保存できませんでした`, 'err');
+    }
+  }
+
+  // 移した商品は登録一覧からも片付ける
+  const moved = new Set(targets.map(p => p.controlNo));
+  saveRegItems(regItems().filter(x => !moved.has(x.controlNo)));
+
+  photos.forEach(ph => ph.blobUrl && URL.revokeObjectURL(ph.blobUrl));
+  photos = [];
+  products = [];
+  assignMode = false;
+  renderFolders(); renderEditPanel(); renderRegisterPanel();
+  toast(`${done}件・写真${files}枚を「${FS_DONE_NAME}」に保存しました`, 'ok');
+}
+
 // ===== 管理番号ごとのフォルダ表示 =====
 // 登録した順に写真を配り、ズレていたら区切りを1枚ずつ動かして直せるようにする。
 
@@ -7746,6 +7822,10 @@ async function pushGoodsPhotos(item){
   return idxs;
 }
 
+/**
+ * 手元にある photos を、登録した商品へ順番に配る。
+ * ふだんはフォルダから読むので使わないが、写真を直接渡したいときのために残す。
+ */
 // ===== 登録した商品に写真を割り当てる =====
 // 登録済みの商品へ、撮った順に配る。
 let assignMode = false;
@@ -7763,9 +7843,9 @@ function refreshAssignBar(){
     `登録 ${items.length} 件 / 写真 ${photos.length} 枚 → ${Math.min(canCover, items.length)} 件ぶん割り当てられます`;
 }
 
-async function assignPhotosToRegistered(){
+async function assignPhotosToRegistered(perItem){
   const items = regItems();
-  const per = Math.max(1, +($('#assignPerItem').value || 3));
+  const per = Math.max(1, +perItem || 3);
   if(!items.length){ toast('先に「① 登録」で商品を登録してください', 'err'); return; }
   if(!photos.length){ toast('写真がありません', 'err'); return; }
 
@@ -7796,8 +7876,7 @@ async function assignPhotosToRegistered(){
   assignMode = true;
   leftoverIdxs = [];
   // 写真がある以上、取込の画面は「読み込み済み」にしておく
-  $('#emptyImport').classList.add('hidden');
-  $('#importLoaded').classList.remove('hidden');
+  showLoadedUi();
   for(let i = cursor; i < photos.length; i++) leftoverIdxs.push(i);
 
   // 登録側にも「何枚ついたか」を残す

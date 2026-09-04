@@ -14,7 +14,7 @@ time.sleep(1.0)
 r.check("3件登録した", b.ev("regItems().length"), 3)
 
 print("■ 写真を取り込む前")
-b.ev("switchTab('import');renderFolders()"); time.sleep(0.4)
+b.ev("switchTab('edit');renderFolders()"); time.sleep(0.4)
 r.expect("案内が出る", "写真を取り込む" in (b.ev("document.getElementById('folderList').textContent") or ""),
          (b.ev("document.getElementById('folderList').textContent") or "").strip()[:50])
 

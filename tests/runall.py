@@ -27,14 +27,23 @@ def stop_fake():
 PLAIN = ["registertest", "wheeltest", "foldertest", "fstest", "fsandroidtest",
          "exporttest", "redotest", "croptest", "tidytest", "goodstest",
          "goodsfixedtest", "autoprinttest", "goodsprinttest", "surfacetest",
-         "labeltest", "blanktest", "glyphtest", "phonetest"]
+         "labeltest", "blanktest", "glyphtest", "flowtest", "phonetest"]
 # 偽モジュールが要るもの（止めるものは最後）
 WITH_FAKE = ["structtest", "sharptest", "cuttest", "speedtest", "usbtest", "resptest", "wintest"]
 
 def run(name):
     start = time.time()
+    # 前のブラウザが残っていると次が起動できないことがあるので、必ず片付けてから始める
+    subprocess.run(["pkill", "-f", "remote-debugging-port"], capture_output=True)
+    time.sleep(1.5)
     p = subprocess.run([sys.executable, str(HERE / f"{name}.py")],
                        capture_output=True, text=True)
+    if p.returncode != 0 and "件失敗" not in p.stdout:
+        # ブラウザが立ち上がらなかった等。1度だけやり直す
+        subprocess.run(["pkill", "-f", "remote-debugging-port"], capture_output=True)
+        time.sleep(3)
+        p = subprocess.run([sys.executable, str(HERE / f"{name}.py")],
+                           capture_output=True, text=True)
     last = [l for l in p.stdout.strip().split("\n") if l.strip()]
     tail = last[-1] if last else "(出力なし)"
     print(f"{name:<16} {tail}   ({time.time()-start:.0f}秒)")

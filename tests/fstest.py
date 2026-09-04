@@ -52,6 +52,8 @@ b.ev("fsChooseRoot()"); time.sleep(1.0)
 r.expect("選ぶと保存先が出る", "魚" in (b.ev("document.getElementById('regFsBar').textContent") or ""),
          (b.ev("document.getElementById('regFsBar').textContent") or "").strip()[:70])
 r.check("覚えている名前", b.ev("localStorage.getItem('medaka_fs_root_name')"), "魚")
+# 商品のフォルダは、選んだフォルダの中の「魚」にできる
+b.ev("window.WORK = () => (window.__fs.dirs['魚'] ? window.__fs.dirs['魚'].dirs : {});")
 
 print("■ 登録するとフォルダができる")
 b.ev("""{ TepraLink._kind='none';
@@ -59,24 +61,24 @@ b.ev("""{ TepraLink._kind='none';
     regSel.breed=regMasters().breeds.find(x=>x.name===nm);
     regSel.rank=rk; regSel.qtyMode='pair'; regSel.qtyN=1; regSel.step=4; regDoRegister(); }); }""")
 time.sleep(1.5)
-made = b.ev("Object.keys(window.__fs.dirs)")
+made = b.ev("Object.keys(WORK())")
 r.check("2つできた", len(made or []), 2)
 no1 = b.ev("regItems()[0].controlNo")
-r.expect("名前は 管理番号_品種名", (no1 + "_幹之") in (made or []), str(made))
-r.expect("2件目も同じ形", any(x.endswith("_夜桜") for x in (made or [])), str(made))
+r.expect("名前は 魚名_管理番号", ("幹之_" + no1) in (made or []), str(made))
+r.expect("2件目も同じ形", any(x.startswith("夜桜_") for x in (made or [])), str(made))
 
 print("■ フォルダ名に使えない文字は落とす")
 b.ev("regAddBreed('赤/白:ラメ','あかしろらめ','')")
 b.ev("regSel.breed=regMasters().breeds.find(x=>x.name==='赤/白:ラメ');regSel.step=3;regDoRegister()")
 time.sleep(1.2)
-made = b.ev("Object.keys(window.__fs.dirs)")
-r.expect("スラッシュとコロンが _ になる", any("赤_白_ラメ" in x for x in (made or [])), str(made))
+made = b.ev("Object.keys(WORK())")
+r.expect("スラッシュとコロンが _ になる", any(x.startswith("赤_白_ラメ_") for x in (made or [])), str(made))
 
 print("■ 足りないフォルダをまとめて作る")
-b.ev("delete window.__fs.dirs[Object.keys(window.__fs.dirs)[0]]")
-r.check("1つ消した", len(b.ev("Object.keys(window.__fs.dirs)") or []), 2)
+b.ev("{ const d=WORK(); delete d[Object.keys(d)[0]]; }")
+r.check("1つ消した", len(b.ev("Object.keys(WORK())") or []), 2)
 b.ev("fsCreateMissingFolders()"); time.sleep(1.2)
-r.check("作り直される", len(b.ev("Object.keys(window.__fs.dirs)") or []), 3)
+r.check("作り直される", len(b.ev("Object.keys(WORK())") or []), 3)
 
 print("■ フォルダに入れた写真を読み込む")
 b.ev("""{ const mk=(c)=>{const cv=document.createElement('canvas');cv.width=cv.height=80;
@@ -84,16 +86,18 @@ b.ev("""{ const mk=(c)=>{const cv=document.createElement('canvas');cv.width=cv.h
     return new Promise(res=>cv.toBlob(res,'image/jpeg')); };
   window.__put = async (dir, names, col) => {
     const blob = await mk(col);
-    names.forEach(n => { window.__fs.dirs[dir].files[n] = blob; });
+    names.forEach(n => { WORK()[dir].files[n] = blob; });
   }; }""")
-keys = b.ev("Object.keys(window.__fs.dirs).sort()")
+keys = b.ev("Object.keys(WORK()).sort()")
 b.ev(f"__put({keys[0]!r}, ['b.jpg','a.jpg','c.jpg'], '#2b6cb0')"); time.sleep(0.4)
 b.ev(f"__put({keys[1]!r}, ['x.jpg','y.jpg'], '#2f855a')"); time.sleep(0.4)
-b.ev("switchTab('import');fsLoadFromFolders()"); time.sleep(2.5)
+b.ev("switchTab('edit')"); time.sleep(1.0)
+b.ev("fsLoadAuto()"); time.sleep(2.5)
 r.check("商品は3件", b.ev("products.length"), 3)
 counts = b.ev("JSON.stringify(products.map(p=>p.specimenIdxs.length))")
 r.expect("写真の入ったフォルダぶんだけ読める", counts in ('[3,2,0]','[0,3,2]','[2,3,0]','[3,0,2]','[2,0,3]','[0,2,3]'), counts)
-r.check("合計5枚", b.ev("photos.length"), 5)
+r.check("読み込んだ枚数と各フォルダの合計が合う", b.ev("photos.length"),
+        b.ev("products.reduce((n,p)=>n+p.specimenIdxs.length,0)"))
 r.expect("名前順に並ぶ",
          b.ev("JSON.stringify(products.filter(p=>p.specimenIdxs.length===3).map(p=>p.specimenIdxs.map(i=>photos[i].name))[0])") == '["a.jpg","b.jpg","c.jpg"]',
          b.ev("JSON.stringify(products.filter(p=>p.specimenIdxs.length===3).map(p=>p.specimenIdxs.map(i=>photos[i].name))[0])"))
@@ -118,13 +122,13 @@ r.check("許可を求めたのは1回だけ", b.ev("window.__reqCount"), 1)
 
 print("■ 登録のたびに選び直さなくてよい")
 b.ev("window.__permState='prompt'; window.__reqCount=0; fsRoot=null;")
-before = len(b.ev("Object.keys(window.__fs.dirs)") or [])
+before = len(b.ev("Object.keys(WORK())") or [])
 b.ev("""{ TepraLink._kind='none';
   ['幹之','夜桜','オロチ'].forEach(nm=>{ regSel.mode='fish';
     regSel.breed=regMasters().breeds.find(x=>x.name===nm);
     regSel.rank='特上'; regSel.qtyMode='pair'; regSel.qtyN=1; regSel.step=4; regDoRegister(); }); }""")
 time.sleep(2.5)
-after = len(b.ev("Object.keys(window.__fs.dirs)") or [])
+after = len(b.ev("Object.keys(WORK())") or [])
 r.expect("3件ぶんフォルダができる", after - before >= 3, f"{before} → {after}")
 r.expect("許可を求めたのは多くても1回", (b.ev("window.__reqCount") or 0) <= 1,
          f"{b.ev('window.__reqCount')}回")

@@ -15,7 +15,7 @@ b.ev("""{ const mk=(c)=>{const cv=document.createElement('canvas');cv.width=cv.h
   photos = cols.map((c,i)=>({name:'IMG_'+String(i+1).padStart(3,'0')+'.jpg',
     handle:null, blobUrl:mk(c), isLabel:false}));
   folderHandle={name:'テスト'}; }""")
-b.ev("switchTab('import');document.getElementById('assignPerItem').value=3;refreshAssignBar()"); time.sleep(0.3)
+b.ev("switchTab('edit');document.getElementById('assignPerItem').value=3;refreshAssignBar()"); time.sleep(0.3)
 b.ev("assignPhotosToRegistered()"); time.sleep(1.5)
 d = b.send("Page.captureScreenshot", {"captureBeyondViewport": True})
 open("/tmp/folders.png","wb").write(base64.b64decode(d["data"]))

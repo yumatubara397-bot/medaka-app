@@ -19,20 +19,19 @@ b.ev("""(async()=>{ const cols=['#2b6cb0','#2f855a','#b7791f','#9b2c2c','#553c9a
       handle:{getFile:async()=>bl}, blobUrl:URL.createObjectURL(bl)}); }
   folderHandle={name:'テスト'}; })()""")
 time.sleep(1.5)
-b.ev("switchTab('import');document.getElementById('assignPerItem').value=3;refreshAssignBar();assignPhotosToRegistered()")
+b.ev("switchTab('edit'); assignPerItemValue=3; assignPhotosToRegistered(3)")
 time.sleep(1.5)
 
 print("■ 写真一覧にラベル切替が無い")
 r.check("切替ボタンは0個", b.ev("document.querySelectorAll('.tile-toggle').length"), 0)
-r.expect("見出しが変わっている", "読み込んだ写真" in (b.ev("document.getElementById('importLoaded').textContent") or ""),
-         "読み込んだ写真")
+r.expect("取込タブは無くなった", not b.ev("!!document.getElementById('panel-import')"), "")
 r.check("ラベル扱いの写真は無い", b.ev("photos.filter(p=>p.isLabel).length"), 0)
 
 print("■ 商品と写真")
 r.check("商品2件", b.ev("products.length"), 2)
 r.check("1件あたり3枚", b.ev("products.every(p=>p.specimenIdxs.length===3)"), True)
-r.expect("商品カードの表示", "写真 3枚" in (b.ev("document.getElementById('productList').textContent") or ""),
-         (b.ev("document.getElementById('productList').textContent") or "").replace("\n"," ")[:60])
+r.expect("フォルダ表示に枚数が出る", "3枚" in (b.ev("document.getElementById('folderList').textContent") or ""),
+         (b.ev("document.getElementById('folderList').textContent") or "").replace("\n"," ")[:60])
 
 print("■ 出品タブ")
 b.ev("switchTab('listing');renderListingPanel()"); time.sleep(1.0)

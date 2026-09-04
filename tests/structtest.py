@@ -28,8 +28,9 @@ FUNCS = [
   "fsFolderName","fsSafeName","fsRestoreRoot","fsChooseRoot","fsEnsureFolder","fsLoadAuto",
   "fsLoadFromFolders","fsLoadFromFoldersAndroid","renderFsBar","fsCreateMissingFoldersAuto",
   # 取込・フォルダ表示
-  "renderFolders","shiftBoundary","syncFolderPhotos","assignPhotosToRegistered","refreshAssignBar",
-  "pushGoodsPhotos","ensureThumb",
+  "renderFolders","shiftBoundary","syncFolderPhotos","pushGoodsPhotos","ensureThumb",
+  "fsWorkDir","fsDoneDir","fsArchiveAll","fsArchiveOne","fsWriteFile","autoLoadForEdit",
+  "renderEditFolderBar","renderEditPanel",
   # 拡大・やり直し
   "openLightbox","closeLightbox","renderLightbox","applyLbSize","syncZoomBar","lbVisibleRect",
   "lbSaveCrop","redoOnePhoto","addRedoReason","redoTopReasons",
@@ -60,11 +61,19 @@ FS = ["kind","available","androidCall","status","chooseRoot","ensureFolder","lis
 fm = [m for m in FS if b.ev(f"typeof FsLink.{m}") != "function"]
 r.expect("必要な手続きがそろっている", not fm, "無い: " + ", ".join(fm) if fm else "")
 
+print("■ 取込タブは廃止された")
+r.expect("取込タブは無い", not b.ev("!!document.querySelector('[data-tab=import]')"), "")
+r.expect("取込のパネルも無い", not b.ev("!!document.getElementById('panel-import')"), "")
+tabs = b.ev("[...document.querySelectorAll('.tab')].map(x=>x.textContent.trim())")
+r.expect("タブは 登録/編集/出品/履歴/設定 の5つ", len(tabs or []) == 5, " | ".join(tabs or []))
+
 print("■ 画面の部品")
 IDS = ["panel-register","regSteps","regStepBody","regItemList","regTepraBar","regFsBar",
-       "regTepraPrint","regGoodsPrint","regTepraCsv","regToImport","folderList","assignBar",
-       "assignPerItem","lightbox","lbZoomRange","lbSaveCrop","lbRedo","redoDialog",
-       "btnPrintLog","btnSaveLocal","toast","tepraFont","tepraRows","tepraLen","tepraCut","tepraMargin","tepraAuto"]
+       "regTepraPrint","regGoodsPrint","regTepraCsv","regToImport","folderList",
+       "panel-edit","editEmpty","editLoaded","editFolderInfo","btnEditReload","btnEditReload2",
+       "btnEditPickRoot","btnArchive","editFolders",
+       "lightbox","lbZoomRange","lbSaveCrop","lbRedo","redoDialog",
+       "btnPrintLog","btnSaveLocal","btnTapeFeed","btnTapeFeedCut","toast"]
 im = [i for i in IDS if not b.ev(f"!!document.getElementById('{i}')")]
 r.expect(f"{len(IDS)}個の部品がすべてある", not im, "無い: " + ", ".join(im) if im else "")
 

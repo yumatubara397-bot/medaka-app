@@ -22,7 +22,7 @@ b.ev("""(async()=>{ const cv=document.createElement('canvas'); cv.width=1000; cv
   photos=[{name:'TEST.jpg', handle:{getFile:async()=>bl}, blobUrl:URL.createObjectURL(bl)}];
   folderHandle={name:'テスト'}; })()""")
 time.sleep(1.2)
-b.ev("switchTab('import');document.getElementById('assignPerItem').value=1;refreshAssignBar();assignPhotosToRegistered()")
+b.ev("switchTab('edit'); assignPhotosToRegistered(1)")
 time.sleep(1.2)
 b.ev("document.querySelectorAll('#folderList .shot')[0].click()"); time.sleep(1.0)
 

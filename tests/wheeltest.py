@@ -69,7 +69,7 @@ r.check("管理番号", b.ev("regItems()[0].controlNo"), f"MD-{today}-001")
 
 print("■ 出品タイトルとテプラのラベル")
 b.ev("""{ photos=[{name:'a.jpg',handle:null,blobUrl:null,isLabel:false}]; folderHandle={name:'t'};
-  switchTab('import'); document.getElementById('assignPerItem').value=1; assignPhotosToRegistered(); }""")
+  switchTab('edit'); assignPhotosToRegistered(1); }""")
 time.sleep(0.6)
 t = b.ev("buildTitle(products[0], {})")
 r.expect("タイトルに雄雌が入る", "雄2 雌5" in (t or ""), t)

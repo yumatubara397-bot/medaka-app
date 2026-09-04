@@ -50,10 +50,10 @@ time.sleep(1.5)
 dirs = b.ev("Object.keys(window.__fb.dirs)")
 r.check("2つできた", len(dirs or []), 2)
 no1 = b.ev("regItems()[0].controlNo")
-r.expect("名前は 管理番号_品種名", (no1 + "_幹之") in (dirs or []), str(dirs))
+r.expect("名前は 魚名_管理番号", ("幹之_" + no1) in (dirs or []), str(dirs))
 
 print("■ 取込タブでフォルダが並ぶ")
-b.ev("switchTab('import');fsLoadAuto()"); time.sleep(2.0)
+b.ev("switchTab('edit');fsLoadAuto()"); time.sleep(2.0)
 r.check("フォルダ2つ", b.ev("document.querySelectorAll('#folderList .folder').length"), 2)
 r.expect("撮影ボタンが出る", b.ev("!!document.querySelector('#folderList [data-act=shoot]')"), "📷 撮る")
 r.expect("写真追加ボタンも出る", b.ev("!!document.querySelector('#folderList [data-act=gallery]')"), "🖼 写真から追加")
@@ -61,7 +61,7 @@ r.expect("まだ写真は無い", "写真がありません" in (b.ev("document.
 
 print("■ その場で撮る")
 b.ev("document.querySelectorAll('#folderList [data-act=shoot]')[0].click()"); time.sleep(2.5)
-key = no1 + "_幹之"
+key = "幹之_" + no1
 r.check("1枚保存された", len(b.ev("window.__fb.dirs[" + repr(key) + "]") or []), 1)
 first = b.ev("window.__fb.dirs[" + repr(key) + "][0]")
 r.expect("名前は 管理番号_01.jpg", first == no1 + "_01.jpg", str(first))

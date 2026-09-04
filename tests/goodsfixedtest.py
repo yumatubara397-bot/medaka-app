@@ -74,7 +74,7 @@ b.ev("""(async()=>{ const mk=(c)=>{const cv=document.createElement('canvas');cv.
     photos.push({name:'FISH_'+photos.length+'.jpg', handle:{getFile:async()=>bl}, blobUrl:URL.createObjectURL(bl)}); }
   folderHandle={name:'テスト'}; })()""")
 time.sleep(1.2)
-b.ev("switchTab('import');document.getElementById('assignPerItem').value=3;refreshAssignBar();assignPhotosToRegistered()")
+b.ev("switchTab('edit'); assignPerItemValue=3; assignPhotosToRegistered(3)")
 time.sleep(2.0)
 r.check("商品は2件（用品＋魚）", b.ev("products.length"), 2)
 goods_p = b.ev("JSON.stringify(products.find(p=>p.controlNo.startsWith('YO-')))")

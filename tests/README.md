@@ -16,7 +16,8 @@ Chrome を裏で動かして `index.html` を実際に操作し、結果を確�
 
 ```bash
 cd tests
-python3 registertest.py     # 登録タブ一式（51項目）
+python3 flowtest.py         # 登録→魚フォルダ→編集で自動読み込み→魚編集後へ保管（19項目）
+python3 registertest.py     # 登録タブ一式（50項目）
 python3 wheeltest.py        # ランク・数量のホイール（29項目）
 python3 foldertest.py       # 取込のフォルダ表示・ずれ直し（23項目）
 python3 fstest.py           # 保存先フォルダ・パソコン経路（16項目）
@@ -48,6 +49,7 @@ pkill -f fake_webapi.py
 | ファイル | 何を確かめるか |
 |---|---|
 | `common.py` | ブラウザ操作の共通部分 |
+| `flowtest.py` | 登録で「魚」にフォルダができる／編集タブを開くと自動で読み込む／「編集を終えて保存する」で原本と編集後が「魚編集後」に入り「魚」が空になる／「魚編集後」の自動生成 |
 | `registertest.py` | ステップ式の登録／頭文字の絞り込み／検索／管理番号の発番／その場追加／テプラCSV／Androidの窓口／写真の割り当て |
 | `wheeltest.py` | ランク・数量のホイール／ペア・セット・雄雌の切り替え／古いランクの入れ替え／タブのアイコン |
 | `foldertest.py` | 管理番号ごとのフォルダ表示／写真の自動振り分け／区切りを1枚ずつ動かす／余りの扱い |

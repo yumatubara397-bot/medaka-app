@@ -17,7 +17,7 @@ b.ev("""(async()=>{ const mk=(c)=>{const cv=document.createElement('canvas');cv.
     photos.push({name:'IMG_'+String(i+1)+'.jpg', handle:{getFile:async()=>bl}, blobUrl:URL.createObjectURL(bl)}); }
   folderHandle={name:'テスト'}; })()""")
 time.sleep(1.5)
-b.ev("switchTab('import');document.getElementById('assignPerItem').value=3;refreshAssignBar();assignPhotosToRegistered()")
+b.ev("switchTab('edit'); assignPerItemValue=3; assignPhotosToRegistered(3)")
 time.sleep(1.5)
 
 print("■ フォルダの写真を押すと拡大する")
