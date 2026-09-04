@@ -29,6 +29,7 @@ function fakeDir(name, kids){
 }
 function fakeFile(name){ return { kind:'file', name:name }; }
 window.fakeDir = fakeDir; window.fakeFile = fakeFile;
+window.__realRestore = fsRestoreRoot;
 window.__setRoot = (h) => { fsRestoreRoot = async () => h; FsLink.status = async () =>
   ({ ok:true, hasRoot:!!h, rootName: h ? h.name : '' }); };
 'ok'""")
@@ -101,5 +102,31 @@ r.expect("選んでいるフォルダ名が出る", "デスクトップ" in txt,
 r.expect("魚の中身が出る", "忘却の翼_MD-1" in txt, "一覧に表示")
 r.check("閉じられる", b.ev("document.getElementById('fsStatusClose').click(); "
                           "document.getElementById('fsStatusDialog').classList.contains('hidden')"), True)
+
+# --- ④ 読み取れないときに、理由が画面に出るか -------------------------------
+print("■ 読み取れないときの案内")
+b.ev("localStorage.setItem('medaka_fs_root_name','デスクトップ')")
+b.ev("""
+fsRoot = null;
+fsRestoreRoot = window.__realRestore;      // 本物に戻して、本当の道筋を試す
+fsHandleGet = async () => ({ name:'デスクトップ',
+  async queryPermission(){ return 'prompt'; },
+  async requestPermission(){ return 'denied'; } });
+FsLink.status = async () => ({ ok:true, hasRoot:false, rootName:'デスクトップ' });
+'ok'""")
+b.ev("(async()=>{ products=[]; photos=[]; await autoLoadForEdit(); })()"); time.sleep(0.5)
+ttl = b.ev("document.getElementById('editEmptyTitle').textContent") or ""
+msg = b.ev("document.getElementById('editEmptyMsg').textContent") or ""
+r.expect("どのフォルダが読めないか名前が出る", "デスクトップ" in ttl, ttl)
+r.expect("理由が出る（当てずっぽうにしない）", "許可" in msg, msg[:70])
+
+print("■ ブラウザの言い分を、分かる言葉にする")
+r.check("許可が下りていない", b.ev("fsWhy({name:'NotAllowedError'})"), "このフォルダを使う許可が下りていません")
+r.check("見つからない", b.ev("fsWhy({name:'NotFoundError'})"),
+        "フォルダが見つかりません（名前を変えたか、移動したようです）")
+r.check("ブラウザが守っている場所", b.ev("fsWhy({name:'SecurityError'})"),
+        "ブラウザがこの場所を保護していて使えません")
+r.expect("知らない理由もそのまま見せる",
+         "Boom" in (b.ev("fsWhy({name:'OddError',message:'Boom'})") or ""), "握りつぶさない")
 
 b.close(); r.finish()

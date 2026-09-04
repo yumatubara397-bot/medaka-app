@@ -753,6 +753,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
         <div class="edit-folder-bar">
           <span id="editFolderInfo" class="txt"></span>
           <button id="btnEditReload2" class="btn btn-ghost btn-sm">🔄 読み込み直す</button>
+          <button id="btnEditFsStatus2" class="btn btn-ghost btn-sm">🔍 保存先</button>
           <button id="btnArchive" class="btn btn-primary btn-sm">✅ 編集を終えて保存する</button>
         </div>
         <details id="editFolders" class="edit-folders">
@@ -1257,6 +1258,7 @@ $('#btnEditPickRoot').onclick = async () => {
   await FsLink.chooseRoot(); await refreshFsConnected(); await fsCleanNested(); autoLoadForEdit();
 };
 $('#btnEditFsStatus').onclick = showFsStatus;
+$('#btnEditFsStatus2').onclick = showFsStatus;
 $('#btnArchive').onclick = fsArchiveAll;
 
 
@@ -6867,17 +6869,19 @@ async function fsFixRootChoice(){
 let fsRestoring = null;      // 取り直しが同時に何本も走らないようにする
 
 async function fsRestoreRoot(ask){
-  if(!FS_SUPPORTED) return null;
+  fsLastReason = '';        // 前回の理由が残って、別の原因を指さないようにする
+  if(!FS_SUPPORTED){ fsLastReason = 'この端末ではフォルダを扱えません'; return null; }
   if(fsRoot) return fsRoot;                     // 一度つながっていれば、そのまま使う
   if(!ask){
     const h = await fsHandleGet('root');
-    if(!h) return null;
+    if(!h){ fsLastReason = '保存先がまだ選ばれていません'; return null; }
     try {
       if(await h.queryPermission({ mode: 'readwrite' }) === 'granted'){
         fsRoot = h;
         return fsRoot;
       }
-    } catch(e){ /* 使えない手がかりは捨てる */ }
+      fsLastReason = `「${h.name}」を使う許可が切れています。「つなぐ」を押してください`;
+    } catch(e){ fsLastReason = fsWhy(e); }
     return null;
   }
   // 許可を取り直す。続けて登録しても、聞かれるのは1回だけにする
@@ -6885,11 +6889,13 @@ async function fsRestoreRoot(ask){
   fsRestoring = (async () => {
     try {
       const h = await fsHandleGet('root');
-      if(!h) return null;
+      if(!h){ fsLastReason = '保存先がまだ選ばれていません'; return null; }
       let perm = await h.queryPermission({ mode: 'readwrite' });
       if(perm !== 'granted') perm = await h.requestPermission({ mode: 'readwrite' });
       if(perm === 'granted'){ fsRoot = h; return fsRoot; }
-    } catch(e){ /* 取り直せなければ、選び直してもらう */ }
+      fsLastReason = `「${h.name}」を使う許可が下りませんでした。`
+        + `ブラウザの確認で「編集を許可」を選んでください`;
+    } catch(e){ fsLastReason = fsWhy(e); }
     return null;
   })();
   try { return await fsRestoring; }
@@ -6953,6 +6959,18 @@ function renderPhotoGrid(){ /* 写真の一覧は編集タブで見る */ }
 // を作る。無ければ自動で作る。
 const FS_WORK_NAME = '魚';
 let fsWorkWarnedAt = 0;   // 同じ注意を続けて出さないための時刻
+let fsLastReason = '';    // 直前につまずいた理由（画面に出して原因が分かるようにする）
+/** ブラウザが返した理由を、そのまま分かる言葉にする */
+function fsWhy(e){
+  if(!e) return '理由が分かりません';
+  const n = e.name || '';
+  if(n === 'NotAllowedError')  return 'このフォルダを使う許可が下りていません';
+  if(n === 'NotFoundError')    return 'フォルダが見つかりません（名前を変えたか、移動したようです）';
+  if(n === 'SecurityError')    return 'ブラウザがこの場所を保護していて使えません';
+  if(n === 'NoModificationAllowedError') return '他のアプリがこのフォルダを使っています';
+  if(n === 'TypeMismatchError') return '同じ名前のファイルがあってフォルダを作れません';
+  return (n ? n + '：' : '') + (e.message || String(e));
+}
 const FS_DONE_NAME = '魚編集後';
 
 async function fsSubDir(name){
@@ -6961,6 +6979,8 @@ async function fsSubDir(name){
   if(!root) return null;
   // 「魚」そのものが選ばれていると、その中にもう1つ「魚」を作ってしまう
   if(root.name === FS_WORK_NAME){
+    fsLastReason = `「${FS_WORK_NAME}」そのものが保存先になっています。`
+      + `その1つ上のフォルダ（デスクトップなど）を選び直してください`;
     // 何件登録しても注意は1回だけにする
     if(Date.now() - fsWorkWarnedAt > 4000){
       fsWorkWarnedAt = Date.now();
@@ -6970,7 +6990,8 @@ async function fsSubDir(name){
   }
   try { return await root.getDirectoryHandle(name, { create: true }); }
   catch(e){
-    toast(`「${name}」フォルダを作れませんでした`, 'err');
+    fsLastReason = `「${root.name}」の中に「${name}」を用意できません — ${fsWhy(e)}`;
+    toast(fsLastReason, 'err');
     return null;
   }
 }
@@ -7840,6 +7861,18 @@ async function autoLoadForEdit(){
     return;
   }
   const st = await FsLink.status();
+  // 覚えているのに使えない（許可が切れた・移動した）ときは、理由を出す
+  if(!st.hasRoot && localStorage.getItem(FS_ROOT_NAME_KEY)){
+    const nm = localStorage.getItem(FS_ROOT_NAME_KEY);
+    await fsRestoreRoot();                       // 理由を取り直す
+    $('#editEmptyTitle').textContent = `「${nm}」を読み取れません`;
+    $('#editEmptyMsg').innerHTML =
+      escapeHtml(fsLastReason || '許可が切れているようです') + '<br>'
+      + '下の「保存先フォルダを選ぶ」から選び直すと直ります。'
+      + '<br><small>いま選ばれている場所や中身は「🔍 保存先の状態を見る」で確かめられます。</small>';
+    renderEditPanel();
+    return;
+  }
   if(st.hasRoot && st.rootName === FS_WORK_NAME){
     $('#editEmptyTitle').textContent = '保存先の選び方がずれています';
     $('#editEmptyMsg').innerHTML =
@@ -7862,7 +7895,11 @@ async function autoLoadForEdit(){
   try {
     await fsLoadAuto();
   } catch(e){
-    toast('写真を読み込めませんでした（' + (e && e.message ? e.message : e) + '）', 'err');
+    fsLastReason = fsWhy(e);
+    toast('写真を読み込めませんでした — ' + fsLastReason, 'err');
+    $('#editEmptyTitle').textContent = '写真を読み取れませんでした';
+    $('#editEmptyMsg').innerHTML = escapeHtml(fsLastReason)
+      + '<br><small>「🔍 保存先の状態を見る」で、どのフォルダを見に行っているか確かめられます。</small>';
   } finally {
     editAutoLoading = false;
     renderEditPanel();       // 何があっても画面は描き直す
@@ -7887,11 +7924,17 @@ function renderEditFolderBar(){
 async function fsDiagnose(){
   const out = { ok:false, rootName:'', hasWork:false, hasDone:false,
                 workItems:[], doneItems:[], nested:false, notes:[] };
+  out.saved = localStorage.getItem(FS_ROOT_NAME_KEY) || '';
+  out.perm = '—';
   if(!FS_SUPPORTED){ out.notes.push('この端末ではフォルダを扱えません'); return out; }
   const root = (await fsRestoreRoot()) || (await fsRestoreRoot(true));
-  if(!root){ out.notes.push('保存先フォルダにつながっていません'); return out; }
+  if(!root){
+    out.notes.push(fsLastReason || '保存先フォルダにつながっていません');
+    return out;
+  }
   out.ok = true;
   out.rootName = root.name;
+  try { out.perm = await root.queryPermission({ mode:'readwrite' }); } catch(e){ out.perm = fsWhy(e); }
 
   // 選んだフォルダ自体が「魚」だと、その中にもう1つ「魚」を作ってしまう
   if(root.name === FS_WORK_NAME){
@@ -7903,6 +7946,7 @@ async function fsDiagnose(){
   const look = async (name) => {
     try {
       const d = await root.getDirectoryHandle(name, { create: false });
+      out.notes = out.notes;
       const items = [];
       for await (const [n, h] of d.entries()){
         if(h.kind !== 'directory') continue;
@@ -7916,7 +7960,10 @@ async function fsDiagnose(){
       }
       items.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
       return items;
-    } catch(e){ return null; }
+    } catch(e){
+      if(e && e.name !== 'NotFoundError') out.notes.push(`「${name}」を開けません — ${fsWhy(e)}`);
+      return null;
+    }
   };
 
   const w = await look(FS_WORK_NAME);
@@ -7968,18 +8015,28 @@ async function showFsStatus(){
         <tr><td>${FS_WORK_NAME}（作業中）</td><td>${d.hasWork ? `あり・${d.workItems.length}件` : 'なし'}</td></tr>
         <tr><td>${FS_DONE_NAME}（保管）</td><td>${d.hasDone ? `あり・${d.doneItems.length}件` : 'なし'}</td></tr>
         <tr><td>登録している商品</td><td>${regItems().filter(x => x.kind !== 'goods').length}件</td></tr>
+        <tr><td>使う許可</td><td>${escapeHtml(
+          d.perm === 'granted' ? '下りている' : d.perm === 'prompt' ? 'まだ聞かれていない' :
+          d.perm === 'denied' ? '断られている' : String(d.perm))}</td></tr>
+        <tr><td>覚えている名前</td><td>${escapeHtml(d.saved || '（なし）')}</td></tr>
       </table>
+      ${fsLastReason ? `<div class="hint">直前につまずいた理由：${escapeHtml(fsLastReason)}</div>` : ''}
       ${d.notes.length ? `<div class="fs-need" style="margin-top:0">
         ${d.notes.map(t => '<div>・' + escapeHtml(t) + '</div>').join('')}</div>` : ''}
       <div class="reg-sub-title">${FS_WORK_NAME} の中</div>${list(d.workItems)}
       <div class="reg-sub-title" style="margin-top:12px">${FS_DONE_NAME} の中</div>${list(d.doneItems)}
       <div class="pi-acts" style="margin-top:14px">
         ${d.nested ? '<button id="fsFixNested" class="btn btn-primary">上のフォルダを選び直す</button>' : ''}
+        ${!d.ok ? '<button id="fsStatusPick" class="btn btn-primary">📁 保存先を選び直す</button>' : ''}
         <button id="fsStatusReload" class="btn btn-ghost">調べ直す</button>
         <button id="fsStatusClose" class="btn btn-ghost">閉じる</button>
       </div>
     </div>`;
   $('#fsStatusClose').onclick = () => dlg.classList.add('hidden');
+  if($('#fsStatusPick')) $('#fsStatusPick').onclick = async () => {
+    await FsLink.chooseRoot(); await refreshFsConnected(); await fsCleanNested();
+    renderRegisterPanel(); showFsStatus();
+  };
   $('#fsStatusReload').onclick = () => showFsStatus();
   if($('#fsFixNested')){
     $('#fsFixNested').onclick = async () => { await fsFixRootChoice(); showFsStatus(); };
