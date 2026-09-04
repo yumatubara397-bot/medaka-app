@@ -670,6 +670,10 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .pi-view img{display:block;image-rendering:pixelated}
 .pi-table{width:100%;font-size:13px;border-collapse:collapse;margin-bottom:14px}
 .pi-table td{padding:6px 8px;border-bottom:1px solid var(--line,#2a3350)}
+.fs-list{list-style:none;margin:0;padding:0;font-size:13px;max-height:200px;overflow-y:auto}
+.fs-list li{display:flex;justify-content:space-between;gap:10px;padding:5px 8px;
+  border-bottom:1px solid var(--line,#2a3350)}
+.fs-list li b{color:var(--accent,#5ad1c8);font-weight:600}
 .pi-table td:first-child{opacity:.65;width:40%}
 .pi-acts{display:flex;gap:10px;flex-wrap:wrap}
 .pi-acts .btn{flex:1;min-width:140px;min-height:46px}
@@ -742,6 +746,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
           写真をフォルダに入れてから、このタブを開いてください。</p>
         <button class="btn btn-primary" id="btnEditReload">🐟 いま読み込む</button>
         <button class="btn btn-ghost" id="btnEditPickRoot">保存先フォルダを選ぶ</button>
+        <button class="btn btn-ghost" id="btnEditFsStatus">🔍 保存先の状態を見る</button>
       </div>
 
       <div id="editLoaded" class="hidden">
@@ -969,6 +974,9 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 
     <!-- プリンターへ渡す画像の確認 -->
     <div id="printImageDialog" class="redo-dialog hidden"></div>
+
+    <!-- 保存先の状態 -->
+    <div id="fsStatusDialog" class="redo-dialog hidden"></div>
 
     <!-- ===== 出品タブ ===== -->
     <section id="panel-listing" class="panel hidden">
@@ -1245,7 +1253,10 @@ const supportsFolderPicker = typeof window.showDirectoryPicker === 'function';
 
 $('#btnEditReload').onclick  = () => { products = []; photos = []; autoLoadForEdit(); };
 $('#btnEditReload2').onclick = () => { products = []; photos = []; autoLoadForEdit(); };
-$('#btnEditPickRoot').onclick = async () => { await FsLink.chooseRoot(); autoLoadForEdit(); };
+$('#btnEditPickRoot').onclick = async () => {
+  await FsLink.chooseRoot(); await refreshFsConnected(); await fsCleanNested(); autoLoadForEdit();
+};
+$('#btnEditFsStatus').onclick = showFsStatus;
 $('#btnArchive').onclick = fsArchiveAll;
 
 
@@ -6521,6 +6532,13 @@ function regStep4Html(){
     <div class="hint">${regIsGoods()
       ? '用品の管理番号は決まっています。同じ用品を登録し直すと、数量だけ書き替わります。'
       : '「登録する」を押すまで管理番号は確定しません'}</div>
+    ${(!regIsGoods() && fsRootIsWork)
+      ? `<div class="fs-need">
+           <div>保存先が「${FS_WORK_NAME}」そのものになっています。<br>
+             このままだと「${FS_WORK_NAME}」の中にもう1つ「${FS_WORK_NAME}」ができてしまいます。</div>
+           <button id="regFsFixRoot" class="btn btn-primary">📁 1つ上のフォルダを選び直す</button>
+         </div>`
+      : ''}
     ${(!regIsGoods() && FsLink.available() && !fsConnected)
       ? `<div class="fs-need">
            <div>写真フォルダにつながっていません。<br>
@@ -6533,6 +6551,7 @@ function regStep4Html(){
 
 function bindRegStep4(){
   $('#regDoRegister').onclick = regDoRegister;
+  if($('#regFsFixRoot')) $('#regFsFixRoot').onclick = fsFixRootChoice;
   if($('#regFsConnectNow')){
     $('#regFsConnectNow').onclick = async () => {
       await FsLink.chooseRoot();
@@ -6823,13 +6842,26 @@ function fsFolderName(item){
  * その場合は自分で取り直すので、登録のたびに選び直す必要はない。
  */
 let fsConnected = false;     // 写真フォルダにつながっているか（画面の出し分けに使う）
+let fsRootIsWork = false;    // 「魚」そのものを選んでしまっているか
 
 /** つながっているかを調べ直す */
 async function refreshFsConnected(){
-  if(!FsLink.available()){ fsConnected = false; return false; }
+  if(!FsLink.available()){ fsConnected = false; fsRootIsWork = false; return false; }
   const st = await FsLink.status();
   fsConnected = !!(st && st.hasRoot);
+  fsRootIsWork = !!(st && st.rootName === FS_WORK_NAME);
   return fsConnected;
+}
+
+/** 「魚」の1つ上を選び直してもらう */
+async function fsFixRootChoice(){
+  alert(`いま「${FS_WORK_NAME}」そのものが保存先になっています。\n\n`
+    + `次の画面で、その1つ上のフォルダ（デスクトップなど）を選んでください。\n`
+    + `その中の「${FS_WORK_NAME}」と「${FS_DONE_NAME}」を使います。`);
+  await FsLink.chooseRoot();
+  await refreshFsConnected();
+  await fsCleanNested();
+  renderRegisterPanel();
 }
 
 let fsRestoring = null;      // 取り直しが同時に何本も走らないようにする
@@ -6920,12 +6952,22 @@ function renderPhotoGrid(){ /* 写真の一覧は編集タブで見る */ }
 //   魚編集後/  … 編集を終えたもの（原本と編集後の両方）
 // を作る。無ければ自動で作る。
 const FS_WORK_NAME = '魚';
+let fsWorkWarnedAt = 0;   // 同じ注意を続けて出さないための時刻
 const FS_DONE_NAME = '魚編集後';
 
 async function fsSubDir(name){
   let root = await fsRestoreRoot();
   if(!root) root = await fsRestoreRoot(true);
   if(!root) return null;
+  // 「魚」そのものが選ばれていると、その中にもう1つ「魚」を作ってしまう
+  if(root.name === FS_WORK_NAME){
+    // 何件登録しても注意は1回だけにする
+    if(Date.now() - fsWorkWarnedAt > 4000){
+      fsWorkWarnedAt = Date.now();
+      toast(`「${FS_WORK_NAME}」ではなく、その1つ上のフォルダ（デスクトップなど）を選んでください`, 'err');
+    }
+    return null;
+  }
   try { return await root.getDirectoryHandle(name, { create: true }); }
   catch(e){
     toast(`「${name}」フォルダを作れませんでした`, 'err');
@@ -7407,7 +7449,9 @@ async function renderFsBar(){
       <span class="txt">保存先「${escapeHtml(st.rootName || '')}」… 登録するとフォルダを自動で作ります</span>
       ${needInstall ? '<button id="fsInstall" class="btn btn-ghost btn-sm" title="アプリとして入れると、許可をずっと覚えておけます">📌 許可を覚えさせる</button>' : ''}
       <button id="fsMake" class="btn btn-ghost btn-sm">足りないフォルダを作る</button>
+      <button id="fsStatus" class="btn btn-ghost btn-sm">状態を見る</button>
       <button id="fsChange" class="btn btn-ghost btn-sm">変更</button>`;
+    $('#fsStatus').onclick = showFsStatus;
     if($('#fsInstall')) $('#fsInstall').onclick = installApp;
     $('#fsMake').onclick = fsCreateMissingFoldersAuto;
     $('#fsChange').onclick = async () => { await FsLink.chooseRoot(); await refreshFsConnected(); renderRegisterPanel(); };
@@ -7431,6 +7475,7 @@ async function renderFsBar(){
 async function fsCreateMissingFoldersAuto(){
   const st = await FsLink.status();
   if(!st.hasRoot){ toast('先に保存先フォルダを選んでください', 'err'); return; }
+  if(st.rootName === FS_WORK_NAME){ await fsFixRootChoice(); return; }
   const items = regItems();
   let made = 0;
   for(const it of items){
@@ -7795,6 +7840,15 @@ async function autoLoadForEdit(){
     return;
   }
   const st = await FsLink.status();
+  if(st.hasRoot && st.rootName === FS_WORK_NAME){
+    $('#editEmptyTitle').textContent = '保存先の選び方がずれています';
+    $('#editEmptyMsg').innerHTML =
+      `いま <b>${FS_WORK_NAME}</b> そのものが保存先になっているため、`
+      + `その中にもう1つ <b>${FS_WORK_NAME}</b> ができてしまい、写真を見つけられません。<br>`
+      + `下の「保存先フォルダを選ぶ」から、<b>1つ上のフォルダ（デスクトップなど）</b>を選び直してください。`;
+    renderEditPanel();
+    return;
+  }
   if(!st.hasRoot){
     $('#editEmptyTitle').textContent = '保存先フォルダを決めてください';
     $('#editEmptyMsg').innerHTML =
@@ -7823,6 +7877,113 @@ function renderEditFolderBar(){
   const none = products.length - withPhotos;
   el.textContent = `${withPhotos}件 / 写真${photos.length}枚`
     + (none ? `（写真がまだ無い商品 ${none}件）` : '');
+}
+
+
+/**
+ * 保存先の中を調べて、いまどうなっているかを返す。
+ * 「魚」そのものを選んでしまった場合など、間違いも見つける。
+ */
+async function fsDiagnose(){
+  const out = { ok:false, rootName:'', hasWork:false, hasDone:false,
+                workItems:[], doneItems:[], nested:false, notes:[] };
+  if(!FS_SUPPORTED){ out.notes.push('この端末ではフォルダを扱えません'); return out; }
+  const root = (await fsRestoreRoot()) || (await fsRestoreRoot(true));
+  if(!root){ out.notes.push('保存先フォルダにつながっていません'); return out; }
+  out.ok = true;
+  out.rootName = root.name;
+
+  // 選んだフォルダ自体が「魚」だと、その中にもう1つ「魚」を作ってしまう
+  if(root.name === FS_WORK_NAME){
+    out.nested = true;
+    out.notes.push(`「${FS_WORK_NAME}」そのものが選ばれています。`
+      + `その1つ上のフォルダ（デスクトップなど）を選び直してください`);
+  }
+
+  const look = async (name) => {
+    try {
+      const d = await root.getDirectoryHandle(name, { create: false });
+      const items = [];
+      for await (const [n, h] of d.entries()){
+        if(h.kind !== 'directory') continue;
+        let photos = 0;
+        try {
+          for await (const [fn, fh] of h.entries()){
+            if(fh.kind === 'file' && /\.(jpe?g|png)$/i.test(fn)) photos++;
+          }
+        } catch(e){ /* 中が読めないフォルダは0として扱う */ }
+        items.push({ name: n, photos });
+      }
+      items.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+      return items;
+    } catch(e){ return null; }
+  };
+
+  const w = await look(FS_WORK_NAME);
+  if(w){ out.hasWork = true; out.workItems = w; }
+  const d = await look(FS_DONE_NAME);
+  if(d){ out.hasDone = true; out.doneItems = d; }
+
+  if(!out.hasWork) out.notes.push(`「${FS_WORK_NAME}」フォルダがまだありません（登録すると作られます）`);
+  if(out.hasWork && !out.workItems.length) out.notes.push(`「${FS_WORK_NAME}」の中は空です`);
+  const empty = out.workItems.filter(x => !x.photos).length;
+  if(empty) out.notes.push(`写真がまだ入っていないフォルダが ${empty}件あります`);
+  return out;
+}
+
+/** 間違ってできた「魚/魚」を、空なら片付ける */
+async function fsCleanNested(){
+  const root = await fsRestoreRoot();
+  if(!root) return false;
+  try {
+    const work = await root.getDirectoryHandle(FS_WORK_NAME, { create: false });
+    const inner = await work.getDirectoryHandle(FS_WORK_NAME, { create: false });
+    let n = 0;
+    for await (const _ of inner.entries()) n++;
+    if(n === 0){
+      await work.removeEntry(FS_WORK_NAME, { recursive: true });
+      return true;
+    }
+  } catch(e){ /* 無ければ何もしない */ }
+  return false;
+}
+
+/** 状態を見せる */
+async function showFsStatus(){
+  const dlg = $('#fsStatusDialog');
+  dlg.classList.remove('hidden');
+  dlg.innerHTML = '<div class="pi-box"><h3>保存先の状態</h3><p>調べています…</p></div>';
+  const d = await fsDiagnose();
+
+  const list = (items) => items.length
+    ? `<ul class="fs-list">${items.map(x =>
+        `<li><span>${escapeHtml(x.name)}</span><b>${x.photos}枚</b></li>`).join('')}</ul>`
+    : '<div class="reg-empty">なし</div>';
+
+  dlg.innerHTML = `
+    <div class="pi-box">
+      <h3>保存先の状態</h3>
+      <table class="pi-table">
+        <tr><td>選んでいるフォルダ</td><td>${escapeHtml(d.rootName || '（未選択）')}</td></tr>
+        <tr><td>${FS_WORK_NAME}（作業中）</td><td>${d.hasWork ? `あり・${d.workItems.length}件` : 'なし'}</td></tr>
+        <tr><td>${FS_DONE_NAME}（保管）</td><td>${d.hasDone ? `あり・${d.doneItems.length}件` : 'なし'}</td></tr>
+        <tr><td>登録している商品</td><td>${regItems().filter(x => x.kind !== 'goods').length}件</td></tr>
+      </table>
+      ${d.notes.length ? `<div class="fs-need" style="margin-top:0">
+        ${d.notes.map(t => '<div>・' + escapeHtml(t) + '</div>').join('')}</div>` : ''}
+      <div class="reg-sub-title">${FS_WORK_NAME} の中</div>${list(d.workItems)}
+      <div class="reg-sub-title" style="margin-top:12px">${FS_DONE_NAME} の中</div>${list(d.doneItems)}
+      <div class="pi-acts" style="margin-top:14px">
+        ${d.nested ? '<button id="fsFixNested" class="btn btn-primary">上のフォルダを選び直す</button>' : ''}
+        <button id="fsStatusReload" class="btn btn-ghost">調べ直す</button>
+        <button id="fsStatusClose" class="btn btn-ghost">閉じる</button>
+      </div>
+    </div>`;
+  $('#fsStatusClose').onclick = () => dlg.classList.add('hidden');
+  $('#fsStatusReload').onclick = () => showFsStatus();
+  if($('#fsFixNested')){
+    $('#fsFixNested').onclick = async () => { await fsFixRootChoice(); showFsStatus(); };
+  }
 }
 
 // ===== 編集を終えて保管する =====

@@ -11,7 +11,7 @@ b = Browser(9355, 1200, 1200); r = Report()
 
 # 本物と同じ作りの、メモリ上のフォルダを用意する（作られたものは window.__fs で覗ける）
 b.ev("""
-window.__fs = { name:'魚', dirs:{} };
+window.__fs = { name:'デスクトップ', dirs:{} };
 function makeDir(name, store){
   return {
     kind:'directory', name,
@@ -39,7 +39,7 @@ function makeSub(name, node){
     __node: node
   };
 }
-window.__rootHandle = makeDir('魚', window.__fs.dirs);
+window.__rootHandle = makeDir('デスクトップ', window.__fs.dirs);
 window.showDirectoryPicker = async () => window.__rootHandle;
 """)
 time.sleep(0.3)
@@ -49,9 +49,9 @@ print("■ 保存先を選ぶ")
 r.expect("最初は案内が出る", "保存先を選ぶ" in (b.ev("document.getElementById('regFsBar').textContent") or ""),
          (b.ev("document.getElementById('regFsBar').textContent") or "").strip()[:60])
 b.ev("fsChooseRoot()"); time.sleep(1.0)
-r.expect("選ぶと保存先が出る", "魚" in (b.ev("document.getElementById('regFsBar').textContent") or ""),
+r.expect("選ぶと保存先が出る", "デスクトップ" in (b.ev("document.getElementById('regFsBar').textContent") or ""),
          (b.ev("document.getElementById('regFsBar').textContent") or "").strip()[:70])
-r.check("覚えている名前", b.ev("localStorage.getItem('medaka_fs_root_name')"), "魚")
+r.check("覚えている名前", b.ev("localStorage.getItem('medaka_fs_root_name')"), "デスクトップ")
 # 商品のフォルダは、選んだフォルダの中の「魚」にできる
 b.ev("window.WORK = () => (window.__fs.dirs['魚'] ? window.__fs.dirs['魚'].dirs : {});")
 
