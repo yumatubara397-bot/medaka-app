@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>メダカ出品アシスタント｜修復</title>
+<style>
+  body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b1020;color:#e8ecf7;
+       font-family:'Hiragino Sans','Yu Gothic UI','Meiryo',system-ui,sans-serif;padding:24px}
+  .box{width:min(560px,100%);background:#121a30;border:1px solid #2a3350;border-radius:16px;padding:28px}
+  h1{margin:0 0 14px;font-size:20px}
+  p{margin:8px 0;line-height:1.7;color:#aab4d4}
+  .step{font-family:monospace;font-size:13px;color:#5ad1c8}
+  a{color:#ffe14d}
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>アプリを直しています…</h1>
+  <p id="msg">古い仕掛けを外しています</p>
+  <p class="step" id="log"></p>
+  <p id="done" hidden>終わりました。自動で開きます。<br>
+     開かないときは <a id="go" href="./index.html">こちらを押してください</a></p>
+</div>
+<script>
+// 古いサービスワーカーが昔の画面を返し続けるのを断ち切るための一枚。
+// このファイル名は古い仕掛けが覚えていないので、必ず新しく読み込まれる。
+(async function(){
+  const msg = document.getElementById('msg');
+  const log = document.getElementById('log');
+  const lines = [];
+  const say = (t) => { lines.push('・' + t); log.innerHTML = lines.join('<br>'); };
+
+  try {
+    if('serviceWorker' in navigator){
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for(const r of regs) await r.unregister();
+      say(`古い仕掛けを ${regs.length}件 外しました`);
+    } else { say('この端末に古い仕掛けはありません'); }
+  } catch(e){ say('仕掛けを外せませんでした（続けます）'); }
+
+  try {
+    if(window.caches){
+      const keys = await caches.keys();
+      for(const k of keys) await caches.delete(k);
+      say(`覚えていた中身を ${keys.length}件 捨てました`);
+    }
+  } catch(e){ say('中身を捨てられませんでした（続けます）'); }
+
+  const url = './index.html?fresh=' + Date.now();
+  document.getElementById('go').href = url;
+  msg.textContent = 'いちばん新しい版を開きます';
+  document.getElementById('done').hidden = false;
+  setTimeout(() => location.replace(url), 1200);
+})();
+</script>
+</body>
+</html>
