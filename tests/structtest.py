@@ -129,6 +129,23 @@ r.expect("自動で新しい版に入れ替わる仕掛けがある",
 r.expect("HTMLはHTTPキャッシュを通さず取り直す", "cache: 'reload'" in SW, "service-worker.js")
 r.expect("押して最新にできる", "updateApp" in SRC, "版の表示を押すと更新")
 
+
+print("■ 落ちたときに、真っ白にせず理由を出す")
+r.expect("受け皿がある", b.ev("!!document.getElementById('bootError')"), "bootError")
+r.expect("ふだんは隠れている",
+         b.ev("getComputedStyle(document.getElementById('bootError')).display") == "none", "display:none")
+b.ev("window.dispatchEvent(new ErrorEvent('error', {message:'ためしの失敗', filename:'x.html', lineno:12}))")
+time.sleep(0.3)
+r.expect("エラーが起きると出てくる",
+         b.ev("getComputedStyle(document.getElementById('bootError')).display") == "block", "表示")
+txt = b.ev("document.getElementById('bootErrorText').textContent") or ""
+r.expect("何が起きたか出る", "ためしの失敗" in txt, txt[:50])
+r.expect("版も出る", "版: v" in txt, "版が分かる")
+r.expect("ブラウザも出る", "ブラウザ:" in txt, "端末が分かる")
+r.expect("どこで起きたかも出る", "12行目" in txt, "行番号")
+b.ev("document.getElementById('bootError').style.display='none'")
+r.expect("版を外からも読める", str(b.ev("typeof window.APP_VERSION")) == "string", "window.APP_VERSION")
+
 print("■ 起動して例外が出ていないか")
 r.check("登録タブが描かれている（品種/ランク/数量/確認）", b.ev("document.querySelectorAll('#regSteps .reg-step').length"), 4)
 nBreeds = b.ev("document.querySelectorAll('#regBreedList button').length") or 0

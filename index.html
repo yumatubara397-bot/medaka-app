@@ -736,6 +736,65 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 </style>
 </head>
 <body>
+<!-- 何かで落ちたときに、真っ白にせず理由を出す。
+     いちばん先に置くことで、この下で何が起きても拾える。 -->
+<div id="bootError" style="display:none;position:fixed;inset:0;z-index:9999;overflow:auto;
+     padding:24px;background:#1a0d12;color:#ffd9d9;font:14px/1.8 'Yu Gothic UI','Hiragino Sans',sans-serif">
+  <div style="max-width:760px;margin:0 auto">
+    <h2 style="margin:0 0 10px;font-size:20px">アプリを開けませんでした</h2>
+    <p style="color:#ffb3b3">下の内容をそのまま伝えてください。原因が分かります。</p>
+    <pre id="bootErrorText" style="white-space:pre-wrap;word-break:break-all;background:#2a1218;
+         border:1px solid #5a2530;border-radius:10px;padding:14px;font-size:12px"></pre>
+    <button id="bootErrorCopy" style="padding:12px 18px;border-radius:10px;border:1px solid #5a2530;
+            background:#3a1a22;color:#ffd9d9;font-size:14px;cursor:pointer">この内容をコピー</button>
+    <button id="bootErrorReload" style="padding:12px 18px;border-radius:10px;border:1px solid #5a2530;
+            background:#3a1a22;color:#ffd9d9;font-size:14px;cursor:pointer;margin-left:8px">開き直す</button>
+  </div>
+</div>
+<script>
+(function(){
+  var seen = [];
+  function show(kind, msg, where){
+    seen.push(kind + '：' + msg + (where ? '\n  ' + where : ''));
+    var box = document.getElementById('bootError');
+    var txt = document.getElementById('bootErrorText');
+    if(!box || !txt) return;
+    txt.textContent = [
+      '版: ' + (window.APP_VERSION || '(読み込み前)'),
+      'URL: ' + location.href,
+      'ブラウザ: ' + navigator.userAgent,
+      '',
+    ].concat(seen).join('\n');
+    box.style.display = 'block';
+  }
+  window.addEventListener('error', function(e){
+    show('エラー', (e.message || '不明'),
+         (e.filename || '') + (e.lineno ? ' ' + e.lineno + '行目' : ''));
+  });
+  window.addEventListener('unhandledrejection', function(e){
+    var r = e.reason;
+    show('未処理の失敗', (r && (r.message || r)) || '不明', (r && r.stack) ? String(r.stack).split('\n')[1] : '');
+  });
+  document.addEventListener('DOMContentLoaded', function(){
+    var c = document.getElementById('bootErrorCopy');
+    var rl = document.getElementById('bootErrorReload');
+    if(c) c.onclick = function(){
+      var t = document.getElementById('bootErrorText').textContent;
+      if(navigator.clipboard) navigator.clipboard.writeText(t);
+      c.textContent = 'コピーしました';
+    };
+    if(rl) rl.onclick = function(){ location.reload(); };
+  });
+  // 読み込みが終わっても中身が組み上がっていなければ、それも知らせる
+  window.addEventListener('load', function(){
+    setTimeout(function(){
+      if(typeof window.APP_VERSION === 'undefined'){
+        show('起動できていない', 'アプリの読み込みが最後まで進みませんでした', '');
+      }
+    }, 3000);
+  });
+})();
+</script>
 <div class="app">
   <header class="topbar">
     <div class="logo">
@@ -749,7 +808,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
       <button class="tab" data-tab="history" role="tab">履歴</button>
       <button class="tab" data-tab="settings" role="tab">⚙ 設定</button>
       <button id="btnUpdateApp" class="upd" type="button"
-              title="押すと必ず最新版になります">🔄 <span id="appVersion">v76</span></button>
+              title="押すと必ず最新版になります">🔄 <span id="appVersion">v77</span></button>
     </nav>
   </header>
 
@@ -7861,7 +7920,8 @@ function renderPhotoGrid(){ /* 写真の一覧は編集タブで見る */ }
 //   魚/        … これから編集するもの（登録すると管理番号のフォルダができる）
 //   魚編集後/  … 編集を終えたもの（原本と編集後の両方）
 // を作る。無ければ自動で作る。
-const APP_VERSION = 'v76';
+const APP_VERSION = 'v77';
+window.APP_VERSION = APP_VERSION;
 const FS_WORK_NAME = '編集前';
 // 前に使っていた名前。残っていたら気づけるようにする
 const FS_OLD_NAMES = ['魚', '魚編集後'];
