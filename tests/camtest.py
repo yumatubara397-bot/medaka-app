@@ -97,4 +97,39 @@ r.expect("用品には付かない",
 b.ev("window.__opened = null; document.querySelector('#regItemList .cam').click()"); time.sleep(0.4)
 r.check("押すとその商品のカメラが開く", b.ev("window.__opened"), "MD-260905-001")
 
+print("■ どのカメラを使うかの選び分け")
+def choose(devs, saved="null"):
+    import json
+    return b.ev(f"(camChoose({devs}, {saved})||{{}}).label")
+
+r.check("外側(Rear)を選ぶ",
+        choose("[{deviceId:'a',label:'Surface Camera Front'},{deviceId:'b',label:'Surface Camera Rear'}]"),
+        "Surface Camera Rear")
+r.check("Back という名前でも選ぶ",
+        choose("[{deviceId:'a',label:'Integrated Webcam (Front)'},{deviceId:'b',label:'Back Camera'}]"),
+        "Back Camera")
+r.check("日本語の「背面」も選ぶ",
+        choose("[{deviceId:'a',label:'前面カメラ'},{deviceId:'b',label:'背面カメラ'}]"), "背面カメラ")
+r.check("外側と分かる名前が無ければ、内側でないものを選ぶ",
+        choose("[{deviceId:'a',label:'HD User Facing'},{deviceId:'b',label:'USB Camera'}]"), "USB Camera")
+r.check("名前で分からなければ最後のものを選ぶ",
+        choose("[{deviceId:'a',label:''},{deviceId:'b',label:''}]"), "")
+r.check("前に選んだものがあれば、それを優先する",
+        choose("[{deviceId:'a',label:'Front'},{deviceId:'b',label:'Rear'}]", "'a'"), "Front")
+r.check("覚えているものが無くなっていたら、選び直す",
+        choose("[{deviceId:'a',label:'Front'},{deviceId:'b',label:'Rear'}]", "'zzz'"), "Rear")
+r.check("1つしか無ければ、それを使う",
+        choose("[{deviceId:'a',label:'Front only'}]"), "Front only")
+r.expect("カメラが無ければ null", b.ev("camChoose([], null)") is None, "null")
+
+print("■ 内側／外側の見分け")
+for label, back, front in [("Surface Camera Rear", True, False), ("Front Camera", False, True),
+                           ("背面カメラ", True, False), ("前面カメラ", False, True),
+                           ("USB Video Device", False, False),
+                           ("Surface Camera Front", False, True),
+                           ("Microsoft Camera Rear", True, False),
+                           ("Surface Hub Camera", False, False)]:
+    r.check(f"{label} → 外側", b.ev(f"camIsBack({label!r})"), back)
+    r.check(f"{label} → 内側", b.ev(f"camIsFront({label!r})"), front)
+
 b.close(); r.finish()

@@ -722,7 +722,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
       <button class="tab" data-tab="history" role="tab">履歴</button>
       <button class="tab" data-tab="settings" role="tab">⚙ 設定</button>
       <button id="btnUpdateApp" class="upd" type="button"
-              title="押すと必ず最新版になります">🔄 <span id="appVersion">v72</span></button>
+              title="押すと必ず最新版になります">🔄 <span id="appVersion">v73</span></button>
     </nav>
   </header>
 
@@ -1013,6 +1013,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
           <div>
             <div class="cam-no" id="camNo"></div>
             <div class="cam-sub" id="camSub"></div>
+            <div class="cam-sub" id="camName"></div>
           </div>
           <button id="camClose" class="btn btn-ghost btn-sm">終わる</button>
         </div>
@@ -6691,8 +6692,36 @@ function renderRegItems(){
 // 「写真を登録」を押したら、その場でカメラが立ち上がり、
 // 撮った写真は 編集前/品種名_管理番号/ にそのまま保存される。
 
+const CAM_ID_KEY = 'medaka_camera_id';   // 選んだカメラを覚えておく
+
+/** 外側（メイン）のカメラらしい名前か */
+function camIsBack(label){
+  return /\bback\b|\brear\b|environment|\bworld\b|外側|背面|リアカメラ/i.test(label || '');
+}
+/**
+ * 内側（自分側）のカメラらしい名前か。
+ * 「Surface」の中の face に引っかからないよう、語として見る。
+ */
+function camIsFront(label){
+  return /\bfront\b|\buser\b|front[- ]?facing|\bselfie\b|内側|前面/i.test(label || '');
+}
+/**
+ * 使うカメラを決める。
+ * Windows では facingMode が効かないことが多いので、名前で選び分ける。
+ */
+function camChoose(devices, savedId){
+  if(!devices.length) return null;
+  const saved = devices.find(d => d.deviceId === savedId);
+  if(saved) return saved;                         // 前に選んだものを優先する
+  const back = devices.find(d => camIsBack(d.label));
+  if(back) return back;
+  const notFront = devices.find(d => !camIsFront(d.label));
+  if(notFront) return notFront;
+  return devices[devices.length - 1];             // 名前で分からなければ最後のもの
+}
+
 const Cam = {
-  item: null, dir: null, stream: null, shots: 0, facing: 'environment', devices: [],
+  item: null, dir: null, stream: null, shots: 0, devices: [], deviceId: null,
 
   /** その商品のフォルダに、次に使う番号を調べる */
   async nextIndex(dir){
@@ -6732,6 +6761,7 @@ const Cam = {
     this.item = item;
     this.dir = dir;
     this.shots = 0;
+    if(!this.deviceId) this.deviceId = localStorage.getItem(CAM_ID_KEY) || null;
     $('#camNo').textContent = item.controlNo;
     $('#camSub').textContent = [item.variety, item.rank, item.quantityText].filter(Boolean).join('　')
       + `　→　${FS_WORK_NAME}/${fsFolderName(item)}/`;
@@ -6740,22 +6770,52 @@ const Cam = {
     await this.start();
   },
 
+  /** いま映しているカメラの名前を出す */
+  showName(){
+    const d = this.devices.find(x => x.deviceId === this.deviceId);
+    const name = (d && d.label) || '';
+    const el = $('#camName');
+    if(!el) return;
+    el.textContent = name
+      ? `📹 ${name}${camIsFront(name) ? '（内側）' : camIsBack(name) ? '（外側）' : ''}`
+      : '';
+  },
+
   async start(){
     this.say('カメラを準備しています…');
     try {
-      this.stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: this.facing, width: { ideal: 1920 }, height: { ideal: 1440 } },
-        audio: false
-      });
+      // ① まず開いて許可をもらう。許可が下りるまでカメラの名前は読めない
+      const first = this.deviceId
+        ? { deviceId: { exact: this.deviceId }, width: { ideal: 1920 }, height: { ideal: 1440 } }
+        : { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1440 } };
+      this.stream = await navigator.mediaDevices.getUserMedia({ video: first, audio: false });
+
+      // ② 名前が読めるようになったので、外側のカメラを選び直す
+      try {
+        this.devices = (await navigator.mediaDevices.enumerateDevices())
+          .filter(d => d.kind === 'videoinput' && d.deviceId);
+        const now = (this.stream.getVideoTracks()[0] || {}).getSettings
+          ? this.stream.getVideoTracks()[0].getSettings().deviceId : null;
+        const want = camChoose(this.devices, this.deviceId || localStorage.getItem(CAM_ID_KEY));
+        if(want && now && want.deviceId !== now){
+          // 内側が開いていたら、外側に開き直す
+          this.stream.getTracks().forEach(t => t.stop());
+          this.stream = await navigator.mediaDevices.getUserMedia({
+            video: { deviceId: { exact: want.deviceId }, width: { ideal: 1920 }, height: { ideal: 1440 } },
+            audio: false
+          });
+          this.deviceId = want.deviceId;
+        } else {
+          this.deviceId = (want && want.deviceId) || now || null;
+        }
+        if(this.deviceId) localStorage.setItem(CAM_ID_KEY, this.deviceId);
+        $('#camSwitch').classList.toggle('hidden', this.devices.length < 2);
+        this.showName();
+      } catch(e){ /* 選び直せなくても、いま開いているもので撮れる */ }
+
       $('#camVideo').srcObject = this.stream;
       await $('#camVideo').play().catch(()=>{});
       this.say('');
-      // カメラが2つ以上あれば切り替えを出す
-      try {
-        this.devices = (await navigator.mediaDevices.enumerateDevices())
-          .filter(d => d.kind === 'videoinput');
-        $('#camSwitch').classList.toggle('hidden', this.devices.length < 2);
-      } catch(e){ /* 出せなくてもよい */ }
     } catch(e){
       $('#camSwitch').classList.add('hidden');
       const why = (e && e.name === 'NotAllowedError')
@@ -6781,10 +6841,16 @@ const Cam = {
     renderRegisterPanel();
   },
 
+  /** 次のカメラに切り替える（選んだものは覚える） */
   async switchCamera(){
+    if(this.devices.length < 2) return;
+    const at = this.devices.findIndex(d => d.deviceId === this.deviceId);
+    const next = this.devices[(at + 1) % this.devices.length];
     this.stop();
-    this.facing = (this.facing === 'environment') ? 'user' : 'environment';
+    this.deviceId = next.deviceId;
+    localStorage.setItem(CAM_ID_KEY, this.deviceId);
     await this.start();
+    toast(`「${next.label || 'カメラ'}」に切り替えました`, 'ok');
   },
 
   /** 撮った1枚をフォルダへ保存する */
@@ -7179,7 +7245,7 @@ function renderPhotoGrid(){ /* 写真の一覧は編集タブで見る */ }
 //   魚/        … これから編集するもの（登録すると管理番号のフォルダができる）
 //   魚編集後/  … 編集を終えたもの（原本と編集後の両方）
 // を作る。無ければ自動で作る。
-const APP_VERSION = 'v72';
+const APP_VERSION = 'v73';
 const FS_WORK_NAME = '編集前';
 // 前に使っていた名前。残っていたら気づけるようにする
 const FS_OLD_NAMES = ['魚', '魚編集後'];
