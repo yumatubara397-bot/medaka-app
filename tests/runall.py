@@ -41,7 +41,7 @@ PLAIN = ["registertest", "wheeltest", "foldertest", "fstest", "fsandroidtest",
          "exporttest", "redotest", "croptest", "tidytest", "goodstest",
          "goodsfixedtest", "autoprinttest", "goodsprinttest", "surfacetest",
          "labeltest", "blanktest", "glyphtest", "fittest", "nesttest",
-         "readfoldertest", "camtest", "backuptest", "donetest", "flowtest2", "flowtest", "phonetest"]
+         "readfoldertest", "camtest", "backuptest", "donetest", "flowtest2", "zoomtest", "flowtest", "phonetest"]
 # 偽モジュールは使うが、その作業場は触らないもの（同時に走らせられる）
 WITH_FAKE = ["structtest"]
 # 偽モジュールの作業場 /tmp/fake_tepra/ を使うもの。
