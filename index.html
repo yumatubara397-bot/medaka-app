@@ -686,7 +686,19 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
   padding:20px;color:var(--ink-dim);font-size:14px;line-height:1.7}
 .cam-msg.hidden{display:none}
 .cam-shots{display:flex;gap:6px;overflow-x:auto;margin:10px 0;min-height:4px}
-.cam-shots img{height:56px;border-radius:6px;border:1px solid var(--line)}
+.cam-shot{position:relative;flex:0 0 auto}
+.cam-shot img{height:72px;border-radius:6px;border:1px solid var(--line);display:block}
+.cam-shot .x{position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;
+  border:1px solid var(--line);background:var(--bg,#0d1220);color:var(--ink,#e8ecf7);
+  font-size:13px;line-height:1;cursor:pointer;display:grid;place-items:center;padding:0}
+.cam-shot .x:hover{background:#c0392b;color:#fff}
+.cam-shot .n{position:absolute;left:3px;bottom:3px;font-size:10px;padding:1px 4px;border-radius:4px;
+  background:rgba(0,0,0,.6);color:#fff}
+.cam-save{display:flex;align-items:center;gap:12px;margin-top:12px;padding-top:12px;
+  border-top:1px solid var(--line,#2a3350);flex-wrap:wrap}
+.cam-save.hidden{display:none}
+.cam-dest{font-size:13px;color:var(--ink-dim);flex:1;min-width:200px;word-break:break-all}
+.cam-savebtn{min-height:52px;min-width:180px;font-size:16px}
 .cam-acts{display:flex;gap:8px;flex-wrap:wrap}
 .cam-acts .btn{flex:1;min-width:130px}
 .cam-shoot{min-height:56px;font-size:16px}
@@ -722,7 +734,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
       <button class="tab" data-tab="history" role="tab">履歴</button>
       <button class="tab" data-tab="settings" role="tab">⚙ 設定</button>
       <button id="btnUpdateApp" class="upd" type="button"
-              title="押すと必ず最新版になります">🔄 <span id="appVersion">v73</span></button>
+              title="押すと必ず最新版になります">🔄 <span id="appVersion">v75</span></button>
     </nav>
   </header>
 
@@ -1026,6 +1038,10 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
           <button id="camShoot" class="btn btn-primary cam-shoot">📷 撮る</button>
           <button id="camPick" class="btn btn-ghost">🖼 ファイルから追加</button>
           <button id="camSwitch" class="btn btn-ghost hidden">🔄 カメラ切替</button>
+        </div>
+        <div id="camSaveBar" class="cam-save hidden">
+          <div class="cam-dest">保存先　<b id="camDest"></b></div>
+          <button id="camSave" class="btn btn-primary cam-savebtn">💾 保存する</button>
         </div>
         <input type="file" id="camFile" accept="image/*" multiple hidden>
       </div>
@@ -6694,6 +6710,36 @@ function renderRegItems(){
 
 const CAM_ID_KEY = 'medaka_camera_id';   // 選んだカメラを覚えておく
 
+let camAudio = null;
+/** カシャッという音を、その場で作って鳴らす（音のファイルを持たない） */
+function camShutterSound(){
+  try {
+    camAudio = camAudio || new (window.AudioContext || window.webkitAudioContext)();
+    if(camAudio.state === 'suspended') camAudio.resume();
+    const t0 = camAudio.currentTime;
+    // 幕が開いて閉じる、2つの短い音
+    [0, 0.085].forEach((delay, i) => {
+      const len = 0.045;
+      const buf = camAudio.createBuffer(1, Math.ceil(camAudio.sampleRate * len), camAudio.sampleRate);
+      const d = buf.getChannelData(0);
+      for(let n = 0; n < d.length; n++){
+        const fade = Math.pow(1 - n / d.length, 3);   // すぐ減衰させる
+        d[n] = (Math.random() * 2 - 1) * fade;
+      }
+      const src = camAudio.createBufferSource();
+      src.buffer = buf;
+      const bp = camAudio.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = i ? 2600 : 4200;
+      bp.Q.value = 1.1;
+      const g = camAudio.createGain();
+      g.gain.value = i ? 0.5 : 0.7;
+      src.connect(bp).connect(g).connect(camAudio.destination);
+      src.start(t0 + delay);
+    });
+  } catch(e){ /* 音が出せない端末でも撮影は続ける */ }
+}
+
 /** 外側（メイン）のカメラらしい名前か */
 function camIsBack(label){
   return /\bback\b|\brear\b|environment|\bworld\b|外側|背面|リアカメラ/i.test(label || '');
@@ -6722,6 +6768,7 @@ function camChoose(devices, savedId){
 
 const Cam = {
   item: null, dir: null, stream: null, shots: 0, devices: [], deviceId: null,
+  pending: [],          // まだ保存していない写真
 
   /** その商品のフォルダに、次に使う番号を調べる */
   async nextIndex(dir){
@@ -6761,6 +6808,8 @@ const Cam = {
     this.item = item;
     this.dir = dir;
     this.shots = 0;
+    this.pending.forEach(p => URL.revokeObjectURL(p.url));
+    this.pending = [];
     if(!this.deviceId) this.deviceId = localStorage.getItem(CAM_ID_KEY) || null;
     $('#camNo').textContent = item.controlNo;
     $('#camSub').textContent = [item.variety, item.rank, item.quantityText].filter(Boolean).join('　')
@@ -6833,10 +6882,21 @@ const Cam = {
     if(v) v.srcObject = null;
   },
 
-  close(){
+  async close(){
+    // 保存していないものがあれば、捨てる前に確かめる
+    if(this.pending.length){
+      const yes = confirm(`まだ保存していない写真が ${this.pending.length}枚 あります。\n\n`
+        + `OK … 保存してから閉じる\nキャンセル … 閉じずに戻る`);
+      if(!yes) return;
+      await this.saveAll();
+      if(this.pending.length) return;      // 保存できなかったものが残っていたら閉じない
+    }
     this.stop();
+    this.pending.forEach(p => URL.revokeObjectURL(p.url));
+    this.pending = [];
+    $('#camShots').innerHTML = '';
+    $('#camSaveBar').classList.add('hidden');
     $('#camDialog').classList.add('hidden');
-    if(this.shots) toast(`${this.shots}枚を「${fsFolderName(this.item)}」に保存しました`, 'ok');
     this.item = null; this.dir = null;
     renderRegisterPanel();
   },
@@ -6853,17 +6913,41 @@ const Cam = {
     toast(`「${next.label || 'カメラ'}」に切り替えました`, 'ok');
   },
 
-  /** 撮った1枚をフォルダへ保存する */
-  async save(blob, ext){
-    const n = await this.nextIndex(this.dir);
-    const name = `${fsSafeName(this.item.controlNo)}_${String(n).padStart(2, '0')}.${ext}`;
-    await fsWriteFile(this.dir, name, blob);
-    this.shots++;
-    const img = document.createElement('img');
-    img.src = URL.createObjectURL(blob);
-    img.alt = name;
-    $('#camShots').prepend(img);
-    return name;
+  /** 撮ったものを、いったん手元に置く（まだ保存しない） */
+  hold(blob, ext){
+    this.pending.push({ blob, ext, url: URL.createObjectURL(blob) });
+    this.renderPending();
+  },
+
+  /** 手元の1枚を捨てる */
+  drop(i){
+    const p = this.pending[i];
+    if(!p) return;
+    URL.revokeObjectURL(p.url);
+    this.pending.splice(i, 1);
+    this.renderPending();
+  },
+
+  /** 手元にあるものを並べる。×ですぐ捨てられる */
+  renderPending(){
+    const box = $('#camShots');
+    box.innerHTML = this.pending.map((p, i) => `
+      <div class="cam-shot">
+        <img src="${p.url}" alt="">
+        <span class="n">${i + 1}</span>
+        <button class="x" data-i="${i}" title="この写真を消す">✕</button>
+      </div>`).join('');
+    box.querySelectorAll('.x').forEach(b => {
+      b.onclick = () => this.drop(parseInt(b.dataset.i, 10));
+    });
+
+    const n = this.pending.length;
+    $('#camSaveBar').classList.toggle('hidden', n === 0);
+    $('#camDest').textContent = this.item
+      ? `${FS_WORK_NAME} / ${fsFolderName(this.item)}`
+      : '';
+    $('#camSave').textContent = `💾 ${n}枚を保存する`;
+    $('#camSave').disabled = false;
   },
 
   async shoot(){
@@ -6877,26 +6961,48 @@ const Cam = {
       c.getContext('2d').drawImage(v, 0, 0);
       const blob = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.92));
       if(!blob) throw new Error('画像を作れませんでした');
-      const name = await this.save(blob, 'jpg');
-      toast(`${name} を保存しました`, 'ok');
+      camShutterSound();
+      this.hold(blob, 'jpg');
     } catch(e){
-      toast('保存できませんでした — ' + fsWhy(e), 'err');
+      toast('撮れませんでした — ' + fsWhy(e), 'err');
     } finally {
       btn.disabled = false;
     }
   },
 
   /** カメラが使えないときや、あとから足すとき */
-  async addFiles(files){
-    let ok = 0;
+  addFiles(files){
     for(const f of files){
-      try {
-        const ext = (f.name.match(/\.(jpe?g|png)$/i) || [,'jpg'])[1].toLowerCase();
-        await this.save(f, ext === 'jpeg' ? 'jpg' : ext);
-        ok++;
-      } catch(e){ toast(`${f.name} を保存できませんでした — ${fsWhy(e)}`, 'err'); }
+      const ext = (f.name.match(/\.(jpe?g|png)$/i) || [, 'jpg'])[1].toLowerCase();
+      this.hold(f, ext === 'jpeg' ? 'jpg' : ext);
     }
-    if(ok) toast(`${ok}枚を追加しました`, 'ok');
+  },
+
+  /** 手元のものを、その商品のフォルダへ書き込む */
+  async saveAll(){
+    if(!this.pending.length) return 0;
+    const btn = $('#camSave');
+    btn.disabled = true;
+    btn.textContent = '💾 保存しています…';
+    let n = await this.nextIndex(this.dir);
+    let ok = 0;
+    const rest = [];
+    for(const p of this.pending){
+      const name = `${fsSafeName(this.item.controlNo)}_${String(n).padStart(2, '0')}.${p.ext}`;
+      try {
+        await fsWriteFile(this.dir, name, p.blob);
+        URL.revokeObjectURL(p.url);
+        ok++; n++;
+      } catch(e){
+        toast(`${name} を保存できませんでした — ${fsWhy(e)}`, 'err');
+        rest.push(p);            // 書けなかったものは手元に残す
+      }
+    }
+    this.pending = rest;
+    this.shots += ok;
+    this.renderPending();
+    if(ok) toast(`${ok}枚を「${fsFolderName(this.item)}」に保存しました`, 'ok');
+    return ok;
   }
 };
 
@@ -6904,10 +7010,11 @@ $('#camClose').onclick = () => Cam.close();
 $('#camShoot').onclick = () => Cam.shoot();
 $('#camSwitch').onclick = () => Cam.switchCamera();
 $('#camPick').onclick = () => $('#camFile').click();
-$('#camFile').onchange = async (e) => {
+$('#camSave').onclick = () => Cam.saveAll();
+$('#camFile').onchange = (e) => {
   const files = [...e.target.files];
   e.target.value = '';
-  if(files.length) await Cam.addFiles(files);
+  if(files.length) Cam.addFiles(files);
 };
 document.addEventListener('keydown', (e) => {
   if($('#camDialog').classList.contains('hidden')) return;
@@ -7245,7 +7352,7 @@ function renderPhotoGrid(){ /* 写真の一覧は編集タブで見る */ }
 //   魚/        … これから編集するもの（登録すると管理番号のフォルダができる）
 //   魚編集後/  … 編集を終えたもの（原本と編集後の両方）
 // を作る。無ければ自動で作る。
-const APP_VERSION = 'v73';
+const APP_VERSION = 'v75';
 const FS_WORK_NAME = '編集前';
 // 前に使っていた名前。残っていたら気づけるようにする
 const FS_OLD_NAMES = ['魚', '魚編集後'];
