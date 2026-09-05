@@ -27,7 +27,7 @@ def stop_fake():
 PLAIN = ["registertest", "wheeltest", "foldertest", "fstest", "fsandroidtest",
          "exporttest", "redotest", "croptest", "tidytest", "goodstest",
          "goodsfixedtest", "autoprinttest", "goodsprinttest", "surfacetest",
-         "labeltest", "blanktest", "glyphtest", "fittest", "nesttest", "readfoldertest", "flowtest", "phonetest"]
+         "labeltest", "blanktest", "glyphtest", "fittest", "nesttest", "readfoldertest", "camtest", "flowtest", "phonetest"]
 # 偽モジュールが要るもの（止めるものは最後）
 WITH_FAKE = ["structtest", "sharptest", "dpitest", "cuttest", "speedtest", "usbtest", "resptest", "wintest"]
 

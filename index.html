@@ -465,6 +465,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .reg-item .ph{font-size:12px;opacity:.6}
 .reg-item .ph.has{color:#4ade80;opacity:1}
 .reg-item .del{background:none;border:none;color:inherit;opacity:.45;cursor:pointer;font-size:16px}
+.reg-item .cam{background:none;border:none;color:inherit;opacity:.45;cursor:pointer;font-size:16px}
 .reg-next{width:100%}
 .reg-done{background:rgba(74,222,128,.10);border:1px solid rgba(74,222,128,.35);
   border-radius:14px;padding:18px;margin-bottom:16px}
@@ -673,6 +674,22 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .pi-view img{display:block;image-rendering:pixelated}
 .pi-table{width:100%;font-size:13px;border-collapse:collapse;margin-bottom:14px}
 .pi-table td{padding:6px 8px;border-bottom:1px solid var(--line,#2a3350)}
+.cam-box{width:min(760px,100%);max-height:94vh;overflow-y:auto;padding:18px;border-radius:16px;
+  background:var(--bg,#0d1220);border:1px solid var(--line,#2a3350)}
+.cam-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
+.cam-no{font-weight:700;font-size:16px}
+.cam-sub{font-size:13px;color:var(--ink-dim);margin-top:2px}
+.cam-view{position:relative;background:#000;border-radius:12px;overflow:hidden;
+  aspect-ratio:4/3;display:grid;place-items:center}
+.cam-view video{width:100%;height:100%;object-fit:contain;display:block}
+.cam-msg{position:absolute;inset:0;display:grid;place-items:center;text-align:center;
+  padding:20px;color:var(--ink-dim);font-size:14px;line-height:1.7}
+.cam-msg.hidden{display:none}
+.cam-shots{display:flex;gap:6px;overflow-x:auto;margin:10px 0;min-height:4px}
+.cam-shots img{height:56px;border-radius:6px;border:1px solid var(--line)}
+.cam-acts{display:flex;gap:8px;flex-wrap:wrap}
+.cam-acts .btn{flex:1;min-width:130px}
+.cam-shoot{min-height:56px;font-size:16px}
 .upd{background:var(--bg-2);border:1px solid var(--line);color:var(--ink-dim);
   padding:9px 14px;border-radius:9px;font-family:inherit;font-size:13px;font-weight:700;
   cursor:pointer;transition:.15s;opacity:.85}
@@ -705,7 +722,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
       <button class="tab" data-tab="history" role="tab">履歴</button>
       <button class="tab" data-tab="settings" role="tab">⚙ 設定</button>
       <button id="btnUpdateApp" class="upd" type="button"
-              title="押すと必ず最新版になります">🔄 <span id="appVersion">v71</span></button>
+              title="押すと必ず最新版になります">🔄 <span id="appVersion">v72</span></button>
     </nav>
   </header>
 
@@ -988,6 +1005,30 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 
     <!-- 保存先の状態 -->
     <div id="fsStatusDialog" class="redo-dialog hidden"></div>
+
+    <!-- 撮影 -->
+    <div id="camDialog" class="redo-dialog hidden">
+      <div class="cam-box">
+        <div class="cam-head">
+          <div>
+            <div class="cam-no" id="camNo"></div>
+            <div class="cam-sub" id="camSub"></div>
+          </div>
+          <button id="camClose" class="btn btn-ghost btn-sm">終わる</button>
+        </div>
+        <div class="cam-view">
+          <video id="camVideo" playsinline muted autoplay></video>
+          <div id="camMsg" class="cam-msg hidden"></div>
+        </div>
+        <div class="cam-shots" id="camShots"></div>
+        <div class="cam-acts">
+          <button id="camShoot" class="btn btn-primary cam-shoot">📷 撮る</button>
+          <button id="camPick" class="btn btn-ghost">🖼 ファイルから追加</button>
+          <button id="camSwitch" class="btn btn-ghost hidden">🔄 カメラ切替</button>
+        </div>
+        <input type="file" id="camFile" accept="image/*" multiple hidden>
+      </div>
+    </div>
 
     <!-- ===== 出品タブ ===== -->
     <section id="panel-listing" class="panel hidden">
@@ -6619,6 +6660,8 @@ function renderRegItems(){
       <span class="nm">${escapeHtml([it.variety, it.rank, it.quantityText].filter(Boolean).join(' '))}</span>
       <span class="tag ${it.tepraExportedAt ? 'on' : ''}" title="${it.tepraExportedAt ? 'テプラに出しました' : 'まだ出していません'}">🏷</span>
       <span class="ph ${n ? 'has' : ''}">🖼 ${n}</span>
+      ${goods ? '' : `<button class="cam" data-no="${escapeAttr(it.controlNo)}"
+          title="この商品の写真を撮る">📷</button>`}
       <button class="del" data-no="${escapeAttr(it.controlNo)}" title="削除">✕</button>
     </div>`;
   }).join('');
@@ -6626,6 +6669,12 @@ function renderRegItems(){
     c.onchange = () => {
       if(c.checked) goodsPicked.add(c.dataset.no); else goodsPicked.delete(c.dataset.no);
       renderRegItems();
+    };
+  });
+  box.querySelectorAll('.cam').forEach(b => {
+    b.onclick = () => {
+      const it = regItems().find(x => x.controlNo === b.dataset.no);
+      if(it) Cam.open(it);
     };
   });
   box.querySelectorAll('.del').forEach(b => {
@@ -6636,6 +6685,169 @@ function renderRegItems(){
     };
   });
 }
+
+
+// ===== 撮影（登録した商品のフォルダへ直接ためる） =====
+// 「写真を登録」を押したら、その場でカメラが立ち上がり、
+// 撮った写真は 編集前/品種名_管理番号/ にそのまま保存される。
+
+const Cam = {
+  item: null, dir: null, stream: null, shots: 0, facing: 'environment', devices: [],
+
+  /** その商品のフォルダに、次に使う番号を調べる */
+  async nextIndex(dir){
+    let max = 0;
+    try {
+      for await (const [name, h] of dir.entries()){
+        if(h.kind !== 'file') continue;
+        const m = name.match(/_(\d+)\.(?:jpe?g|png)$/i);
+        if(m) max = Math.max(max, parseInt(m[1], 10));
+      }
+    } catch(e){ /* 読めなければ 0 から */ }
+    return max + 1;
+  },
+
+  say(text){
+    const el = $('#camMsg');
+    if(!el) return;
+    if(!text){ el.classList.add('hidden'); el.textContent = ''; return; }
+    el.classList.remove('hidden');
+    el.innerHTML = text;
+  },
+
+  async open(item){
+    // Android は本体のカメラに任せる（そちらの方が写りが良い）
+    if(FsLink.kind() === 'android'){
+      const r = await FsLink.takePhoto(item);
+      if(r && r.ok) toast('撮りました', 'ok');
+      else toast((r && r.error) || 'カメラを開けませんでした', 'err');
+      return;
+    }
+
+    const dir = await fsEnsureFolder(item);
+    if(!dir){
+      toast(fsLastReason || '先に保存先フォルダを選んでください', 'err');
+      return;
+    }
+    this.item = item;
+    this.dir = dir;
+    this.shots = 0;
+    $('#camNo').textContent = item.controlNo;
+    $('#camSub').textContent = [item.variety, item.rank, item.quantityText].filter(Boolean).join('　')
+      + `　→　${FS_WORK_NAME}/${fsFolderName(item)}/`;
+    $('#camShots').innerHTML = '';
+    $('#camDialog').classList.remove('hidden');
+    await this.start();
+  },
+
+  async start(){
+    this.say('カメラを準備しています…');
+    try {
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: this.facing, width: { ideal: 1920 }, height: { ideal: 1440 } },
+        audio: false
+      });
+      $('#camVideo').srcObject = this.stream;
+      await $('#camVideo').play().catch(()=>{});
+      this.say('');
+      // カメラが2つ以上あれば切り替えを出す
+      try {
+        this.devices = (await navigator.mediaDevices.enumerateDevices())
+          .filter(d => d.kind === 'videoinput');
+        $('#camSwitch').classList.toggle('hidden', this.devices.length < 2);
+      } catch(e){ /* 出せなくてもよい */ }
+    } catch(e){
+      $('#camSwitch').classList.add('hidden');
+      const why = (e && e.name === 'NotAllowedError')
+        ? 'カメラを使う許可が下りていません。<br>アドレスバー左の 🔒 から「カメラ」を許可してください。'
+        : (e && e.name === 'NotFoundError')
+        ? 'この端末にカメラが見つかりません。'
+        : 'カメラを開けませんでした（' + ((e && e.name) || e) + '）';
+      this.say(why + '<br><br>「🖼 ファイルから追加」でも写真を入れられます。');
+    }
+  },
+
+  stop(){
+    if(this.stream){ this.stream.getTracks().forEach(t => t.stop()); this.stream = null; }
+    const v = $('#camVideo');
+    if(v) v.srcObject = null;
+  },
+
+  close(){
+    this.stop();
+    $('#camDialog').classList.add('hidden');
+    if(this.shots) toast(`${this.shots}枚を「${fsFolderName(this.item)}」に保存しました`, 'ok');
+    this.item = null; this.dir = null;
+    renderRegisterPanel();
+  },
+
+  async switchCamera(){
+    this.stop();
+    this.facing = (this.facing === 'environment') ? 'user' : 'environment';
+    await this.start();
+  },
+
+  /** 撮った1枚をフォルダへ保存する */
+  async save(blob, ext){
+    const n = await this.nextIndex(this.dir);
+    const name = `${fsSafeName(this.item.controlNo)}_${String(n).padStart(2, '0')}.${ext}`;
+    await fsWriteFile(this.dir, name, blob);
+    this.shots++;
+    const img = document.createElement('img');
+    img.src = URL.createObjectURL(blob);
+    img.alt = name;
+    $('#camShots').prepend(img);
+    return name;
+  },
+
+  async shoot(){
+    const v = $('#camVideo');
+    if(!this.stream || !v || !v.videoWidth){ toast('カメラが動いていません', 'err'); return; }
+    const btn = $('#camShoot');
+    btn.disabled = true;
+    try {
+      const c = document.createElement('canvas');
+      c.width = v.videoWidth; c.height = v.videoHeight;
+      c.getContext('2d').drawImage(v, 0, 0);
+      const blob = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.92));
+      if(!blob) throw new Error('画像を作れませんでした');
+      const name = await this.save(blob, 'jpg');
+      toast(`${name} を保存しました`, 'ok');
+    } catch(e){
+      toast('保存できませんでした — ' + fsWhy(e), 'err');
+    } finally {
+      btn.disabled = false;
+    }
+  },
+
+  /** カメラが使えないときや、あとから足すとき */
+  async addFiles(files){
+    let ok = 0;
+    for(const f of files){
+      try {
+        const ext = (f.name.match(/\.(jpe?g|png)$/i) || [,'jpg'])[1].toLowerCase();
+        await this.save(f, ext === 'jpeg' ? 'jpg' : ext);
+        ok++;
+      } catch(e){ toast(`${f.name} を保存できませんでした — ${fsWhy(e)}`, 'err'); }
+    }
+    if(ok) toast(`${ok}枚を追加しました`, 'ok');
+  }
+};
+
+$('#camClose').onclick = () => Cam.close();
+$('#camShoot').onclick = () => Cam.shoot();
+$('#camSwitch').onclick = () => Cam.switchCamera();
+$('#camPick').onclick = () => $('#camFile').click();
+$('#camFile').onchange = async (e) => {
+  const files = [...e.target.files];
+  e.target.value = '';
+  if(files.length) await Cam.addFiles(files);
+};
+document.addEventListener('keydown', (e) => {
+  if($('#camDialog').classList.contains('hidden')) return;
+  if(e.key === 'Escape') Cam.close();
+  if(e.key === ' ' || e.key === 'Enter'){ e.preventDefault(); Cam.shoot(); }
+});
 
 /** 直前に登録した商品の案内（写真を登録／次の魚を登録） */
 function renderRegDone(){
@@ -6651,11 +6863,11 @@ function renderRegDone(){
     <div class="no">${escapeHtml(it.controlNo)}</div>
     <div class="sub">${escapeHtml([it.variety, it.rank, it.quantityText].filter(Boolean).join('　'))}</div>
     <div class="acts">
-      <button class="btn btn-primary" id="regGoPhotos">🖼 写真を登録</button>
+      <button class="btn btn-primary" id="regGoPhotos">📷 写真を撮る</button>
       <button class="btn btn-ghost" id="regGoNext">→ 次の魚を登録</button>
     </div>`;
   $('#panel-register').querySelector('.reg-main').prepend(div);
-  $('#regGoPhotos').onclick = () => switchTab('edit');
+  $('#regGoPhotos').onclick = () => Cam.open(it);
   $('#regGoNext').onclick = () => {
     regSel.lastNo = ''; regSel.breed = null; regSel.step = 1;
     renderRegisterPanel();
@@ -6967,7 +7179,7 @@ function renderPhotoGrid(){ /* 写真の一覧は編集タブで見る */ }
 //   魚/        … これから編集するもの（登録すると管理番号のフォルダができる）
 //   魚編集後/  … 編集を終えたもの（原本と編集後の両方）
 // を作る。無ければ自動で作る。
-const APP_VERSION = 'v71';
+const APP_VERSION = 'v72';
 const FS_WORK_NAME = '編集前';
 // 前に使っていた名前。残っていたら気づけるようにする
 const FS_OLD_NAMES = ['魚', '魚編集後'];
