@@ -736,6 +736,20 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 </style>
 </head>
 <body>
+<!-- いちばん最初に出す目印。これすら出ないなら、そもそも届いていない。
+     アプリが立ち上がると消える。 -->
+<div id="bootMark" style="position:fixed;inset:0;z-index:9998;display:grid;place-items:center;
+     background:#0a0e27;color:#8fa0c8;font:14px/2 'Yu Gothic UI','Hiragino Sans',sans-serif;text-align:center">
+  <div>
+    <div style="font-size:34px;margin-bottom:10px">🐟</div>
+    <div>メダカ出品アシスタント</div>
+    <div style="font-size:12px;opacity:.7">読み込んでいます… <b>v78</b></div>
+    <div style="font-size:11px;opacity:.5;margin-top:14px">
+      この表示のまま進まないときは、この画面をそのまま伝えてください
+    </div>
+  </div>
+</div>
+
 <!-- 何かで落ちたときに、真っ白にせず理由を出す。
      いちばん先に置くことで、この下で何が起きても拾える。 -->
 <div id="bootError" style="display:none;position:fixed;inset:0;z-index:9999;overflow:auto;
@@ -808,7 +822,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
       <button class="tab" data-tab="history" role="tab">履歴</button>
       <button class="tab" data-tab="settings" role="tab">⚙ 設定</button>
       <button id="btnUpdateApp" class="upd" type="button"
-              title="押すと必ず最新版になります">🔄 <span id="appVersion">v77</span></button>
+              title="押すと必ず最新版になります">🔄 <span id="appVersion">v78</span></button>
     </nav>
   </header>
 
@@ -7920,7 +7934,7 @@ function renderPhotoGrid(){ /* 写真の一覧は編集タブで見る */ }
 //   魚/        … これから編集するもの（登録すると管理番号のフォルダができる）
 //   魚編集後/  … 編集を終えたもの（原本と編集後の両方）
 // を作る。無ければ自動で作る。
-const APP_VERSION = 'v77';
+const APP_VERSION = 'v78';
 window.APP_VERSION = APP_VERSION;
 const FS_WORK_NAME = '編集前';
 // 前に使っていた名前。残っていたら気づけるようにする
@@ -9529,6 +9543,7 @@ fsRestoreRoot().then(() => renderFsBar()).catch(() => {});
 })();
 
 $('#appVersion').textContent = APP_VERSION;
+{ const m = $('#bootMark'); if(m) m.remove(); }   // ここまで来られたら目印を消す
 // 中身が空のときだけ、フォルダの控えから戻すか尋ねる
 setTimeout(() => { backupOfferRestore().catch(()=>{}); }, 1200);
 $('#btnUpdateApp').onclick = updateApp;

@@ -130,6 +130,13 @@ r.expect("HTMLはHTTPキャッシュを通さず取り直す", "cache: 'reload'"
 r.expect("押して最新にできる", "updateApp" in SRC, "版の表示を押すと更新")
 
 
+
+print("■ 読み込み中の目印")
+r.expect("立ち上がったら目印は消えている", not b.ev("!!document.getElementById('bootMark')"),
+         "起動できたら消える")
+r.expect("目印の版も同じ", app_v and (f"読み込んでいます… <b>{app_v}</b>") in SRC,
+         f"目印 = {app_v}")
+
 print("■ 落ちたときに、真っ白にせず理由を出す")
 r.expect("受け皿がある", b.ev("!!document.getElementById('bootError')"), "bootError")
 r.expect("ふだんは隠れている",
