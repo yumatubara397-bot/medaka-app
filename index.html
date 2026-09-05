@@ -711,6 +711,21 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .fs-list li{display:flex;justify-content:space-between;gap:10px;padding:5px 8px;
   border-bottom:1px solid var(--line,#2a3350)}
 .fs-list li b{color:var(--accent,#5ad1c8);font-weight:600}
+.done-acts{display:flex;gap:6px;margin-bottom:8px}
+.done-list{list-style:none;margin:0;padding:0;max-height:46vh;overflow-y:auto;font-size:13px}
+.done-list li{border-bottom:1px solid var(--line,#2a3350)}
+.done-list label{display:grid;grid-template-columns:22px 1fr auto auto auto;gap:10px;
+  align-items:center;padding:8px 6px;cursor:pointer}
+.done-list .nm{font-weight:600}
+.done-list .sub,.done-list .no,.done-list .cnt{color:var(--ink-dim);font-size:12px}
+.breed-notes{max-height:44vh;overflow-y:auto;margin-top:10px}
+.breed-notes .row{display:grid;grid-template-columns:150px 1fr;gap:10px;align-items:center;
+  padding:6px 0;border-bottom:1px solid var(--line,#2a3350)}
+.breed-notes .bn{font-size:13px;font-weight:600}
+.breed-notes .bn small{display:block;font-weight:400;color:var(--ink-dim);font-size:11px}
+.breed-notes input{width:100%;padding:7px 9px;border-radius:8px;font-size:12px;
+  background:var(--bg-2,#121a30);border:1px solid var(--line,#2a3350);color:var(--ink,#e8ecf7)}
+.breed-notes .has input{border-color:var(--accent,#5ad1c8)}
 .pi-table td:first-child{opacity:.65;width:40%}
 .pi-acts{display:flex;gap:10px;flex-wrap:wrap}
 .pi-acts .btn{flex:1;min-width:140px;min-height:46px}
@@ -734,13 +749,14 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
       <button class="tab" data-tab="history" role="tab">履歴</button>
       <button class="tab" data-tab="settings" role="tab">⚙ 設定</button>
       <button id="btnUpdateApp" class="upd" type="button"
-              title="押すと必ず最新版になります">🔄 <span id="appVersion">v75</span></button>
+              title="押すと必ず最新版になります">🔄 <span id="appVersion">v76</span></button>
     </nav>
   </header>
 
   <main>
     <!-- ===== 登録タブ ===== -->
     <section id="panel-register" class="panel">
+      <div id="restoreBar" class="reg-tepra hidden"></div>
       <div id="regTepraBar" class="reg-tepra hidden"></div>
       <div id="regFsBar" class="reg-tepra hidden"></div>
       <div class="reg-wrap">
@@ -1018,6 +1034,9 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
     <!-- 保存先の状態 -->
     <div id="fsStatusDialog" class="redo-dialog hidden"></div>
 
+    <!-- 編集後から選ぶ -->
+    <div id="doneDialog" class="redo-dialog hidden"></div>
+
     <!-- 撮影 -->
     <div id="camDialog" class="redo-dialog hidden">
       <div class="cam-box">
@@ -1051,12 +1070,15 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
     <section id="panel-listing" class="panel hidden">
       <div id="listingEmpty" class="empty-state">
         <div class="icon">🛒</div>
-        <h2>取込タブで写真を読み込んでください</h2>
-        <p>① 取込タブでフォルダを選び、商品グループを作ってからこのタブを開きます。<br>② 編集タブで加工した画像があれば、そのまま出品画像として使えます。</p>
+        <h2>出品するものを選んでください</h2>
+        <p>② 編集タブで加工したものを、そのまま出品できます。<br>
+           保管を終えたものは「編集後から読み込む」で、あとからでも出品できます。</p>
         <button class="btn btn-primary" id="btnGotoEdit">② 編集タブへ</button>
+        <button class="btn btn-ghost" id="btnLoadDone">📁 編集後から読み込む</button>
       </div>
 
       <div id="listingLoaded" class="hidden">
+        <div id="lstWarn" class="fs-need hidden" style="margin-top:0"></div>
         <div class="bar-row" style="margin-bottom:10px">
           <div class="bar-info">タイトル・説明文・オークタウンの各項目は <b>⚙設定タブ</b> でまとめて管理します</div>
           <div class="lst-toolbar">
@@ -1075,6 +1097,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
             <button id="btnLstSelectAll" class="btn btn-ghost btn-mini">全選択</button>
             <button id="btnLstSelectNone" class="btn btn-ghost btn-mini">全解除</button>
             <button id="btnLstRetitle" class="btn btn-ghost btn-mini" title="手動編集したタイトルも含めて全部作り直します">↻ タイトル再生成</button>
+            <button id="btnLoadDone2" class="btn btn-ghost btn-mini">📁 編集後から読み込む</button>
             <button id="btnBuildZip" class="btn btn-primary">📦 CSV + 画像ZIP を生成</button>
           </div>
         </div>
@@ -1113,6 +1136,47 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
     <!-- ===== 設定タブ ===== -->
     <section id="panel-settings" class="panel hidden">
       <h2>設定</h2>
+
+      <div class="settings-card">
+        <h3 style="margin-top:0">🐟 品種ごとの説明文</h3>
+        <div style="font-size:12px;color:var(--ink-dim);line-height:1.7;margin-bottom:10px">
+          品種ごとに決まった説明を書いておくと、出品の説明文で
+          <code>{品種説明}</code> の場所に差し込まれます。<br>
+          例：「体外光が強く出る系統です。親魚は当店で選別したものを使用しています。」
+        </div>
+        <input type="text" id="breedNoteSearch" class="ai-fb-input" placeholder="品種名・ふりがなで絞り込む">
+        <div id="breedNoteList" class="breed-notes"></div>
+      </div>
+
+      <div class="settings-card">
+        <h3 style="margin-top:0">📷 撮影</h3>
+        <label class="chip-toggle" title="登録したらすぐ撮影に移ります">
+          <input type="checkbox" id="camAutoOpen" checked>
+          <span>登録したら、そのままカメラを開く</span></label>
+        <div style="font-size:12px;color:var(--ink-dim);line-height:1.7;margin-top:8px">
+          テプラが出ている間に撮影を始められます。撮り終えて「終わる」を押すと、
+          次の魚の登録に戻ります。
+        </div>
+      </div>
+
+      <div class="settings-card">
+        <h3 style="margin-top:0">💾 控え（データの保全）</h3>
+        <div style="font-size:12px;color:var(--ink-dim);line-height:1.7;margin-bottom:10px">
+          登録した商品・管理番号の連番・品種の一覧・テプラ設定・出品テンプレートは、
+          ふだんこのブラウザの中だけにあります。<br>
+          ブラウザのデータを消したりパソコンを替えると失われるため、
+          保存先フォルダの <b>設定.json</b> に自動で控えを取ります。
+        </div>
+        <div id="backupState" class="hint" style="margin-bottom:10px"></div>
+        <div class="btn-row">
+          <button id="btnBackupNow" class="btn btn-primary">💾 いま控えを取る</button>
+          <button id="btnBackupLoad" class="btn btn-ghost">↩ 控えから戻す</button>
+          <button id="btnBackupFile" class="btn btn-ghost">⬇ ファイルに書き出す</button>
+          <button id="btnBackupPick" class="btn btn-ghost">⬆ ファイルから読む</button>
+        </div>
+        <input type="file" id="backupFile" accept="application/json,.json" hidden>
+      </div>
+
       <div class="settings-card">
         <div class="field">
           <label>GAS Webhook URL <span id="apiStatus" class="api-status"></span></label>
@@ -1177,7 +1241,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
         </details>
 
         <details class="lst-fold" id="lstTemplateFold">
-          <summary>📝 説明文テンプレート <small>{品種} {ランク} {数量} {管理番号} {備考} {タイトル} {送料} が使えます</small></summary>
+          <summary>📝 説明文テンプレート <small>{品種} {品種説明} {ランク} {数量} {管理番号} {備考} {タイトル} {送料} が使えます</small></summary>
           <div class="lst-fold-body">
             <textarea id="lstTemplate" class="lst-ta" spellcheck="false"></textarea>
             <div class="hint" style="font-size:11px;color:var(--ink-dim);margin-top:6px;line-height:1.7">
@@ -1307,6 +1371,7 @@ $$('.tab').forEach(b => {
 function switchTab(name){
   $$('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   $$('.panel').forEach(p => p.classList.toggle('hidden', p.id !== 'panel-'+name));
+  if(name === 'settings'){ renderBackupState(); renderBreedNotes(); }
   if(name === 'register') renderRegisterPanel();
 
   if(name === 'edit'){ autoLoadForEdit(); }
@@ -4343,6 +4408,31 @@ function buildTitle(p, st){
   return truncateToWidth(text, 65);
 }
 
+
+/** その品種に決めてある説明文（無ければ空） */
+function breedNote(name){
+  const t = String(name || '').trim();
+  if(!t) return '';
+  const m = regMasters();
+  for(const key of ['breeds', 'goods']){
+    const b = (m[key] || []).find(x => x.name === t);
+    if(b && b.note) return String(b.note);
+  }
+  return '';
+}
+
+/** その品種の説明文を決める */
+function setBreedNote(name, note){
+  const t = String(name || '').trim();
+  if(!t) return false;
+  const m = regMasters();
+  for(const key of ['breeds', 'goods']){
+    const b = (m[key] || []).find(x => x.name === t);
+    if(b){ b.note = String(note || '').trim(); saveRegMasters(m); return true; }
+  }
+  return false;
+}
+
 // ===== 説明文 =====
 function buildDescription(p, st, htmlMode){
   const cfg = lstConfig();
@@ -4354,7 +4444,8 @@ function buildDescription(p, st, htmlMode){
     '管理番号': esc(p.controlNo || ''),
     '備考':   esc((st.note || '').trim()),
     'タイトル': esc(st.title || ''),
-    '送料':   esc(cfg.SHIP_METHOD_1_PRICE || '')
+    '送料':   esc(cfg.SHIP_METHOD_1_PRICE || ''),
+    '品種説明': esc(breedNote(p.variety))
   };
   // プレースホルダを差し替え。「{品種}」等が全部空になって
   // 「【備考】」のようなラベルだけになった行は削除する
@@ -4632,6 +4723,33 @@ $('#btnLstRetitle').onclick = () => {
 });
 $('#lstEncoding').addEventListener('change', lstSaveOpts);
 
+
+/** 出品の前に、撮り忘れや書き忘れを知らせる */
+function renderListingWarn(){
+  const box = $('#lstWarn');
+  if(!box) return;
+  const notes = [];
+  const noPhoto = products.filter(p => !p.specimenIdxs.length);
+  if(noPhoto.length){
+    notes.push(`写真がまだ無い商品が ${noPhoto.length}件 あります`
+      + `（${noPhoto.slice(0, 5).map(p => p.controlNo || p.variety).join('、')}`
+      + `${noPhoto.length > 5 ? ' ほか' : ''}）。このままでは画像なしで出品されます`);
+  }
+  const noRank = products.filter(p => p.specimenIdxs.length && !p.rank && !p.quantityText);
+  if(noRank.length){
+    notes.push(`ランクと数量が空の商品が ${noRank.length}件 あります`
+      + `（${noRank.slice(0, 5).map(p => p.controlNo || p.variety).join('、')}`
+      + `${noRank.length > 5 ? ' ほか' : ''}）。タイトルと説明文が不足します`);
+  }
+  const many = products.filter(p => p.specimenIdxs.length > 5);
+  if(many.length){
+    notes.push(`写真が5枚を超える商品が ${many.length}件 あります。`
+      + `オークタウンには先頭5枚だけ出ます`);
+  }
+  box.classList.toggle('hidden', notes.length === 0);
+  box.innerHTML = notes.map(t => '⚠ ' + escapeHtml(t)).join('<br>');
+}
+
 function renderListingPanel(){
   if(products.length === 0 || photos.length === 0){
     $('#listingEmpty').classList.remove('hidden');
@@ -4640,6 +4758,7 @@ function renderListingPanel(){
   }
   $('#listingEmpty').classList.add('hidden');
   $('#listingLoaded').classList.remove('hidden');
+  renderListingWarn();
   if(!$('#lstConfigGrid').children.length) buildConfigForm();
   if(!$('#lstTemplate').value) $('#lstTemplate').value = lstTemplateText();
   if(!$('#lstTitleTemplate').value){ $('#lstTitleTemplate').value = lstTitleTemplate(); updateTitlePreview(); }
@@ -5256,7 +5375,10 @@ function regMasters(){
   }
   return m;
 }
-function saveRegMasters(m){ localStorage.setItem(REG_MASTER_KEY, JSON.stringify(m)); }
+function saveRegMasters(m){
+  localStorage.setItem(REG_MASTER_KEY, JSON.stringify(m));
+  if(typeof backupSoon === 'function') backupSoon();   // 品種の増減も控える
+}
 
 /** いまの入力対象（'fish' = メダカ / 'goods' = 用品） */
 function regListKey(){ return regSel.mode === 'goods' ? 'goods' : 'breeds'; }
@@ -5361,7 +5483,10 @@ function regPreviewNumber(){
 function regItems(){
   try { return JSON.parse(localStorage.getItem(REG_ITEMS_KEY) || '[]'); } catch(e){ return []; }
 }
-function saveRegItems(list){ localStorage.setItem(REG_ITEMS_KEY, JSON.stringify(list)); }
+function saveRegItems(list){
+  localStorage.setItem(REG_ITEMS_KEY, JSON.stringify(list));
+  if(typeof backupSoon === 'function') backupSoon();   // 控えも新しくする
+}
 
 // ===== Windows：テプラ クリエイター WebAPI =====
 // パソコンに入れた「WebAPI用通信モジュール」が localhost:29108 で待っているので、そこへ送る。
@@ -6704,11 +6829,375 @@ function renderRegItems(){
 }
 
 
+
+
+
+/** 設定タブ：品種ごとの説明文を書く欄 */
+function renderBreedNotes(){
+  const box = $('#breedNoteList');
+  if(!box) return;
+  const m = regMasters();
+  const all = [...(m.breeds || []), ...(m.goods || [])];
+  const q = normKana(($('#breedNoteSearch').value || '').trim());
+  const list = q
+    ? all.filter(b => normKana(b.name + ' ' + (b.reading || '') + ' ' + (b.code || '')).includes(q))
+    : all;
+
+  if(!list.length){
+    box.innerHTML = '<div class="reg-empty">見つかりません。</div>';
+    return;
+  }
+  const wrote = all.filter(b => b.note).length;
+  box.innerHTML = `<div class="hint" style="margin:0 0 8px">${all.length}件中 ${wrote}件に書いてあります</div>`
+    + list.map(b => `
+      <div class="row${b.note ? ' has' : ''}">
+        <div class="bn">${escapeHtml(b.name)}
+          <small>${escapeHtml(b.reading || b.code || '')}</small></div>
+        <input type="text" data-n="${escapeAttr(b.name)}" value="${escapeAttr(b.note || '')}"
+               placeholder="この品種の説明（空でもかまいません）">
+      </div>`).join('');
+
+  box.querySelectorAll('input').forEach(inp => {
+    inp.onchange = () => {
+      setBreedNote(inp.dataset.n, inp.value);
+      inp.closest('.row').classList.toggle('has', !!inp.value.trim());
+      toast(`「${inp.dataset.n}」の説明を保存しました`, 'ok');
+      if(products.length) renderListingList();
+    };
+  });
+}
+$('#breedNoteSearch').oninput = renderBreedNotes;
+
+// ===== 保管したものから出品する =====
+// 「編集を終えて保存する」で 編集後 に移すと、登録一覧からは消える。
+// あとから出品ファイルを作れるよう、保管したものを選んで読み込めるようにする。
+
+/** 「編集後」に何が入っているかを調べる */
+async function doneList(){
+  const done = await fsDoneDir();
+  if(!done) return null;
+  const out = [];
+  for await (const [name, h] of done.entries()){
+    if(h.kind !== 'directory') continue;
+    let info = null, photos = 0, from = '';
+    try {
+      const fh = await h.getFileHandle('商品.json', { create: false });
+      info = JSON.parse(await (await fh.getFile()).text());
+    } catch(e){ /* 古い保管には無い */ }
+    // 加工後があればそちら、無ければ原本を数える
+    for(const sub of ['加工後', '原本']){
+      try {
+        const d = await h.getDirectoryHandle(sub, { create: false });
+        let n = 0;
+        for await (const [fn, fh2] of d.entries()){
+          if(fh2.kind === 'file' && /\.(jpe?g|png)$/i.test(fn)) n++;
+        }
+        if(n){ photos = n; from = sub; break; }
+      } catch(e){ /* 無ければ次を見る */ }
+    }
+    const parsed = fsParseFolderName(name);
+    out.push({
+      folder: name, handle: h, photos, from,
+      variety: (info && info.variety) || parsed.variety,
+      rank: (info && info.rank) || '',
+      quantityText: (info && info.quantityText) || '',
+      controlNo: (info && info.controlNo) || parsed.controlNo,
+      savedAt: (info && info.savedAt) || ''
+    });
+  }
+  // 管理番号は MD-年月日-連番 なので、逆順に並べると新しいものが上に来る
+  out.sort((a, b) => (b.controlNo || '').localeCompare(a.controlNo || '', undefined, { numeric: true })
+                  || a.folder.localeCompare(b.folder, 'ja'));
+  return out;
+}
+
+/** 選んだ保管ぶんを読み込んで、出品できる状態にする */
+async function doneLoad(picked){
+  photos.forEach(p => p.blobUrl && URL.revokeObjectURL(p.blobUrl));
+  photos = [];
+  editState = {};
+  const built = [];
+
+  for(const it of picked){
+    const idxs = [];
+    let dir = null;
+    for(const sub of [it.from || '加工後', '原本']){
+      try { dir = await it.handle.getDirectoryHandle(sub, { create: false }); break; }
+      catch(e){ dir = null; }
+    }
+    if(dir){
+      const files = [];
+      for await (const [name, h] of dir.entries()){
+        if(h.kind === 'file' && /\.(jpe?g|png)$/i.test(name)) files.push({ name, handle: h });
+      }
+      files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+      for(const f of files){
+        idxs.push(photos.length);
+        photos.push({ name: f.name, handle: f.handle, blobUrl: null });
+      }
+    }
+    built.push({
+      labelIdx: idxs.length ? idxs[0] : -1, specimenIdxs: idxs,
+      variety: it.variety, rank: it.rank, quantityText: it.quantityText,
+      male: '', female: '', controlNo: it.controlNo, folderName: it.folder,
+      manualEdits: { variety:true, rank:true, quantityText:true, male:false, female:false, controlNo:true }
+    });
+  }
+
+  products = built;
+  assignMode = true;
+  leftoverIdxs = [];
+  folderHandle = { name: FS_DONE_NAME };
+  await Promise.all(built.flatMap(b => b.specimenIdxs).map(ensureThumb));
+  syncFolderPhotos();
+  renderListingPanel();
+  const n = built.reduce((a, b) => a + b.specimenIdxs.length, 0);
+  toast(`${built.length}件 / 写真${n}枚 を読み込みました`, 'ok');
+}
+
+/** 「編集後」から選ぶ画面 */
+async function showDonePicker(){
+  const dlg = $('#doneDialog');
+  dlg.classList.remove('hidden');
+  dlg.innerHTML = '<div class="pi-box"><h3>編集後から読み込む</h3><p>調べています…</p></div>';
+
+  const list = await doneList();
+  if(!list){
+    dlg.innerHTML = `<div class="pi-box"><h3>編集後から読み込む</h3>
+      <div class="fs-need" style="margin-top:0">${escapeHtml(fsLastReason || '保存先フォルダにつながっていません')}</div>
+      <div class="pi-acts"><button id="doneClose" class="btn btn-ghost">閉じる</button></div></div>`;
+    $('#doneClose').onclick = () => dlg.classList.add('hidden');
+    return;
+  }
+  if(!list.length){
+    dlg.innerHTML = `<div class="pi-box"><h3>編集後から読み込む</h3>
+      <div class="reg-empty">「${FS_DONE_NAME}」にはまだ何もありません。</div>
+      <div class="pi-acts"><button id="doneClose" class="btn btn-ghost">閉じる</button></div></div>`;
+    $('#doneClose').onclick = () => dlg.classList.add('hidden');
+    return;
+  }
+
+  window.__doneList = list;
+  dlg.innerHTML = `
+    <div class="pi-box">
+      <h3>編集後から読み込む</h3>
+      <div class="hint">出品するものを選んでください（${list.length}件）</div>
+      <div class="done-acts">
+        <button id="donePickAll" class="btn btn-ghost btn-mini">全選択</button>
+        <button id="donePickNone" class="btn btn-ghost btn-mini">全解除</button>
+      </div>
+      <ul class="done-list">
+        ${list.map((x, i) => `
+          <li>
+            <label>
+              <input type="checkbox" class="dpick" data-i="${i}" ${x.photos ? '' : 'disabled'}>
+              <span class="nm">${escapeHtml(x.variety || x.folder)}</span>
+              <span class="sub">${escapeHtml([x.rank, x.quantityText].filter(Boolean).join(' ') || '—')}</span>
+              <span class="no mono">${escapeHtml(x.controlNo)}</span>
+              <span class="cnt">${x.photos ? `${x.from} ${x.photos}枚` : '写真なし'}</span>
+            </label>
+          </li>`).join('')}
+      </ul>
+      <div class="pi-acts" style="margin-top:14px">
+        <button id="doneGo" class="btn btn-primary" disabled>読み込む</button>
+        <button id="doneClose" class="btn btn-ghost">閉じる</button>
+      </div>
+    </div>`;
+
+  const refresh = () => {
+    const n = dlg.querySelectorAll('.dpick:checked').length;
+    $('#doneGo').disabled = n === 0;
+    $('#doneGo').textContent = n ? `${n}件を読み込む` : '読み込む';
+  };
+  dlg.querySelectorAll('.dpick').forEach(c => c.onchange = refresh);
+  $('#donePickAll').onclick = () => {
+    dlg.querySelectorAll('.dpick:not([disabled])').forEach(c => c.checked = true); refresh();
+  };
+  $('#donePickNone').onclick = () => {
+    dlg.querySelectorAll('.dpick').forEach(c => c.checked = false); refresh();
+  };
+  $('#doneClose').onclick = () => dlg.classList.add('hidden');
+  $('#doneGo').onclick = async () => {
+    const picked = [...dlg.querySelectorAll('.dpick:checked')]
+      .map(c => list[parseInt(c.dataset.i, 10)]);
+    dlg.classList.add('hidden');
+    await doneLoad(picked);
+  };
+  refresh();
+}
+
+$('#btnLoadDone').onclick = showDonePicker;
+$('#btnLoadDone2').onclick = showDonePicker;
+
+// ===== 控え（データの保全） =====
+// 登録・管理番号の連番・品種の一覧・テプラ設定・出品テンプレートは
+// ふだんブラウザの中にしかない。ブラウザのデータを消すと戻せないので、
+// 保存先フォルダに「設定.json」として控えを取る。
+
+const BACKUP_FILE = '設定.json';
+// 控えに入れないもの（その端末だけの都合。持ち込むとかえって困る）
+const BACKUP_SKIP = ['medaka_camera_id', 'medaka_fs_root_name'];
+
+/** いま持っているものを1つにまとめる */
+function backupCollect(){
+  const data = {};
+  for(let i = 0; i < localStorage.length; i++){
+    const k = localStorage.key(i);
+    if(!k || !k.startsWith('medaka_')) continue;
+    if(BACKUP_SKIP.includes(k)) continue;
+    data[k] = localStorage.getItem(k);
+  }
+  return {
+    kind: 'medaka-backup',
+    version: APP_VERSION,
+    savedAt: new Date().toISOString(),
+    items: (() => { try { return JSON.parse(data['medaka_reg_items'] || '[]').length; } catch(e){ return 0; } })(),
+    data
+  };
+}
+
+/** 控えを書き戻す。いまのものは消さず、上書きだけする */
+function backupApply(obj){
+  if(!obj || obj.kind !== 'medaka-backup' || !obj.data) throw new Error('控えの形が違います');
+  let n = 0;
+  for(const [k, v] of Object.entries(obj.data)){
+    if(!k.startsWith('medaka_')) continue;
+    if(BACKUP_SKIP.includes(k)) continue;
+    localStorage.setItem(k, v);
+    n++;
+  }
+  return n;
+}
+
+/** フォルダに控えを書く */
+async function backupSave(quiet){
+  const root = await fsRestoreRoot();
+  if(!root){ if(!quiet) toast(fsLastReason || '保存先フォルダにつながっていません', 'err'); return false; }
+  try {
+    const obj = backupCollect();
+    await fsWriteFile(root, BACKUP_FILE,
+      new Blob([JSON.stringify(obj, null, 1)], { type: 'application/json' }));
+    if(!quiet) toast(`控えを取りました（商品${obj.items}件）`, 'ok');
+    renderBackupState();
+    return true;
+  } catch(e){
+    if(!quiet) toast('控えを取れませんでした — ' + fsWhy(e), 'err');
+    return false;
+  }
+}
+
+/** フォルダの控えを読む（無ければ null） */
+async function backupRead(){
+  const root = await fsRestoreRoot();
+  if(!root) return null;
+  try {
+    const fh = await root.getFileHandle(BACKUP_FILE, { create: false });
+    const text = await (await fh.getFile()).text();
+    return JSON.parse(text);
+  } catch(e){ return null; }
+}
+
+/** 控えから戻す */
+async function backupLoad(){
+  const obj = await backupRead();
+  if(!obj){ toast(`「${BACKUP_FILE}」が見つかりません`, 'err'); return; }
+  const when = backupWhen(obj);
+  if(!confirm(`${when} の控えから戻します。\n\n商品 ${obj.items}件\n\n`
+            + `いまの内容は上書きされます。よろしいですか？`)) return;
+  try {
+    const n = backupApply(obj);
+    toast(`${n}項目を戻しました`, 'ok');
+    location.reload();
+  } catch(e){ toast('戻せませんでした — ' + (e.message || e), 'err'); }
+}
+
+function backupWhen(obj){
+  try {
+    const d = new Date(obj.savedAt);
+    return `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  } catch(e){ return '日時不明'; }
+}
+
+/** 変更があったら、少し待ってからまとめて控える */
+let backupTimer = null;
+function backupSoon(){
+  if(backupTimer) clearTimeout(backupTimer);
+  backupTimer = setTimeout(() => { backupTimer = null; backupSave(true); }, 3000);
+}
+
+/**
+ * 起動時：中身が空で、フォルダに控えがあれば案内を出す。
+ * 画面を止めてしまう確認窓は使わず、押せる案内にする。
+ */
+async function backupOfferRestore(){
+  const bar = $('#restoreBar');
+  if(!bar) return false;
+  bar.classList.add('hidden');
+  const has = regItems().length || (localStorage.getItem(REG_MASTER_KEY) || '').length > 2;
+  if(has) return false;                 // すでに中身があるなら触らない
+  const obj = await backupRead();
+  if(!obj || !obj.data) return false;
+
+  bar.classList.remove('hidden');
+  bar.innerHTML = `<span class="dot"></span>
+    <span class="txt">このブラウザには登録がありませんが、保存先に
+      <b>${backupWhen(obj)}</b> の控え（商品 ${obj.items}件）があります</span>
+    <button id="restoreDo" class="btn btn-primary btn-sm">↩ 控えから戻す</button>
+    <button id="restoreNo" class="btn btn-ghost btn-sm">閉じる</button>`;
+  $('#restoreDo').onclick = () => {
+    try {
+      backupApply(obj);
+      location.reload();
+    } catch(e){ toast('戻せませんでした — ' + (e.message || e), 'err'); }
+  };
+  $('#restoreNo').onclick = () => bar.classList.add('hidden');
+  return true;
+}
+
+async function renderBackupState(){
+  const el = $('#backupState');
+  if(!el) return;
+  const now = backupCollect();
+  const obj = await backupRead();
+  el.innerHTML = obj
+    ? `いまの中身：商品 ${now.items}件　／　控え：${backupWhen(obj)}（商品 ${obj.items}件）`
+    : `いまの中身：商品 ${now.items}件　／　控えはまだありません`;
+}
+
+$('#btnBackupNow').onclick = () => backupSave();
+$('#btnBackupLoad').onclick = () => backupLoad();
+$('#btnBackupFile').onclick = () => {
+  const obj = backupCollect();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(obj, null, 1)], { type: 'application/json' }));
+  const d = new Date();
+  a.download = `メダカ設定_${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  toast('ファイルに書き出しました', 'ok');
+};
+$('#btnBackupPick').onclick = () => $('#backupFile').click();
+$('#backupFile').onchange = async (e) => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if(!f) return;
+  try {
+    const obj = JSON.parse(await f.text());
+    if(!confirm(`${backupWhen(obj)} の控え（商品 ${obj.items}件）を読み込みます。\n\n`
+              + `いまの内容は上書きされます。よろしいですか？`)) return;
+    backupApply(obj);
+    toast('読み込みました', 'ok');
+    location.reload();
+  } catch(err){ toast('読めませんでした — ' + (err.message || err), 'err'); }
+};
+
 // ===== 撮影（登録した商品のフォルダへ直接ためる） =====
 // 「写真を登録」を押したら、その場でカメラが立ち上がり、
 // 撮った写真は 編集前/品種名_管理番号/ にそのまま保存される。
 
 const CAM_ID_KEY = 'medaka_camera_id';   // 選んだカメラを覚えておく
+const CAM_AUTO_KEY = 'medaka_camera_auto';  // 登録したらそのままカメラを開くか
+function camAutoOn(){ return localStorage.getItem(CAM_AUTO_KEY) !== '0'; }
 
 let camAudio = null;
 /** カシャッという音を、その場で作って鳴らす（音のファイルを持たない） */
@@ -6769,6 +7258,7 @@ function camChoose(devices, savedId){
 const Cam = {
   item: null, dir: null, stream: null, shots: 0, devices: [], deviceId: null,
   pending: [],          // まだ保存していない写真
+  fromRegister: false,  // 登録から続けて開いたか（撮り終えたら次の登録へ戻す）
 
   /** その商品のフォルダに、次に使う番号を調べる */
   async nextIndex(dir){
@@ -6791,7 +7281,7 @@ const Cam = {
     el.innerHTML = text;
   },
 
-  async open(item){
+  async open(item, fromRegister){
     // Android は本体のカメラに任せる（そちらの方が写りが良い）
     if(FsLink.kind() === 'android'){
       const r = await FsLink.takePhoto(item);
@@ -6808,6 +7298,7 @@ const Cam = {
     this.item = item;
     this.dir = dir;
     this.shots = 0;
+    this.fromRegister = !!fromRegister;
     this.pending.forEach(p => URL.revokeObjectURL(p.url));
     this.pending = [];
     if(!this.deviceId) this.deviceId = localStorage.getItem(CAM_ID_KEY) || null;
@@ -6897,8 +7388,10 @@ const Cam = {
     $('#camShots').innerHTML = '';
     $('#camSaveBar').classList.add('hidden');
     $('#camDialog').classList.add('hidden');
-    this.item = null; this.dir = null;
-    renderRegisterPanel();
+    const auto = this.fromRegister && this.shots > 0;
+    this.item = null; this.dir = null; this.fromRegister = false;
+    if(auto) regGoNextFish();      // 撮り終えたら、そのまま次の登録へ
+    else renderRegisterPanel();
   },
 
   /** 次のカメラに切り替える（選んだものは覚える） */
@@ -7006,6 +7499,12 @@ const Cam = {
   }
 };
 
+$('#camAutoOpen').checked = camAutoOn();
+$('#camAutoOpen').onchange = () => {
+  localStorage.setItem(CAM_AUTO_KEY, $('#camAutoOpen').checked ? '1' : '0');
+  toast($('#camAutoOpen').checked ? '登録したらカメラを開きます' : 'カメラは手で開きます', 'ok');
+};
+
 $('#camClose').onclick = () => Cam.close();
 $('#camShoot').onclick = () => Cam.shoot();
 $('#camSwitch').onclick = () => Cam.switchCamera();
@@ -7022,7 +7521,13 @@ document.addEventListener('keydown', (e) => {
   if(e.key === ' ' || e.key === 'Enter'){ e.preventDefault(); Cam.shoot(); }
 });
 
-/** 直前に登録した商品の案内（写真を登録／次の魚を登録） */
+/** 次の魚の登録に戻る */
+function regGoNextFish(){
+  regSel.lastNo = ''; regSel.breed = null; regSel.step = 1;
+  renderRegisterPanel();
+}
+
+/** 直前に登録した商品の案内（写真を撮る／次の魚を登録） */
 function renderRegDone(){
   const old = $('#regDoneCard');
   if(old) old.remove();
@@ -7041,10 +7546,7 @@ function renderRegDone(){
     </div>`;
   $('#panel-register').querySelector('.reg-main').prepend(div);
   $('#regGoPhotos').onclick = () => Cam.open(it);
-  $('#regGoNext').onclick = () => {
-    regSel.lastNo = ''; regSel.breed = null; regSel.step = 1;
-    renderRegisterPanel();
-  };
+  $('#regGoNext').onclick = () => regGoNextFish();
 }
 
 function regDoRegister(){
@@ -7122,6 +7624,13 @@ function regDoRegister(){
 
   // 登録したら、そのまま1枚出す
   tepraPrintOnRegister(list[list.length - 1]);
+
+  // テプラが出ている間に撮影を始められるよう、そのままカメラを開く。
+  // Android は本体のカメラに任せており、勝手に起動すると撮ってしまうので開かない。
+  if(camAutoOn() && !regIsGoods() && FsLink.kind() === 'pc'){
+    const target = list[list.length - 1];
+    setTimeout(() => { Cam.open(target, true).catch(() => {}); }, 400);
+  }
 }
 
 $('#regClearAll').onclick = () => {
@@ -7352,7 +7861,7 @@ function renderPhotoGrid(){ /* 写真の一覧は編集タブで見る */ }
 //   魚/        … これから編集するもの（登録すると管理番号のフォルダができる）
 //   魚編集後/  … 編集を終えたもの（原本と編集後の両方）
 // を作る。無ければ自動で作る。
-const APP_VERSION = 'v75';
+const APP_VERSION = 'v76';
 const FS_WORK_NAME = '編集前';
 // 前に使っていた名前。残っていたら気づけるようにする
 const FS_OLD_NAMES = ['魚', '魚編集後'];
@@ -8521,6 +9030,17 @@ async function fsArchiveOne(prod, doneRoot, workRoot){
   const org = await dst.getDirectoryHandle('原本', { create: true });
   const edt = await dst.getDirectoryHandle('加工後', { create: true });
 
+  // あとから出品ファイルを作れるよう、商品の中身も一緒に残す
+  try {
+    const info = {
+      variety: prod.variety, rank: prod.rank, quantityText: prod.quantityText,
+      male: prod.male || '', female: prod.female || '', controlNo: prod.controlNo,
+      folderName: folder, savedAt: new Date().toISOString()
+    };
+    await fsWriteFile(dst, '商品.json',
+      new Blob([JSON.stringify(info, null, 1)], { type: 'application/json' }));
+  } catch(e){ /* 残せなくても写真の保管は続ける */ }
+
   let saved = 0;
   for(const i of prod.specimenIdxs){
     const ph = photos[i];
@@ -8949,6 +9469,8 @@ fsRestoreRoot().then(() => renderFsBar()).catch(() => {});
 })();
 
 $('#appVersion').textContent = APP_VERSION;
+// 中身が空のときだけ、フォルダの控えから戻すか尋ねる
+setTimeout(() => { backupOfferRestore().catch(()=>{}); }, 1200);
 $('#btnUpdateApp').onclick = updateApp;
 
 // ===== Service Worker =====
