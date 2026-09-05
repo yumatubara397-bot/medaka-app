@@ -705,7 +705,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
       <button class="tab" data-tab="history" role="tab">履歴</button>
       <button class="tab" data-tab="settings" role="tab">⚙ 設定</button>
       <button id="btnUpdateApp" class="upd" type="button"
-              title="押すと必ず最新版になります">🔄 <span id="appVersion">v70</span></button>
+              title="押すと必ず最新版になります">🔄 <span id="appVersion">v71</span></button>
     </nav>
   </header>
 
@@ -6967,7 +6967,7 @@ function renderPhotoGrid(){ /* 写真の一覧は編集タブで見る */ }
 //   魚/        … これから編集するもの（登録すると管理番号のフォルダができる）
 //   魚編集後/  … 編集を終えたもの（原本と編集後の両方）
 // を作る。無ければ自動で作る。
-const APP_VERSION = 'v70';
+const APP_VERSION = 'v71';
 const FS_WORK_NAME = '編集前';
 // 前に使っていた名前。残っていたら気づけるようにする
 const FS_OLD_NAMES = ['魚', '魚編集後'];
@@ -7481,16 +7481,26 @@ function isInstalledApp(){
 
 async function installApp(){
   if(!installPrompt){
+    // なぜ出ないのかまで伝える（当てずっぽうに探させない）
+    const why = [];
+    if(isInstalledApp()) why.push('・いまアプリの画面で開いています（すでに入っています）');
+    if(location.protocol !== 'https:') why.push('・https で開いていません');
+    if(!('serviceWorker' in navigator)) why.push('・この端末は対応していません');
+    else if(!navigator.serviceWorker.controller) why.push('・仕掛けの準備がまだです（一度開き直すと出ます）');
+
     alert([
       'アプリとして入れると、写真フォルダの許可をずっと覚えておけます。',
       '',
-      '【Chrome / Edge】',
-      'アドレスバーの右にある「インストール」の印（⊕ や 画面のマーク）を押す',
-      'または 右上の … →「アプリ」→「このサイトをアプリとしてインストール」',
+      why.length ? '【いま入れられない理由】\n' + why.join('\n') + '\n' : '',
+      '【Edge で入れる】',
+      '① 右上の …（設定など）→「アプリ」→「このサイトをアプリとしてインストール」',
+      '② それが無ければ アドレスバー右端の 画面に＋ の印を押す',
+      '③ どちらも無ければ edge://apps を開き、すでに入っていないか確かめる',
       '',
-      '入れたあと、アプリの画面から保存先フォルダを選び直してください。',
-      'そのとき「毎回許可する」を選ぶと、次からは聞かれなくなります。'
-    ].join('\n'));
+      '【入れたあとが大事】',
+      'アプリの画面から保存先フォルダを選び直してください。',
+      '入れる前に出した許可は引き継がれません。'
+    ].filter(Boolean).join('\n'));
     return;
   }
   installPrompt.prompt();

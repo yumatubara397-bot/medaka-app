@@ -1,27 +1,21 @@
 {
-  "name": "メダカ在庫撮影アシスタント",
-  "short_name": "メダカ在庫",
-  "description": "メダカを撮影してAIで品種・雄雌を読み取り、スプレッドシートに自動記入",
+  "id": "/medaka-app/",
+  "name": "メダカ出品アシスタント",
+  "short_name": "メダカ出品",
+  "description": "メダカの登録・テプラ印刷・写真編集・オークタウン出品までをまとめて行います",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
-  "orientation": "portrait",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
   "background_color": "#0a0e27",
   "theme_color": "#0a0e27",
   "lang": "ja",
+  "dir": "ltr",
   "icons": [
-    {
-      "src": "icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
   "categories": ["business", "productivity", "utilities"]
 }
