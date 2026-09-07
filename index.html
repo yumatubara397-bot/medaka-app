@@ -746,7 +746,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
   <div>
     <div style="font-size:34px;margin-bottom:10px">🐟</div>
     <div>メダカ出品アシスタント</div>
-    <div style="font-size:12px;opacity:.7">読み込んでいます… <b>v82</b></div>
+    <div style="font-size:12px;opacity:.7">読み込んでいます… <b>v83</b></div>
     <div style="font-size:11px;opacity:.5;margin-top:14px">
       この表示のまま進まないときは、この画面をそのまま伝えてください
     </div>
@@ -825,7 +825,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
       <button class="tab" data-tab="history" role="tab">履歴</button>
       <button class="tab" data-tab="settings" role="tab">⚙ 設定</button>
       <button id="btnUpdateApp" class="upd" type="button"
-              title="押すと必ず最新版になります">🔄 <span id="appVersion">v82</span></button>
+              title="押すと必ず最新版になります">🔄 <span id="appVersion">v83</span></button>
     </nav>
   </header>
 
@@ -5874,6 +5874,28 @@ const TepraWin = {
   forgetMemo(){ this._memo = { at: 0, printer: '', tapeMM: 0, route: '' }; },
 
   /** 使うプリンターを決める（つながっているもの→USBの順） */
+  /**
+   * 見つかったテプラを順にためし、状態を読めたものを使う。
+   * 読み取るだけなので、テープは1mmも出ない。
+   */
+  async connectBest(){
+    this.forgetMemo();
+    const names = await this.candidates(true);
+    if(!names.length){
+      return { ok:false, error: this.lastError || 'テプラが見つかりません' };
+    }
+    let first = null;
+    for(const name of names){
+      this.printerName = name;
+      this.forgetMemo();
+      const st = await this.status({ fresh: true });
+      if(st.ok && st.connected) return st;
+      if(!first) first = st;                  // 全部だめなら1台目の理由を返す
+    }
+    this.printerName = names[0];
+    return first || { ok:false, error:'テプラにつながりませんでした' };
+  },
+
   async pick(force){
     const list = await this.candidates(force);
     if(!list.length) return null;
@@ -5893,8 +5915,17 @@ const TepraWin = {
                dpi:this._memo.dpi || this.dpi, memo:true };
     }
     const st = await this.fetchJson('/lwstatus/' + encodeURIComponent(this.printerName), null, 8000);
-    if(st.__err) return { ok:false, error:'テプラと通信できませんでした（' + st.__err + '）' };
-    if(st.__http) return { ok:false, error:'テプラの状態を取得できませんでした（コード ' + st.__http + '）' };
+    const who = `「${this.printerName}」`;
+    if(st.__err) return { ok:false, error:who + 'と通信できませんでした（' + st.__err + '）' };
+    if(st.__http){
+      // どのプリンターで、何が起きたのかまで伝える
+      const others = (this.lastCandidates || []).filter(x => x.name !== this.printerName);
+      return { ok:false,
+        error: who + `の状態を取得できませんでした（コード ${st.__http}）`
+          + (st.__why ? '：' + st.__why : '')
+          + '\n本体の電源が入っているか、Windowsでオフラインになっていないか確認してください。'
+          + (others.length ? `\n他に見つかっているもの：${others.map(x => x.name).join('、')}` : '') };
+    }
     const mm = TEPRA_TAPEID_MM[st.tapeID] || 0;
     const c = (this.lastCandidates || []).find(x => x.name === this.printerName);
     const out = { ok:true, connected:true, printer:this.printerName, tapeMM:mm,
@@ -5913,7 +5944,8 @@ const TepraWin = {
     const r = await this.fetchJson('/tapefeed/' + encodeURIComponent(this.printerName)
                                   + '?cutflag=' + (cut ? 'true' : 'false'), null, 30000);
     if(r.__err) return { ok:false, error:'テープを送れませんでした（' + r.__err + '）' };
-    if(r.__http) return { ok:false, error:'テープを送れませんでした（コード ' + r.__http + '）' };
+    if(r.__http) return { ok:false, error:'テープを送れませんでした（コード ' + r.__http + '）'
+      + (r.__why ? '：' + r.__why : '') };
     return { ok:true };
   },
 
@@ -6149,7 +6181,7 @@ const TepraLink = {
   async connect(){
     const k = await this.probe();
     if(k === 'android') return this.android('connect');
-    if(k === 'windows'){ TepraWin.forgetMemo(); await TepraWin.pick(true); return TepraWin.status({ fresh:true }); }
+    if(k === 'windows') return TepraWin.connectBest();
     return { ok:false, error:'テプラにつながる経路が見つかりません' };
   },
 
@@ -8127,7 +8159,7 @@ function renderPhotoGrid(){ /* 写真の一覧は編集タブで見る */ }
 //   魚/        … これから編集するもの（登録すると管理番号のフォルダができる）
 //   魚編集後/  … 編集を終えたもの（原本と編集後の両方）
 // を作る。無ければ自動で作る。
-const APP_VERSION = 'v82';
+const APP_VERSION = 'v83';
 window.APP_VERSION = APP_VERSION;
 const FS_WORK_NAME = '編集前';
 // 前に使っていた名前。残っていたら気づけるようにする

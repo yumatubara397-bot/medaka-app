@@ -86,6 +86,42 @@ r.expect("どうやって調べたかも残す",
 r.expect("テープを送る呼び出しはしていない",
          not any("tapefeed" in p for p in (b.ev("window.__asked") or [])), "テープは1mmも出さない")
 
+
+print("■ 「接続する」は、だめだったものを避けて次をためす")
+b.ev("""window.__asked = [];
+TepraWin.printerName = ''; TepraWin.lastCandidates = []; TepraWin._candAt = 0; TepraWin.forgetMemo();
+TepraWin.fetchJson = async (path) => { window.__asked.push(path);
+  if(path === '' || path === '/') return [{printerName:'KING JIM SR-R5600P'},
+                                          {printerName:'KING JIM SR-R5600P-BT'}];
+  if(path.startsWith('/onlinestatus/')) return {__http:500};
+  if(path.startsWith('/lwstatus/'))
+    return path.includes('-BT') ? {tapeID:5} : {__http:500, __why:'printer offline'};
+  if(path.startsWith('/info/')) return {dpi:180, driverName:'x'};
+  return {};
+};""")
+st = b.ev("(async()=>JSON.stringify(await TepraWin.connectBest()))()")
+import json; st = json.loads(st)
+r.check("つながる", st.get("ok"), True)
+r.check("生きているほうを使う", st.get("printer"), "KING JIM SR-R5600P-BT")
+r.expect("テープを送る呼び出しはしない",
+         not any("tapefeed" in p for p in (b.ev("window.__asked") or [])), "テープは1mmも出さない")
+r.expect("印刷もしない",
+         not any(p.startswith("/print") for p in (b.ev("window.__asked") or [])), "確認のために刷らない")
+
+print("■ どれもだめなら、どこで何が起きたか伝える")
+b.ev("""TepraWin.printerName=''; TepraWin.lastCandidates=[]; TepraWin._candAt=0; TepraWin.forgetMemo();
+TepraWin.fetchJson = async (path) => {
+  if(path === '' || path === '/') return [{printerName:'KING JIM SR-R5600P'}];
+  if(path.startsWith('/lwstatus/')) return {__http:500, __why:'printer offline'};
+  return {__http:500};
+};""")
+st2 = json.loads(b.ev("(async()=>JSON.stringify(await TepraWin.connectBest()))()"))
+r.check("つながらない", st2.get("ok"), False)
+r.expect("プリンター名を出す", "KING JIM SR-R5600P" in (st2.get("error") or ""), (st2.get("error") or "")[:50])
+r.expect("コードを出す", "500" in (st2.get("error") or ""), "コード")
+r.expect("モジュールが返した理由も出す", "printer offline" in (st2.get("error") or ""), "生の理由")
+r.expect("何を確認すればよいか出す", "電源" in (st2.get("error") or ""), "対処")
+
 print("■ 詳しく見る画面")
 b.ev("""TepraWin.fetchJson = async (path) => (path === '/' ? {__http:404} : {__err:'Failed to fetch'});
 TepraWin.lastError = 'つながりません'; 'ok'""")
