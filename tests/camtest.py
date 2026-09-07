@@ -164,6 +164,67 @@ r.expect("カメラのままなら全体を映す",
 b.ev("localStorage.setItem('medaka_camera_ratio','1:1')")
 
 
+
+print("■ ズーム")
+b.ev("localStorage.removeItem('medaka_camera_zoom')")
+r.check("はじめは等倍", b.ev("camZoomPct()"), 100)
+b.ev("localStorage.setItem('medaka_camera_zoom','250')")
+r.check("覚える", b.ev("camZoomPct()"), 250)
+b.ev("localStorage.setItem('medaka_camera_zoom','9999')")
+r.check("行き過ぎは400%まで", b.ev("camZoomPct()"), 400)
+b.ev("localStorage.setItem('medaka_camera_zoom','10')")
+r.check("100%より引けない", b.ev("camZoomPct()"), 100)
+
+print("■ ズームぶん、真ん中を狭く切り出す")
+r.check("等倍なら形だけ（1600x1200 → 1200x1200）",
+        b.ev("JSON.stringify(camCropRect(1600,1200,1,1))"), '{"sx":200,"sy":0,"sw":1200,"sh":1200}')
+r.check("2倍なら半分（1200x1200 → 600x600・真ん中）",
+        b.ev("JSON.stringify(camCropRect(1600,1200,1,2))"), '{"sx":500,"sy":300,"sw":600,"sh":600}')
+r.check("形なし＋2倍でも真ん中",
+        b.ev("JSON.stringify(camCropRect(1600,1200,null,2))"), '{"sx":400,"sy":300,"sw":800,"sh":600}')
+r.check("ズーム未指定は等倍と同じ",
+        b.ev("JSON.stringify(camCropRect(1600,1200,1))"), '{"sx":200,"sy":0,"sw":1200,"sh":1200}')
+
+print("■ カメラ本体がズームを持っていれば、そちらを使う")
+b.ev("""window.__applied = [];
+Cam.stream = { getVideoTracks: () => [{
+  getCapabilities: () => ({ zoom:{min:1,max:2,step:0.1} }),
+  getSettings: () => ({ zoom:1 }),
+  applyConstraints: async (c) => { window.__applied.push(c); }
+}] };
+localStorage.setItem('medaka_camera_zoom','200'); 'ok'""")
+b.ev("(async()=>{ await Cam.applyZoom(); })()"); time.sleep(0.4)
+r.check("本体に2倍を頼む", b.ev("JSON.stringify(window.__applied.slice(-1)[0])"), '{"advanced":[{"zoom":2}]}')
+r.check("画像側では寄せない（画質を落とさない）", b.ev("Cam.softZoom"), 1)
+
+print("■ 本体で足りない分は、画像側で寄せる")
+b.ev("localStorage.setItem('medaka_camera_zoom','400')")
+b.ev("(async()=>{ await Cam.applyZoom(); })()"); time.sleep(0.4)
+r.check("本体は上限の2倍まで", b.ev("JSON.stringify(window.__applied.slice(-1)[0])"), '{"advanced":[{"zoom":2}]}')
+r.check("残りの2倍を画像側で受け持つ", b.ev("Cam.softZoom"), 2)
+
+print("■ 本体にズームが無くても効く")
+b.ev("""Cam.stream = { getVideoTracks: () => [{
+  getCapabilities: () => ({}), getSettings: () => ({}), applyConstraints: async () => {} }] };
+localStorage.setItem('medaka_camera_zoom','300'); 'ok'""")
+b.ev("(async()=>{ await Cam.applyZoom(); })()"); time.sleep(0.4)
+r.check("全部を画像側で受け持つ", b.ev("Cam.softZoom"), 3)
+r.expect("画面も同じだけ寄る（見える範囲＝写る範囲）",
+         "scale(3)" in (b.ev("document.getElementById('camVideo').style.transform") or ""),
+         b.ev("document.getElementById('camVideo').style.transform"))
+
+print("■ ボタンとゲージ")
+b.ev("camSetZoom(100)"); time.sleep(0.2)
+r.check("戻すで等倍", b.ev("camZoomPct()"), 100)
+b.ev("document.getElementById('camZoomIn').click()"); time.sleep(0.3)
+r.check("＋で25%ずつ寄る", b.ev("camZoomPct()"), 125)
+b.ev("document.getElementById('camZoomOut').click()"); time.sleep(0.3)
+r.check("−で戻る", b.ev("camZoomPct()"), 100)
+b.ev("document.getElementById('camZoomOut').click()"); time.sleep(0.3)
+r.check("等倍より引けない", b.ev("camZoomPct()"), 100)
+r.check("ゲージにも出る", b.ev("document.getElementById('camZoomVal').textContent"), "100%")
+b.ev("Cam.stream = null")
+
 print("■ 詳しい設定")
 b.ev("['medaka_camera_size','medaka_camera_quality','medaka_camera_grid'].forEach(k=>localStorage.removeItem(k))")
 r.check("大きさの既定", b.ev("camSize()"), 1920)

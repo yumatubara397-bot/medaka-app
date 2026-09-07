@@ -688,6 +688,15 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
   flex:0 0 auto;min-width:0}
 .cam-ratio select{padding:9px 10px;border-radius:9px;font-size:13px;
   background:var(--bg-2,#121a30);border:1px solid var(--line,#2a3350);color:var(--ink,#e8ecf7)}
+.cam-zoom{display:flex;align-items:center;gap:8px;margin-top:10px}
+.cam-zoom .lbl{font-size:13px;color:var(--ink-dim);flex:0 0 auto}
+.cam-zoom input[type=range]{flex:1;min-width:80px}
+.cam-zoom b{flex:0 0 56px;text-align:right;font-size:13px;font-weight:600}
+.zbtn{width:40px;height:40px;border-radius:9px;flex:0 0 auto;cursor:pointer;font-size:18px;
+  background:var(--bg-2,#121a30);border:1px solid var(--line,#2a3350);color:var(--ink,#e8ecf7)}
+.zbtn.wide{width:auto;padding:0 12px;font-size:13px}
+.zbtn:hover{border-color:var(--accent,#5ad1c8)}
+.cam-view video{transition:transform .12s ease-out;transform-origin:center center}
 .cam-adv{margin-top:10px;font-size:13px}
 .cam-adv summary{cursor:pointer;color:var(--ink-dim);padding:6px 0}
 .cam-adv-body{display:flex;flex-wrap:wrap;gap:10px;padding:10px 0 0;
@@ -762,7 +771,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
   <div>
     <div style="font-size:34px;margin-bottom:10px">🐟</div>
     <div>メダカ出品アシスタント</div>
-    <div style="font-size:12px;opacity:.7">読み込んでいます… <b>v87</b></div>
+    <div style="font-size:12px;opacity:.7">読み込んでいます… <b>v88</b></div>
     <div style="font-size:11px;opacity:.5;margin-top:14px">
       この表示のまま進まないときは、この画面をそのまま伝えてください
     </div>
@@ -841,7 +850,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
       <button class="tab" data-tab="history" role="tab">履歴</button>
       <button class="tab" data-tab="settings" role="tab">⚙ 設定</button>
       <button id="btnUpdateApp" class="upd" type="button"
-              title="押すと必ず最新版になります">🔄 <span id="appVersion">v87</span></button>
+              title="押すと必ず最新版になります">🔄 <span id="appVersion">v88</span></button>
     </nav>
   </header>
 
@@ -1148,6 +1157,16 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
           <svg id="camGridOverlay" class="cam-grid" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
           <div id="camMsg" class="cam-msg hidden"></div>
         </div>
+        <div class="cam-zoom">
+          <span class="lbl">ズーム</span>
+          <button id="camZoomOut" class="zbtn" title="引く">−</button>
+          <input type="range" id="camZoom" class="bright-range" min="100" max="400" step="5" value="100">
+          <button id="camZoomIn" class="zbtn" title="寄る">＋</button>
+          <b id="camZoomVal">100%</b>
+          <button id="camZoomReset" class="zbtn wide" title="等倍に戻す">戻す</button>
+        </div>
+        <div class="hint" id="camZoomNote"></div>
+
         <div class="cam-shots" id="camShots"></div>
         <div class="cam-acts">
           <button id="camShoot" class="btn btn-primary cam-shoot">📷 撮る</button>
@@ -7585,6 +7604,13 @@ const CAM_RATIO_KEY = 'medaka_camera_ratio';  // 撮る形（既定は正方形�
 const CAM_SIZE_KEY  = 'medaka_camera_size';   // 撮る大きさ
 const CAM_QUAL_KEY  = 'medaka_camera_quality';// 画質
 const CAM_GRID_KEY  = 'medaka_camera_grid';   // 目安の線
+const CAM_ZOOM_KEY  = 'medaka_camera_zoom';   // ズーム（%）
+
+/** ズームの倍率（100〜400%）。100 が等倍 */
+function camZoomPct(){
+  const z = +(localStorage.getItem(CAM_ZOOM_KEY) || 100);
+  return Math.max(100, Math.min(400, z || 100));
+}
 
 function camSize(){ return +(localStorage.getItem(CAM_SIZE_KEY) || 1920) || 1920; }
 function camQuality(){
@@ -7625,10 +7651,19 @@ function camRatioValue(key){
  * 元の大きさから、真ん中を指定の形で切り出す範囲を求める。
  * 画面で見えている範囲と、実際に写る範囲を一致させるための計算。
  */
-function camCropRect(w, h, ratio){
-  if(!ratio || !(w > 0) || !(h > 0)) return { sx:0, sy:0, sw:w, sh:h };
-  let sw = w, sh = Math.round(w / ratio);
-  if(sh > h){ sh = h; sw = Math.round(h * ratio); }
+function camCropRect(w, h, ratio, zoom){
+  if(!(w > 0) || !(h > 0)) return { sx:0, sy:0, sw:w, sh:h };
+  let sw = w, sh = h;
+  if(ratio){
+    sh = Math.round(w / ratio);
+    if(sh > h){ sh = h; sw = Math.round(h * ratio); }
+  }
+  // ズームぶん、さらに真ん中を狭く取る
+  const z = Math.max(1, +zoom || 1);
+  if(z > 1){
+    sw = Math.max(1, Math.round(sw / z));
+    sh = Math.max(1, Math.round(sh / z));
+  }
   return { sx: Math.round((w - sw) / 2), sy: Math.round((h - sh) / 2), sw, sh };
 }
 function camAutoOn(){ return localStorage.getItem(CAM_AUTO_KEY) !== '0'; }
@@ -7692,6 +7727,7 @@ function camChoose(devices, savedId){
 const Cam = {
   item: null, dir: null, stream: null, shots: 0, devices: [], deviceId: null,
   pending: [],          // まだ保存していない写真
+  softZoom: 1,          // 画像側で寄せる分（本体のズームで足りない分）
   fromRegister: false,  // 登録から続けて開いたか（撮り終えたら次の登録へ戻す）
 
   /** その商品のフォルダに、次に使う番号を調べる */
@@ -7742,8 +7778,63 @@ const Cam = {
     $('#camShots').innerHTML = '';
     this.applyRatio();
     this.applyGrid();
+    this.softZoom = 1;
     $('#camDialog').classList.remove('hidden');
     await this.start();
+  },
+
+  /**
+   * ズームを効かせる。
+   * カメラ本体がズームを持っていればそれを使い（画質が落ちない）、
+   * 足りない分だけ画像側で真ん中を切って寄せる。
+   * どちらも「見えている範囲がそのまま写る」ようにそろえる。
+   */
+  async applyZoom(){
+    const want = camZoomPct() / 100;
+    let byDevice = 1;
+    const track = this.stream && this.stream.getVideoTracks()[0];
+    if(track && typeof track.getCapabilities === 'function'){
+      let cap = null;
+      try { cap = track.getCapabilities().zoom; } catch(e){ cap = null; }
+      if(cap && cap.max > cap.min){
+        // 本体のズームは「1が等倍」とは限らないので、下限を等倍とみなして換算する
+        const base = cap.min || 1;
+        const target = Math.min(cap.max, base * want);
+        try {
+          await track.applyConstraints({ advanced: [{ zoom: target }] });
+          byDevice = target / base;
+        } catch(e){ byDevice = 1; }
+      }
+    }
+    this.softZoom = Math.max(1, want / (byDevice || 1));
+
+    // 画面も同じだけ寄せる（見えている範囲＝写る範囲）
+    const v = $('#camVideo');
+    if(v) v.style.transform = this.softZoom > 1 ? `scale(${this.softZoom})` : '';
+
+    const sl = $('#camZoom');
+    if(sl && +sl.value !== camZoomPct()) sl.value = camZoomPct();
+    const val = $('#camZoomVal');
+    if(val) val.textContent = camZoomPct() + '%';
+    this.showZoomNote(byDevice);
+  },
+
+  /** ズームで小さくなりすぎていないか知らせる */
+  showZoomNote(byDevice){
+    const note = $('#camZoomNote');
+    if(!note) return;
+    const v = $('#camVideo');
+    if(!v || !v.videoWidth){ note.textContent = ''; return; }
+    const cut = camCropRect(v.videoWidth, v.videoHeight, camRatioValue(), this.softZoom);
+    const way = (byDevice > 1.01)
+      ? (this.softZoom > 1.01 ? 'カメラのズーム＋画像で寄せています' : 'カメラのズームを使っています（画質はそのまま）')
+      : (this.softZoom > 1.01 ? '画像を切って寄せています' : '');
+    const size = `${cut.sw}×${cut.sh}px`;
+    note.textContent = camZoomPct() === 100
+      ? `写る大きさ ${size}`
+      : `写る大きさ ${size}　${way}`
+        + (Math.min(cut.sw, cut.sh) < 800
+            ? '　※小さくなっています。「⚙ 詳しい設定」で大きさを上げてください' : '');
   },
 
   /** 目安の線を引く */
@@ -7877,6 +7968,7 @@ const Cam = {
       await $('#camVideo').play().catch(()=>{});
       this.say('');
       this.renderCaps();       // このカメラで使えるつまみを出す
+      await this.applyZoom();  // 覚えているズームを効かせる
     } catch(e){
       $('#camSwitch').classList.add('hidden');
       const why = (e && e.name === 'NotAllowedError')
@@ -7971,7 +8063,7 @@ const Cam = {
     btn.disabled = true;
     try {
       // 画面で見えている形のまま切り出す
-      const cut = camCropRect(v.videoWidth, v.videoHeight, camRatioValue());
+      const cut = camCropRect(v.videoWidth, v.videoHeight, camRatioValue(), this.softZoom);
       const c = document.createElement('canvas');
       c.width = cut.sw; c.height = cut.sh;
       c.getContext('2d').drawImage(v, cut.sx, cut.sy, cut.sw, cut.sh, 0, 0, cut.sw, cut.sh);
@@ -8038,6 +8130,7 @@ $('#camRatio').value = camRatioKey();
 $('#camRatio').onchange = () => {
   localStorage.setItem(CAM_RATIO_KEY, $('#camRatio').value);
   Cam.applyRatio();
+  Cam.showZoomNote(1);
 };
 $('#camSize').value = String(camSize());
 $('#camSize').onchange = async () => {
@@ -8046,6 +8139,17 @@ $('#camSize').onchange = async () => {
 };
 $('#camQuality').value = String(camQuality());
 $('#camQuality').onchange = () => localStorage.setItem(CAM_QUAL_KEY, $('#camQuality').value);
+function camSetZoom(pct){
+  const z = Math.max(100, Math.min(400, Math.round(pct / 5) * 5));
+  localStorage.setItem(CAM_ZOOM_KEY, String(z));
+  Cam.applyZoom();
+}
+$('#camZoom').value = String(camZoomPct());
+$('#camZoomVal').textContent = camZoomPct() + '%';
+$('#camZoom').oninput = () => camSetZoom(+$('#camZoom').value);
+$('#camZoomIn').onclick = () => camSetZoom(camZoomPct() + 25);
+$('#camZoomOut').onclick = () => camSetZoom(camZoomPct() - 25);
+$('#camZoomReset').onclick = () => camSetZoom(100);
 $('#camGrid').value = camGrid();
 $('#camGrid').onchange = () => {
   localStorage.setItem(CAM_GRID_KEY, $('#camGrid').value);
@@ -8402,7 +8506,7 @@ function renderPhotoGrid(){ /* 写真の一覧は編集タブで見る */ }
 //   魚/        … これから編集するもの（登録すると管理番号のフォルダができる）
 //   魚編集後/  … 編集を終えたもの（原本と編集後の両方）
 // を作る。無ければ自動で作る。
-const APP_VERSION = 'v87';
+const APP_VERSION = 'v88';
 window.APP_VERSION = APP_VERSION;
 const FS_WORK_NAME = '編集前';
 // 前に使っていた名前。残っていたら気づけるようにする
