@@ -746,7 +746,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
   <div>
     <div style="font-size:34px;margin-bottom:10px">🐟</div>
     <div>メダカ出品アシスタント</div>
-    <div style="font-size:12px;opacity:.7">読み込んでいます… <b>v84</b></div>
+    <div style="font-size:12px;opacity:.7">読み込んでいます… <b>v85</b></div>
     <div style="font-size:11px;opacity:.5;margin-top:14px">
       この表示のまま進まないときは、この画面をそのまま伝えてください
     </div>
@@ -825,7 +825,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
       <button class="tab" data-tab="history" role="tab">履歴</button>
       <button class="tab" data-tab="settings" role="tab">⚙ 設定</button>
       <button id="btnUpdateApp" class="upd" type="button"
-              title="押すと必ず最新版になります">🔄 <span id="appVersion">v84</span></button>
+              title="押すと必ず最新版になります">🔄 <span id="appVersion">v85</span></button>
     </nav>
   </header>
 
@@ -5884,16 +5884,8 @@ const TepraWin = {
     if(!names.length){
       return { ok:false, error: this.lastError || 'テプラが見つかりません' };
     }
-    let first = null;
-    for(const name of names){
-      this.printerName = name;
-      this.forgetMemo();
-      const st = await this.status({ fresh: true });
-      if(st.ok && st.connected) return st;
-      if(!first) first = st;                  // 全部だめなら1台目の理由を返す
-    }
     this.printerName = names[0];
-    return first || { ok:false, error:'テプラにつながりませんでした' };
+    return this.status({ fresh: true });   // 使えるものを順にためすのは status の仕事
   },
 
   async pick(force){
@@ -5904,6 +5896,41 @@ const TepraWin = {
     return this.printerName;
   },
 
+  /**
+   * 状態を読めなかったテプラを、しばらく後回しにする。
+   * 「使えたほうを覚える」やり方だと USB が戻っても Bluetooth を掴み続けてしまうので、
+   * 優先順（USB → Bluetooth）は崩さず、だめだったものだけを下げる。
+   */
+  _bad: {},
+  BAD_MS: 300000,          // 5分たてば、また普通にためす
+  markBad(name){ this._bad[name] = Date.now(); },
+  markGood(name){ delete this._bad[name]; },
+  isBad(name){ return (Date.now() - (this._bad[name] || 0)) < this.BAD_MS; },
+
+  /** 1台ぶんの状態を読む */
+  async statusOf(name){
+    const st = await this.fetchJson('/lwstatus/' + encodeURIComponent(name), null, 8000);
+    const who = `「${name}」`;
+    if(st.__err) return { ok:false, name, error:who + 'と通信できませんでした（' + st.__err + '）' };
+    if(st.__http){
+      return { ok:false, name,
+        error: who + `の状態を取得できませんでした（コード ${st.__http}）`
+          + (st.__why ? '：' + st.__why : '') };
+    }
+    const mm = TEPRA_TAPEID_MM[st.tapeID] || 0;
+    const c = (this.lastCandidates || []).find(x => x.name === name);
+    const out = { ok:true, name, connected:true, printer:name, tapeMM:mm,
+                  route: c ? (c.bt ? 'Bluetooth' : 'USB') : (this.isBluetoothName(name) ? 'Bluetooth' : 'USB') };
+    if(st.error) out.error = 'テプラのエラー（コード ' + st.error + '）';
+    return out;
+  },
+
+  /**
+   * 使えるテプラの状態を返す。
+   * onlinestatus が「つながっている」と答えても実際には使えないことがあるので、
+   * テープの状態を読めたものだけを本物とみなし、だめなら次の候補に移る。
+   * 読み取るだけなので、テープは1mmも出ない。
+   */
   async status(opt){
     if(!this.printerName && !(await this.pick())){
       return { ok:false, error: this.lastError || 'テプラが見つかりません（パソコンにプリンターとして入っていますか）' };
@@ -5914,27 +5941,32 @@ const TepraWin = {
                tapeMM:this._memo.tapeMM, route:this._memo.route,
                dpi:this._memo.dpi || this.dpi, memo:true };
     }
-    const st = await this.fetchJson('/lwstatus/' + encodeURIComponent(this.printerName), null, 8000);
-    const who = `「${this.printerName}」`;
-    if(st.__err) return { ok:false, error:who + 'と通信できませんでした（' + st.__err + '）' };
-    if(st.__http){
-      // どのプリンターで、何が起きたのかまで伝える
-      const others = (this.lastCandidates || []).filter(x => x.name !== this.printerName);
-      return { ok:false,
-        error: who + `の状態を取得できませんでした（コード ${st.__http}）`
-          + (st.__why ? '：' + st.__why : '')
-          + '\n本体の電源が入っているか、Windowsでオフラインになっていないか確認してください。'
-          + (others.length ? `\n他に見つかっているもの：${others.map(x => x.name).join('、')}` : '') };
+
+    // ためす順番は、優先順（USB → Bluetooth）のまま。
+    // ただし、さっき状態を読めなかったものは後ろに回す。
+    const all = (this.lastCandidates || []).map(x => x.name);
+    const pool = all.length ? all : [this.printerName];
+    const order = pool.filter(n => !this.isBad(n)).concat(pool.filter(n => this.isBad(n)));
+
+    let firstErr = null;
+    for(const name of order){
+      const r = await this.statusOf(name);
+      if(r.ok){
+        this.printerName = name;
+        this.markGood(name);
+        await this.fetchDpi(name);     // 実際の解像度に合わせて画像を作る
+        r.dpi = this.dpi;
+        this._memo = { at: Date.now(), printer: name, tapeMM: r.tapeMM, route: r.route, dpi: this.dpi };
+        return r;
+      }
+      this.markBad(name);          // 次からは後回しにする
+      if(!firstErr) firstErr = r;
     }
-    const mm = TEPRA_TAPEID_MM[st.tapeID] || 0;
-    const c = (this.lastCandidates || []).find(x => x.name === this.printerName);
-    const out = { ok:true, connected:true, printer:this.printerName, tapeMM:mm,
-                  route: c ? (c.bt ? 'Bluetooth' : 'USB') : '' };
-    await this.fetchDpi(this.printerName);     // 実際の解像度に合わせて画像を作る
-    out.dpi = this.dpi;
-    this._memo = { at: Date.now(), printer: this.printerName, tapeMM: mm, route: out.route, dpi: this.dpi };
-    if(st.error) out.error = 'テプラのエラー（コード ' + st.error + '）';
-    return out;
+    const others = order.filter(n => n !== (firstErr && firstErr.name));
+    return { ok:false,
+      error: (firstErr ? firstErr.error : 'テプラにつながりませんでした')
+        + '\n本体の電源が入っているか、Windowsでオフラインになっていないか確認してください。'
+        + (others.length ? `\n他に見つかっているもの：${others.join('、')}` : '') };
   },
 
 
@@ -6049,10 +6081,12 @@ const TepraWin = {
     if(first.ok || first.__noRetry) return first;
     // USBが抜けている等で失敗したときは、いったん覚えたことを捨てて調べ直し、
     // 次の候補（Bluetoothなど）に切り替えて1度だけやり直す
+    const failed = this.printerName;
+    this.markBad(failed);          // 状態の確認でも、これを後回しにする
     this.forgetMemo();
     const list = await this.candidates(true);
-    const next = list.find(n => n !== this.printerName);
-    if(!next) return first;
+    const next = list.find(n => n !== failed);
+    if(!next){ this.markGood(failed); return first; }
     this.printerName = next;
     this.forgetMemo();
     const second = await this.printOnce(labels);
@@ -8159,7 +8193,7 @@ function renderPhotoGrid(){ /* 写真の一覧は編集タブで見る */ }
 //   魚/        … これから編集するもの（登録すると管理番号のフォルダができる）
 //   魚編集後/  … 編集を終えたもの（原本と編集後の両方）
 // を作る。無ければ自動で作る。
-const APP_VERSION = 'v84';
+const APP_VERSION = 'v85';
 window.APP_VERSION = APP_VERSION;
 const FS_WORK_NAME = '編集前';
 // 前に使っていた名前。残っていたら気づけるようにする

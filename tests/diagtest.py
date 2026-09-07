@@ -108,6 +108,46 @@ r.expect("テープを送る呼び出しはしない",
 r.expect("印刷もしない",
          not any(p.startswith("/print") for p in (b.ev("window.__asked") or [])), "確認のために刷らない")
 
+
+print("■ onlinestatus が「つながっている」と嘘をついても、使えるほうを選ぶ")
+# 実機で起きた形：USBはオフラインなのに online:true を返し、lwstatus で 500(errcode 202)
+b.ev("""window.__asked = []; TepraWin._bad = {};
+TepraWin.printerName=''; TepraWin.lastCandidates=[]; TepraWin._candAt=0; TepraWin.forgetMemo();
+TepraWin.fetchJson = async (path) => { window.__asked.push(path);
+  if(path === '' || path === '/') return [{printerName:'KING JIM SR-R5600P'},
+                                          {printerName:'KING JIM SR-R5600P-BT'}];
+  if(path.startsWith('/onlinestatus/')) return {online:true};          // 両方とも「つながっている」
+  if(path.startsWith('/lwstatus/'))
+    return path.includes('-BT') ? {statusType:5, tapeID:262, error:0}
+                                : {__http:500, __why:'{"errcode":202}'};
+  if(path.startsWith('/info/')) return {dpi:180};
+  return {};
+};""")
+import json
+st = json.loads(b.ev("(async()=>JSON.stringify(await TepraWin.connectBest()))()"))
+r.check("つながる", st.get("ok"), True)
+r.check("実際に使えるほうを選ぶ", st.get("printer"), "KING JIM SR-R5600P-BT")
+r.check("Bluetooth と分かる", st.get("route"), "Bluetooth")
+r.check("テープ幅も読める（tapeID 262 は 18mm）", st.get("tapeMM"), 18)
+r.expect("テープを送っていない",
+         not any("tapefeed" in p for p in (b.ev("window.__asked") or [])), "テープは1mmも出さない")
+r.expect("印刷もしていない",
+         not any(p.startswith("/print") for p in (b.ev("window.__asked") or [])), "確認のために刷らない")
+
+print("■ 次からは、だめだったほうを後回しにする（USB優先は崩さない）")
+r.check("だめだったものを覚えている", b.ev("TepraWin.isBad('KING JIM SR-R5600P')"), True)
+r.check("使えたものは覚えていない", b.ev("TepraWin.isBad('KING JIM SR-R5600P-BT')"), False)
+b.ev("window.__asked = []; TepraWin.forgetMemo(); TepraWin.printerName='KING JIM SR-R5600P'; 'ok'")
+st2 = json.loads(b.ev("(async()=>JSON.stringify(await TepraWin.status({fresh:true})))()"))
+r.check("いきなり使えるほうにつながる", st2.get("printer"), "KING JIM SR-R5600P-BT")
+lw = [p for p in (b.ev("window.__asked") or []) if p.startswith("/lwstatus/")]
+r.check("だめなほうに問い合わせない（待たされない）", len(lw), 1)
+
+print("■ 自動印刷のときも、使えるほうに切り替わる")
+b.ev("TepraWin.forgetMemo(); TepraWin.printerName=''; 'ok'")
+st3 = json.loads(b.ev("(async()=>JSON.stringify(await TepraWin.status()))()"))
+r.check("登録時の確認でも使えるほうを掴む", st3.get("printer"), "KING JIM SR-R5600P-BT")
+
 print("■ どれもだめなら、どこで何が起きたか伝える")
 b.ev("""TepraWin.printerName=''; TepraWin.lastCandidates=[]; TepraWin._candAt=0; TepraWin.forgetMemo();
 TepraWin.fetchJson = async (path) => {
@@ -136,5 +176,23 @@ r.expect("コードも出る", "404" in txt, "HTTPコード")
 r.expect("コピーできる", b.ev("!!document.getElementById('tdCopy')"), "コピーボタン")
 b.ev("document.getElementById('tdClose').click()"); time.sleep(0.2)
 r.expect("閉じられる", b.ev("document.getElementById('tepraDiagDialog').classList.contains('hidden')"), "hidden")
+
+print("■ USB が戻れば USB に戻る（優先順は崩さない）")
+b.ev("""TepraWin._bad = {}; TepraWin.forgetMemo();
+TepraWin.printerName=''; TepraWin.lastCandidates=[]; TepraWin._candAt=0;
+TepraWin.fetchJson = async (path) => {
+  if(path === '' || path === '/') return [{printerName:'KING JIM SR-R5600P'},
+                                          {printerName:'KING JIM SR-R5600P-BT'}];
+  if(path.startsWith('/onlinestatus/')) return {online:true};
+  if(path.startsWith('/lwstatus/')) return {statusType:5, tapeID:263, error:0};   // 両方とも読める
+  if(path.startsWith('/info/')) return {dpi:180};
+  return {};
+};""")
+st4 = json.loads(b.ev("(async()=>JSON.stringify(await TepraWin.connectBest()))()"))
+r.check("両方使えるなら USB を選ぶ", st4.get("printer"), "KING JIM SR-R5600P")
+r.check("USB と表示する", st4.get("route"), "USB")
+r.check("しばらく経てば、だめだった印も消える",
+        b.ev("(()=>{ TepraWin._bad = {'x': Date.now() - TepraWin.BAD_MS - 1}; return TepraWin.isBad('x'); })()"),
+        False)
 
 b.close(); r.finish()
