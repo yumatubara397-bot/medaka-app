@@ -746,7 +746,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
   <div>
     <div style="font-size:34px;margin-bottom:10px">🐟</div>
     <div>メダカ出品アシスタント</div>
-    <div style="font-size:12px;opacity:.7">読み込んでいます… <b>v81</b></div>
+    <div style="font-size:12px;opacity:.7">読み込んでいます… <b>v82</b></div>
     <div style="font-size:11px;opacity:.5;margin-top:14px">
       この表示のまま進まないときは、この画面をそのまま伝えてください
     </div>
@@ -825,7 +825,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
       <button class="tab" data-tab="history" role="tab">履歴</button>
       <button class="tab" data-tab="settings" role="tab">⚙ 設定</button>
       <button id="btnUpdateApp" class="upd" type="button"
-              title="押すと必ず最新版になります">🔄 <span id="appVersion">v81</span></button>
+              title="押すと必ず最新版になります">🔄 <span id="appVersion">v82</span></button>
     </nav>
   </header>
 
@@ -1215,6 +1215,17 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
     <!-- ===== 設定タブ ===== -->
     <section id="panel-settings" class="panel hidden">
       <h2>設定</h2>
+
+      <div class="settings-card">
+        <h3 style="margin-top:0">🏷 テプラ</h3>
+        <div style="font-size:12px;color:var(--ink-dim);line-height:1.7;margin-bottom:10px">
+          つながらない・エラーが出るときは、ここから中身を調べられます。<br>
+          見つかったプリンター1台ずつに問い合わせ、どこで止まっているかを出します。
+        </div>
+        <div class="btn-row">
+          <button id="tepraDiag3" class="btn btn-primary">🔍 テプラの状態を詳しく見る</button>
+        </div>
+      </div>
 
       <div class="settings-card">
         <h3 style="margin-top:0">🐟 品種ごとの説明文</h3>
@@ -5789,12 +5800,26 @@ const TepraWin = {
     return this.dpi;
   },
 
-  /** そのプリンターが今つながっているか */
+  /**
+   * そのプリンターが今つながっているか。
+   *   true  … つながっている
+   *   false … つながっていない
+   *   null  … 聞けなかった（モジュールが答えられない版・エラー）
+   */
   async isOnline(name){
     const r = await this.fetchJson('/onlinestatus/' + encodeURIComponent(name), null, 4000);
-    if(!r || r.__http || r.__err) return false;
-    // online が返ってこない版でも止まらないよう、分からなければ「つながっている」とみなす
-    return ('online' in r) ? !!r.online : true;
+    if(!r || r.__http || r.__err) return null;          // 分からない
+    return ('online' in r) ? !!r.online : null;
+  },
+
+  /**
+   * つながっているかを聞けなかったときの確かめ方。
+   * テープの状態を読めれば、そのプリンターは生きている。
+   * 読み取るだけなので、テープは1mmも出ない。
+   */
+  async isAlive(name){
+    const r = await this.fetchJson('/lwstatus/' + encodeURIComponent(name), null, 4000);
+    return !!(r && !r.__err && !r.__http);
   },
 
   /**
@@ -5821,9 +5846,15 @@ const TepraWin = {
     const pool = tepra.length ? tepra : names;
 
     // 1台ずつ順番に待つと遅いので、まとめて同時に調べる
-    const info = await Promise.all(pool.map(async n => ({
-      name: n, bt: this.isBluetoothName(n), online: await this.isOnline(n)
-    })));
+    const info = await Promise.all(pool.map(async n => {
+      let online = await this.isOnline(n);
+      let how = 'onlinestatus';
+      if(online === null){          // 聞けなかったら、テープの状態で確かめる
+        online = await this.isAlive(n);
+        how = 'lwstatus';
+      }
+      return { name: n, bt: this.isBluetoothName(n), online: !!online, how };
+    }));
     const rank = x => (x.online ? 0 : 2) + (x.bt ? 1 : 0);
     info.sort((a, b) => rank(a) - rank(b));
     this.lastCandidates = info;
@@ -6207,6 +6238,7 @@ async function showTepraDiag(){
     const body = await TepraWin.fetchJson(path, null, 4000);
     tries.push({
       url: TEPRA_WEBAPI + path,
+      list: Array.isArray(body) ? body : null,
       ms: Date.now() - t0,
       kind: Array.isArray(body) ? `一覧（${body.length}台）`
           : body && body.__err   ? `つながらない：${body.__err}`
@@ -6218,14 +6250,35 @@ async function showTepraDiag(){
     });
   }
 
+  // 見つかったプリンター1台ずつも調べる。どこで 500 が出るかを突き止めるため
+  const perPrinter = [];
+  const found = tries.map(t => t.list).find(Array.isArray) || [];
+  for(const p of found){
+    const name = p && p.printerName;
+    if(!name) continue;
+    const one = ['プリンター: ' + name,
+                 '  Bluetoothか: ' + (TepraWin.isBluetoothName(name) ? 'はい' : 'いいえ')];
+    for(const [label, path] of [['つながり', '/onlinestatus/'], ['テープの状態', '/lwstatus/'],
+                                ['機種の情報', '/info/']]){
+      const t0 = Date.now();
+      const body = await TepraWin.fetchJson(path + encodeURIComponent(name), null, 4000);
+      const txt = (() => { try { return JSON.stringify(body).slice(0, 300); } catch(e){ return String(body); } })();
+      one.push(`  ${label} ${path}… → ${txt}（${Date.now() - t0}ミリ秒）`);
+    }
+    perPrinter.push(one.join('\n'));
+  }
+
   const report = [
     'アプリの版: ' + APP_VERSION,
     'ページ: ' + location.origin,
     '送り先: ' + TEPRA_WEBAPI,
     'ブラウザ: ' + navigator.userAgent,
     '直前の理由: ' + (TepraWin.lastError || 'なし'),
+    'いま選んでいる: ' + (TepraWin.printerName || 'なし'),
     ''
-  ].concat(tries.map(t => `${t.url}\n  → ${t.kind}（${t.ms}ミリ秒）\n  ${t.text}`)).join('\n');
+  ].concat(tries.map(t => `${t.url}\n  → ${t.kind}（${t.ms}ミリ秒）\n  ${t.text}`))
+   .concat(perPrinter.length ? [''].concat(perPrinter) : [])
+   .join('\n');
 
   dlg.innerHTML = `
     <div class="pi-box">
@@ -6316,7 +6369,9 @@ async function renderTepraBar(){
         <option value="3" ${tepraCutMode() === 3 ? 'selected' : ''}>最後に1回</option>
         <option value="1" ${tepraCutMode() === 1 ? 'selected' : ''}>切らない</option>
       </select></label>
-    <button id="regTepraConnect" class="btn btn-ghost btn-sm">${on ? '接続し直す' : '接続する'}</button>`;
+    <button id="regTepraConnect" class="btn btn-ghost btn-sm">${on ? '接続し直す' : '接続する'}</button>
+    <button id="tepraDiag2" class="btn btn-ghost btn-sm" title="つながり具合を細かく調べます">🔍 詳しく見る</button>`;
+  $('#tepraDiag2').onclick = showTepraDiag;
   $('#tepraAuto').onchange = (e) => setTepraAuto(e.target.checked);
   $('#tepraFont').onchange = (e) => {
     setTepraFontScale(e.target.value);
@@ -7709,6 +7764,7 @@ const Cam = {
   }
 };
 
+$('#tepraDiag3').onclick = showTepraDiag;
 $('#camAutoOpen').checked = camAutoOn();
 $('#camAutoOpen').onchange = () => {
   localStorage.setItem(CAM_AUTO_KEY, $('#camAutoOpen').checked ? '1' : '0');
@@ -8071,7 +8127,7 @@ function renderPhotoGrid(){ /* 写真の一覧は編集タブで見る */ }
 //   魚/        … これから編集するもの（登録すると管理番号のフォルダができる）
 //   魚編集後/  … 編集を終えたもの（原本と編集後の両方）
 // を作る。無ければ自動で作る。
-const APP_VERSION = 'v81';
+const APP_VERSION = 'v82';
 window.APP_VERSION = APP_VERSION;
 const FS_WORK_NAME = '編集前';
 // 前に使っていた名前。残っていたら気づけるようにする

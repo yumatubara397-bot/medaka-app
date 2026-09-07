@@ -61,6 +61,31 @@ r.check("片方がだめでも、もう片方で見つける", b.ev("(async()=>a
 r.check("両方ためした", b.ev("window.__paths.join('|')"), "|/")
 r.check("通った入口を覚える", b.ev("TepraWin.listPath"), "/")
 
+
+print("■ つながっているかを聞けないときは、テープの状態で確かめる")
+b.ev("""window.__asked = [];
+TepraWin.fetchJson = async (path) => { window.__asked.push(path);
+  if(path === '' || path === '/') return [{printerName:'KING JIM SR-R5600P'},
+                                          {printerName:'KING JIM SR-R5600P-BT'}];
+  if(path.startsWith('/onlinestatus/')) return {__http:500};        // 聞けない
+  if(path.startsWith('/lwstatus/')) return path.includes('-BT') ? {tapeID:5} : {__http:500};
+  return {};
+};""")
+r.check("聞けなければ「分からない」を返す",
+        b.ev("(async()=>await TepraWin.isOnline('KING JIM SR-R5600P'))()"), None)
+r.check("テープの状態が読めれば生きている",
+        b.ev("(async()=>await TepraWin.isAlive('KING JIM SR-R5600P-BT'))()"), True)
+r.check("読めなければ生きていない",
+        b.ev("(async()=>await TepraWin.isAlive('KING JIM SR-R5600P'))()"), False)
+
+b.ev("TepraWin.lastCandidates = []; TepraWin._candAt = 0; 'ok'")
+names = b.ev("(async()=>(await TepraWin.candidates(true)).join('|'))()")
+r.check("生きているほうを先に選ぶ", (names or "").split("|")[0], "KING JIM SR-R5600P-BT")
+r.expect("どうやって調べたかも残す",
+         b.ev("(TepraWin.lastCandidates.find(x=>x.bt)||{}).how") == "lwstatus", "lwstatus で確かめた")
+r.expect("テープを送る呼び出しはしていない",
+         not any("tapefeed" in p for p in (b.ev("window.__asked") or [])), "テープは1mmも出さない")
+
 print("■ 詳しく見る画面")
 b.ev("""TepraWin.fetchJson = async (path) => (path === '/' ? {__http:404} : {__err:'Failed to fetch'});
 TepraWin.lastError = 'つながりません'; 'ok'""")

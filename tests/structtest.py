@@ -70,7 +70,7 @@ tabs = b.ev("[...document.querySelectorAll('.tab')].map(x=>x.textContent.trim())
 r.expect("タブは 登録/編集/出品/履歴/設定 の5つ", len(tabs or []) == 5, " | ".join(tabs or []))
 
 print("■ 画面の部品")
-IDS = ["fsStatusDialog","btnEditFsStatus","btnEditFsStatus2","panel-register","regSteps","regStepBody","regItemList","regTepraBar","regFsBar",
+IDS = ["fsStatusDialog","btnEditFsStatus","btnEditFsStatus2","tepraDiagDialog","tepraDiag3","panel-register","regSteps","regStepBody","regItemList","regTepraBar","regFsBar",
        "regTepraPrint","regGoodsPrint","regTepraCsv","regToImport","folderList",
        "panel-edit","editEmpty","editLoaded","editFolderInfo","btnEditReload","btnEditReload2",
        "btnEditPickRoot","btnArchive","editFolders",
