@@ -726,6 +726,9 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .breed-notes input{width:100%;padding:7px 9px;border-radius:8px;font-size:12px;
   background:var(--bg-2,#121a30);border:1px solid var(--line,#2a3350);color:var(--ink,#e8ecf7)}
 .breed-notes .has input{border-color:var(--accent,#5ad1c8)}
+.diag-pre{white-space:pre-wrap;word-break:break-all;font-size:11px;line-height:1.7;
+  max-height:52vh;overflow:auto;padding:12px;border-radius:10px;margin:10px 0 0;
+  background:var(--bg-2,#121a30);border:1px solid var(--line,#2a3350)}
 .pi-table td:first-child{opacity:.65;width:40%}
 .pi-acts{display:flex;gap:10px;flex-wrap:wrap}
 .pi-acts .btn{flex:1;min-width:140px;min-height:46px}
@@ -743,7 +746,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
   <div>
     <div style="font-size:34px;margin-bottom:10px">🐟</div>
     <div>メダカ出品アシスタント</div>
-    <div style="font-size:12px;opacity:.7">読み込んでいます… <b>v79</b></div>
+    <div style="font-size:12px;opacity:.7">読み込んでいます… <b>v80</b></div>
     <div style="font-size:11px;opacity:.5;margin-top:14px">
       この表示のまま進まないときは、この画面をそのまま伝えてください
     </div>
@@ -822,7 +825,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
       <button class="tab" data-tab="history" role="tab">履歴</button>
       <button class="tab" data-tab="settings" role="tab">⚙ 設定</button>
       <button id="btnUpdateApp" class="upd" type="button"
-              title="押すと必ず最新版になります">🔄 <span id="appVersion">v79</span></button>
+              title="押すと必ず最新版になります">🔄 <span id="appVersion">v80</span></button>
     </nav>
   </header>
 
@@ -1109,6 +1112,9 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 
     <!-- 編集後から選ぶ -->
     <div id="doneDialog" class="redo-dialog hidden"></div>
+
+    <!-- テプラの状態 -->
+    <div id="tepraDiagDialog" class="redo-dialog hidden"></div>
 
     <!-- 撮影 -->
     <div id="camDialog" class="redo-dialog hidden">
@@ -5711,7 +5717,7 @@ const TepraWin = {
       let text = '';
       try { text = await res.text(); } catch(e){ /* 本文が無いこともある */ }
       if(!res.ok) return { __http: res.status, __why: (text || '').slice(0, 300) };
-      if(!text.trim()) return {};                 // 本文なし。成功として扱う
+      if(!text.trim()) return { __empty: true };  // 本文なし。何が起きたか分かるよう印を残す
       try { return JSON.parse(text); }
       catch(e){ return { __raw: text.slice(0, 300) }; }   // JSONでなくても失敗にしない
     } catch(e){
@@ -5727,20 +5733,43 @@ const TepraWin = {
 
   /** 通信モジュールが動いているか（短く試す） */
   async available(){
-    const list = await this.fetchJson('', null, 2500);
-    if(Array.isArray(list)){ this.lastError = ''; return true; }
+    // 一覧の入口は「/」の有無で返事が変わることがあるので、両方ためす
+    let used = '';
+    let list = await this.fetchJson('', null, 2500);
+    if(!Array.isArray(list)){
+      const alt = await this.fetchJson('/', null, 2500);
+      if(Array.isArray(alt)){ list = alt; used = '/'; }
+      else if(!list || (!list.__err && !list.__http)) list = alt;   // 詳しいほうを残す
+    }
+    this.lastReply = { path: TEPRA_WEBAPI + used, body: list };
+    if(Array.isArray(list)){
+      this.listPath = used;
+      this.lastError = list.length ? '' : 'パソコンにテプラがプリンターとして入っていません';
+      return list.length > 0;
+    }
     if(list && list.__err){
       // https のページから localhost を呼ぶのをブラウザが止めることがある
       this.lastError = (location.protocol === 'https:')
         ? 'つながりません。通信モジュールが起動していないか、ブラウザが止めています（' + list.__err + '）'
         : 'つながりません。テプラ クリエイターの「WebAPI用通信モジュール」が起動していますか（' + list.__err + '）';
     } else if(list && list.__http){
-      this.lastError = '通信モジュールがエラーを返しました（コード ' + list.__http + '）';
+      this.lastError = '通信モジュールがエラーを返しました（コード ' + list.__http + '）'
+        + (list.__why ? '：' + list.__why : '');
+    } else if(list && list.__empty){
+      this.lastError = '通信モジュールは動いていますが、返事が空でした。'
+        + 'テプラ クリエイターを一度終了してから、通信モジュールを起動し直してください';
+    } else if(list && list.__raw){
+      this.lastError = '通信モジュールの返事が想定と違います：' + list.__raw;
     } else {
-      this.lastError = '通信モジュールの応答を読めませんでした';
+      this.lastError = '通信モジュールの返事が想定と違います：'
+        + (() => { try { return JSON.stringify(list).slice(0, 200); } catch(e){ return String(list); } })();
     }
     return false;
   },
+
+  /** 直前に受け取った返事（詳しく見るときに使う） */
+  lastReply: null,
+  listPath: '',
 
   /** 名前に Bluetooth / BT が入っていれば Bluetooth 接続とみなす */
   isBluetoothName(n){ return /bluetooth|[-_ ]bt\b|\bbt[-_ ]/i.test(n); },
@@ -5776,7 +5805,7 @@ const TepraWin = {
     if(!force && this.lastCandidates.length && (Date.now() - this._candAt) < this.MEMO_MS){
       return this.lastCandidates.map(x => x.name);
     }
-    const list = await this.fetchJson('', null, 5000);
+    const list = await this.fetchJson(this.listPath || '', null, 5000);
     if(!Array.isArray(list) || !list.length){
       this.lastError = (list && list.__err)
         ? 'テプラの一覧を取れませんでした（' + list.__err + '）'
@@ -6161,6 +6190,58 @@ const TEPRA_WIN_HELP = [
 ].join('\n');
 
 /** 登録タブの上に出すテプラの状態 */
+
+/** テプラにつながらないとき、実際に何が返ってきたかを見せる */
+async function showTepraDiag(){
+  const dlg = $('#tepraDiagDialog');
+  dlg.classList.remove('hidden');
+  dlg.innerHTML = '<div class="pi-box"><h3>テプラの状態</h3><p>調べています…</p></div>';
+
+  const tries = [];
+  for(const path of ['', '/']){
+    const t0 = Date.now();
+    const body = await TepraWin.fetchJson(path, null, 4000);
+    tries.push({
+      url: TEPRA_WEBAPI + path,
+      ms: Date.now() - t0,
+      kind: Array.isArray(body) ? `一覧（${body.length}台）`
+          : body && body.__err   ? `つながらない：${body.__err}`
+          : body && body.__http  ? `エラー コード ${body.__http}`
+          : body && body.__empty ? '返事が空'
+          : body && body.__raw   ? '文字だけ返ってきた'
+          : 'ほかの形',
+      text: (() => { try { return JSON.stringify(body).slice(0, 600); } catch(e){ return String(body); } })()
+    });
+  }
+
+  const report = [
+    'アプリの版: ' + APP_VERSION,
+    'ページ: ' + location.origin,
+    '送り先: ' + TEPRA_WEBAPI,
+    'ブラウザ: ' + navigator.userAgent,
+    '直前の理由: ' + (TepraWin.lastError || 'なし'),
+    ''
+  ].concat(tries.map(t => `${t.url}\n  → ${t.kind}（${t.ms}ミリ秒）\n  ${t.text}`)).join('\n');
+
+  dlg.innerHTML = `
+    <div class="pi-box">
+      <h3>テプラの状態</h3>
+      <div class="hint">つながらない理由を調べました。この内容をそのまま伝えてください。</div>
+      <pre class="diag-pre">${escapeHtml(report)}</pre>
+      <div class="pi-acts">
+        <button id="tdCopy" class="btn btn-primary">この内容をコピー</button>
+        <button id="tdAgain" class="btn btn-ghost">調べ直す</button>
+        <button id="tdClose" class="btn btn-ghost">閉じる</button>
+      </div>
+    </div>`;
+  $('#tdCopy').onclick = () => {
+    if(navigator.clipboard) navigator.clipboard.writeText(report);
+    $('#tdCopy').textContent = 'コピーしました';
+  };
+  $('#tdAgain').onclick = showTepraDiag;
+  $('#tdClose').onclick = () => dlg.classList.add('hidden');
+}
+
 async function renderTepraBar(){
   const box = $('#regTepraBar');
   if(!box) return;
@@ -6172,13 +6253,15 @@ async function renderTepraBar(){
       box.innerHTML = `<span class="dot"></span>
         <span class="txt">テプラ：${escapeHtml(TepraWin.lastError)}</span>
         <button id="tepraRetry" class="btn btn-ghost btn-sm">もう一度ためす</button>
-        <button id="tepraHelp" class="btn btn-ghost btn-sm">対処を見る</button>`;
+        <button id="tepraHelp" class="btn btn-ghost btn-sm">対処を見る</button>
+        <button id="tepraDiag" class="btn btn-ghost btn-sm">🔍 詳しく見る</button>`;
       $('#tepraRetry').onclick = async () => {
         TepraLink._kind = null;
         await TepraLink.probe();
         renderTepraBar();
       };
       $('#tepraHelp').onclick = () => alert(TEPRA_WIN_HELP);
+      $('#tepraDiag').onclick = showTepraDiag;
       return;
     }
     box.classList.add('hidden');
@@ -7984,7 +8067,7 @@ function renderPhotoGrid(){ /* 写真の一覧は編集タブで見る */ }
 //   魚/        … これから編集するもの（登録すると管理番号のフォルダができる）
 //   魚編集後/  … 編集を終えたもの（原本と編集後の両方）
 // を作る。無ければ自動で作る。
-const APP_VERSION = 'v79';
+const APP_VERSION = 'v80';
 window.APP_VERSION = APP_VERSION;
 const FS_WORK_NAME = '編集前';
 // 前に使っていた名前。残っていたら気づけるようにする

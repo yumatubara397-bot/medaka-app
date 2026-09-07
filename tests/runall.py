@@ -47,7 +47,7 @@ WITH_FAKE = ["structtest"]
 # 偽モジュールの作業場 /tmp/fake_tepra/ を使うもの。
 # 送った内容を確かめるために毎回そこを空にするので、同時に走らせると
 # 互いのファイルを消し合ってしまう。1本ずつ実行する。
-SOLO = ["sharptest", "dpitest", "cuttest", "speedtest", "usbtest", "resptest", "wintest"]
+SOLO = ["diagtest", "sharptest", "dpitest", "cuttest", "speedtest", "usbtest", "resptest", "wintest"]
 
 # 直したところをすぐ確かめたいときの短い組み合わせ
 QUICK = ["structtest", "registertest", "camtest", "backuptest", "nesttest", "readfoldertest", "fstest"]
