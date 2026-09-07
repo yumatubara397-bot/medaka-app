@@ -680,8 +680,24 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .cam-no{font-weight:700;font-size:16px}
 .cam-sub{font-size:13px;color:var(--ink-dim);margin-top:2px}
 .cam-view{position:relative;background:#000;border-radius:12px;overflow:hidden;
-  aspect-ratio:4/3;display:grid;place-items:center}
-.cam-view video{width:100%;height:100%;object-fit:contain;display:block}
+  aspect-ratio:1/1;max-height:56vh;margin:0 auto;display:grid;place-items:center}
+/* 見えている範囲がそのまま写るよう、はみ出しは切り落とす */
+.cam-view video{width:100%;height:100%;object-fit:cover;display:block}
+.cam-view.full video{object-fit:contain}
+.cam-ratio{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-dim);
+  flex:0 0 auto;min-width:0}
+.cam-ratio select{padding:9px 10px;border-radius:9px;font-size:13px;
+  background:var(--bg-2,#121a30);border:1px solid var(--line,#2a3350);color:var(--ink,#e8ecf7)}
+.cam-adv{margin-top:10px;font-size:13px}
+.cam-adv summary{cursor:pointer;color:var(--ink-dim);padding:6px 0}
+.cam-adv-body{display:flex;flex-wrap:wrap;gap:10px;padding:10px 0 0;
+  border-top:1px solid var(--line,#2a3350)}
+.cam-caps{display:flex;flex-direction:column;gap:8px;width:100%}
+.cam-caps .row{display:grid;grid-template-columns:110px 1fr 56px;gap:10px;align-items:center}
+.cam-caps .row span{color:var(--ink-dim);font-size:12px}
+.cam-caps .row b{text-align:right;font-weight:600;font-size:12px}
+.cam-grid{position:absolute;inset:0;pointer-events:none}
+.cam-grid line{stroke:rgba(255,255,255,.45);stroke-width:1}
 .cam-msg{position:absolute;inset:0;display:grid;place-items:center;text-align:center;
   padding:20px;color:var(--ink-dim);font-size:14px;line-height:1.7}
 .cam-msg.hidden{display:none}
@@ -746,7 +762,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
   <div>
     <div style="font-size:34px;margin-bottom:10px">🐟</div>
     <div>メダカ出品アシスタント</div>
-    <div style="font-size:12px;opacity:.7">読み込んでいます… <b>v85</b></div>
+    <div style="font-size:12px;opacity:.7">読み込んでいます… <b>v86</b></div>
     <div style="font-size:11px;opacity:.5;margin-top:14px">
       この表示のまま進まないときは、この画面をそのまま伝えてください
     </div>
@@ -825,7 +841,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
       <button class="tab" data-tab="history" role="tab">履歴</button>
       <button class="tab" data-tab="settings" role="tab">⚙ 設定</button>
       <button id="btnUpdateApp" class="upd" type="button"
-              title="押すと必ず最新版になります">🔄 <span id="appVersion">v85</span></button>
+              title="押すと必ず最新版になります">🔄 <span id="appVersion">v86</span></button>
     </nav>
   </header>
 
@@ -1127,8 +1143,9 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
           </div>
           <button id="camClose" class="btn btn-ghost btn-sm">終わる</button>
         </div>
-        <div class="cam-view">
+        <div class="cam-view" id="camView">
           <video id="camVideo" playsinline muted autoplay></video>
+          <svg id="camGridOverlay" class="cam-grid" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
           <div id="camMsg" class="cam-msg hidden"></div>
         </div>
         <div class="cam-shots" id="camShots"></div>
@@ -1136,7 +1153,43 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
           <button id="camShoot" class="btn btn-primary cam-shoot">📷 撮る</button>
           <button id="camPick" class="btn btn-ghost">🖼 ファイルから追加</button>
           <button id="camSwitch" class="btn btn-ghost hidden">🔄 カメラ切替</button>
+          <label class="cam-ratio" title="撮る形。ふだんは正方形で撮ります">
+            <span>形</span>
+            <select id="camRatio">
+              <option value="1:1">正方形（1:1）</option>
+              <option value="4:3">横長（4:3）</option>
+              <option value="3:4">縦長（3:4）</option>
+              <option value="16:9">横に広い（16:9）</option>
+              <option value="full">カメラのまま</option>
+            </select>
+          </label>
         </div>
+        <details id="camAdv" class="cam-adv">
+          <summary>⚙ 詳しい設定</summary>
+          <div class="cam-adv-body">
+            <label class="cam-ratio"><span>大きさ</span>
+              <select id="camSize">
+                <option value="2560">いちばん大きく（約2560px）</option>
+                <option value="1920">大きめ（約1920px）</option>
+                <option value="1280">ふつう（約1280px）</option>
+              </select></label>
+            <label class="cam-ratio"><span>画質</span>
+              <select id="camQuality">
+                <option value="0.96">きれい（重い）</option>
+                <option value="0.92">ふつう</option>
+                <option value="0.85">軽い</option>
+              </select></label>
+            <label class="cam-ratio"><span>目安の線</span>
+              <select id="camGrid">
+                <option value="none">なし</option>
+                <option value="thirds">三分割</option>
+                <option value="center">中心の十字</option>
+              </select></label>
+            <div id="camCaps" class="cam-caps"></div>
+            <div class="hint" id="camCapsNote"></div>
+          </div>
+        </details>
+
         <div id="camSaveBar" class="cam-save hidden">
           <div class="cam-dest">保存先　<b id="camDest"></b></div>
           <button id="camSave" class="btn btn-primary cam-savebtn">💾 保存する</button>
@@ -7528,6 +7581,56 @@ $('#backupFile').onchange = async (e) => {
 
 const CAM_ID_KEY = 'medaka_camera_id';   // 選んだカメラを覚えておく
 const CAM_AUTO_KEY = 'medaka_camera_auto';  // 登録したらそのままカメラを開くか
+const CAM_RATIO_KEY = 'medaka_camera_ratio';  // 撮る形（既定は正方形）
+const CAM_SIZE_KEY  = 'medaka_camera_size';   // 撮る大きさ
+const CAM_QUAL_KEY  = 'medaka_camera_quality';// 画質
+const CAM_GRID_KEY  = 'medaka_camera_grid';   // 目安の線
+
+function camSize(){ return +(localStorage.getItem(CAM_SIZE_KEY) || 1920) || 1920; }
+function camQuality(){
+  const q = +(localStorage.getItem(CAM_QUAL_KEY) || 0.92);
+  return (q > 0.5 && q <= 1) ? q : 0.92;
+}
+function camGrid(){
+  const g = localStorage.getItem(CAM_GRID_KEY);
+  return (g === 'thirds' || g === 'center') ? g : 'none';
+}
+
+/**
+ * カメラが本当に持っている機能だけを、つまみとして出す。
+ * 端末によって使えるものが違うので、当てずっぽうで並べない。
+ */
+const CAM_CAPS = [
+  { k:'zoom',                 label:'ズーム' },
+  { k:'exposureCompensation', label:'明るさ' },
+  { k:'brightness',           label:'明るさ（別方式）' },
+  { k:'contrast',             label:'コントラスト' },
+  { k:'saturation',           label:'鮮やかさ' },
+  { k:'sharpness',            label:'くっきり' },
+  { k:'focusDistance',        label:'ピントの距離' }
+];
+
+/** 撮る形。出品写真は正方形が扱いやすいので、これを既定にする */
+const CAM_RATIOS = { '1:1':1, '4:3':4/3, '3:4':3/4, '16:9':16/9 };
+function camRatioKey(){
+  const v = localStorage.getItem(CAM_RATIO_KEY);
+  return (v === 'full' || (v && CAM_RATIOS[v])) ? v : '1:1';
+}
+/** その形の横縦比。「カメラのまま」なら null */
+function camRatioValue(key){
+  const k = key || camRatioKey();
+  return k === 'full' ? null : CAM_RATIOS[k];
+}
+/**
+ * 元の大きさから、真ん中を指定の形で切り出す範囲を求める。
+ * 画面で見えている範囲と、実際に写る範囲を一致させるための計算。
+ */
+function camCropRect(w, h, ratio){
+  if(!ratio || !(w > 0) || !(h > 0)) return { sx:0, sy:0, sw:w, sh:h };
+  let sw = w, sh = Math.round(w / ratio);
+  if(sh > h){ sh = h; sw = Math.round(h * ratio); }
+  return { sx: Math.round((w - sw) / 2), sy: Math.round((h - sh) / 2), sw, sh };
+}
 function camAutoOn(){ return localStorage.getItem(CAM_AUTO_KEY) !== '0'; }
 
 let camAudio = null;
@@ -7637,8 +7740,91 @@ const Cam = {
     $('#camSub').textContent = [item.variety, item.rank, item.quantityText].filter(Boolean).join('　')
       + `　→　${FS_WORK_NAME}/${fsFolderName(item)}/`;
     $('#camShots').innerHTML = '';
+    this.applyRatio();
+    this.applyGrid();
     $('#camDialog').classList.remove('hidden');
     await this.start();
+  },
+
+  /** 目安の線を引く */
+  applyGrid(){
+    const el = $('#camGridOverlay');
+    if(!el) return;
+    const g = camGrid();
+    el.innerHTML = g === 'thirds'
+      ? ['<line x1="33.3" y1="0" x2="33.3" y2="100"/>',
+         '<line x1="66.6" y1="0" x2="66.6" y2="100"/>',
+         '<line x1="0" y1="33.3" x2="100" y2="33.3"/>',
+         '<line x1="0" y1="66.6" x2="100" y2="66.6"/>'].join('')
+      : g === 'center'
+      ? ['<line x1="50" y1="0" x2="50" y2="100"/>',
+         '<line x1="0" y1="50" x2="100" y2="50"/>'].join('')
+      : '';
+    const sel = $('#camGrid');
+    if(sel && sel.value !== g) sel.value = g;
+  },
+
+  /**
+   * カメラが持っている機能を読み、使えるものだけをつまみにする。
+   * 何も使えない端末では、その旨を書いておく。
+   */
+  renderCaps(){
+    const box = $('#camCaps');
+    const note = $('#camCapsNote');
+    if(!box) return;
+    box.innerHTML = '';
+    if(note) note.textContent = '';
+    const track = this.stream && this.stream.getVideoTracks()[0];
+    if(!track || typeof track.getCapabilities !== 'function'){
+      if(note) note.textContent = 'このカメラでは、細かい調整はできません。';
+      return;
+    }
+    let caps = {}, cur = {};
+    try { caps = track.getCapabilities() || {}; } catch(e){ caps = {}; }
+    try { cur = track.getSettings() || {}; } catch(e){ cur = {}; }
+
+    const rows = CAM_CAPS.filter(c => {
+      const v = caps[c.k];
+      return v && typeof v === 'object' && 'min' in v && 'max' in v && v.max > v.min;
+    });
+    if(!rows.length){
+      if(note) note.textContent = 'このカメラでは、細かい調整はできません。'
+        + '明るさなどは撮ったあと、②編集タブで直せます。';
+      return;
+    }
+    box.innerHTML = rows.map(c => {
+      const v = caps[c.k];
+      const step = v.step || ((v.max - v.min) / 100) || 0.01;
+      const now = (cur[c.k] != null) ? cur[c.k] : v.min;
+      return `<div class="row">
+        <span>${c.label}</span>
+        <input type="range" class="bright-range" data-cap="${c.k}"
+               min="${v.min}" max="${v.max}" step="${step}" value="${now}">
+        <b data-cap-val="${c.k}">${Math.round(now * 100) / 100}</b>
+      </div>`;
+    }).join('');
+    box.querySelectorAll('input[data-cap]').forEach(inp => {
+      inp.oninput = async () => {
+        const k = inp.dataset.cap;
+        const val = +inp.value;
+        const out = box.querySelector(`[data-cap-val="${k}"]`);
+        if(out) out.textContent = Math.round(val * 100) / 100;
+        try { await track.applyConstraints({ advanced: [{ [k]: val }] }); }
+        catch(e){ toast(`このカメラでは「${k}」を変えられませんでした`, 'err'); }
+      };
+    });
+  },
+
+  /** 選んだ形に、映す枠を合わせる */
+  applyRatio(){
+    const key = camRatioKey();
+    const view = $('#camView') || document.querySelector('.cam-view');
+    if(view){
+      view.classList.toggle('full', key === 'full');
+      view.style.aspectRatio = (key === 'full') ? '4 / 3' : key.replace(':', ' / ');
+    }
+    const sel = $('#camRatio');
+    if(sel && sel.value !== key) sel.value = key;
   },
 
   /** いま映しているカメラの名前を出す */
@@ -7656,9 +7842,11 @@ const Cam = {
     this.say('カメラを準備しています…');
     try {
       // ① まず開いて許可をもらう。許可が下りるまでカメラの名前は読めない
+      const px = camSize();
+      const want = { width: { ideal: px }, height: { ideal: px } };
       const first = this.deviceId
-        ? { deviceId: { exact: this.deviceId }, width: { ideal: 1920 }, height: { ideal: 1440 } }
-        : { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1440 } };
+        ? Object.assign({ deviceId: { exact: this.deviceId } }, want)
+        : Object.assign({ facingMode: { ideal: 'environment' } }, want);
       this.stream = await navigator.mediaDevices.getUserMedia({ video: first, audio: false });
 
       // ② 名前が読めるようになったので、外側のカメラを選び直す
@@ -7672,7 +7860,8 @@ const Cam = {
           // 内側が開いていたら、外側に開き直す
           this.stream.getTracks().forEach(t => t.stop());
           this.stream = await navigator.mediaDevices.getUserMedia({
-            video: { deviceId: { exact: want.deviceId }, width: { ideal: 1920 }, height: { ideal: 1440 } },
+            video: Object.assign({ deviceId: { exact: want.deviceId } },
+                                 { width: { ideal: px }, height: { ideal: px } }),
             audio: false
           });
           this.deviceId = want.deviceId;
@@ -7687,6 +7876,7 @@ const Cam = {
       $('#camVideo').srcObject = this.stream;
       await $('#camVideo').play().catch(()=>{});
       this.say('');
+      this.renderCaps();       // このカメラで使えるつまみを出す
     } catch(e){
       $('#camSwitch').classList.add('hidden');
       const why = (e && e.name === 'NotAllowedError')
@@ -7780,10 +7970,12 @@ const Cam = {
     const btn = $('#camShoot');
     btn.disabled = true;
     try {
+      // 画面で見えている形のまま切り出す
+      const cut = camCropRect(v.videoWidth, v.videoHeight, camRatioValue());
       const c = document.createElement('canvas');
-      c.width = v.videoWidth; c.height = v.videoHeight;
-      c.getContext('2d').drawImage(v, 0, 0);
-      const blob = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.92));
+      c.width = cut.sw; c.height = cut.sh;
+      c.getContext('2d').drawImage(v, cut.sx, cut.sy, cut.sw, cut.sh, 0, 0, cut.sw, cut.sh);
+      const blob = await new Promise(res => c.toBlob(res, 'image/jpeg', camQuality()));
       if(!blob) throw new Error('画像を作れませんでした');
       camShutterSound();
       this.hold(blob, 'jpg');
@@ -7842,6 +8034,23 @@ $('#camShoot').onclick = () => Cam.shoot();
 $('#camSwitch').onclick = () => Cam.switchCamera();
 $('#camPick').onclick = () => $('#camFile').click();
 $('#camSave').onclick = () => Cam.saveAll();
+$('#camRatio').value = camRatioKey();
+$('#camRatio').onchange = () => {
+  localStorage.setItem(CAM_RATIO_KEY, $('#camRatio').value);
+  Cam.applyRatio();
+};
+$('#camSize').value = String(camSize());
+$('#camSize').onchange = async () => {
+  localStorage.setItem(CAM_SIZE_KEY, $('#camSize').value);
+  if(Cam.stream){ Cam.stop(); await Cam.start(); }   // 大きさは開き直さないと変わらない
+};
+$('#camQuality').value = String(camQuality());
+$('#camQuality').onchange = () => localStorage.setItem(CAM_QUAL_KEY, $('#camQuality').value);
+$('#camGrid').value = camGrid();
+$('#camGrid').onchange = () => {
+  localStorage.setItem(CAM_GRID_KEY, $('#camGrid').value);
+  Cam.applyGrid();
+};
 $('#camFile').onchange = (e) => {
   const files = [...e.target.files];
   e.target.value = '';
@@ -8193,7 +8402,7 @@ function renderPhotoGrid(){ /* 写真の一覧は編集タブで見る */ }
 //   魚/        … これから編集するもの（登録すると管理番号のフォルダができる）
 //   魚編集後/  … 編集を終えたもの（原本と編集後の両方）
 // を作る。無ければ自動で作る。
-const APP_VERSION = 'v85';
+const APP_VERSION = 'v86';
 window.APP_VERSION = APP_VERSION;
 const FS_WORK_NAME = '編集前';
 // 前に使っていた名前。残っていたら気づけるようにする

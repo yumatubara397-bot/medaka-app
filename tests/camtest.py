@@ -124,6 +124,91 @@ r.expect("用品には付かない",
 b.ev("window.__opened = null; document.querySelector('#regItemList .cam').click()"); time.sleep(0.4)
 r.check("押すとその商品のカメラが開く", b.ev("window.__opened"), "MD-260905-001")
 
+
+print("■ 撮る形（既定は正方形）")
+b.ev("localStorage.removeItem('medaka_camera_ratio')")
+r.check("はじめは正方形", b.ev("camRatioKey()"), "1:1")
+r.check("横縦比は1", b.ev("camRatioValue()"), 1)
+b.ev("localStorage.setItem('medaka_camera_ratio','3:4')")
+r.check("縦長も選べる", b.ev("camRatioKey()"), "3:4")
+r.check("その比率になる", b.ev("Math.round(camRatioValue()*100)/100"), 0.75)
+b.ev("localStorage.setItem('medaka_camera_ratio','full')")
+r.check("カメラのままも選べる", b.ev("camRatioKey()"), "full")
+r.check("そのときは切り出さない", b.ev("camRatioValue()"), None)
+b.ev("localStorage.setItem('medaka_camera_ratio','へんな値')")
+r.check("知らない値なら正方形に戻す", b.ev("camRatioKey()"), "1:1")
+
+print("■ 真ん中を切り出す")
+r.check("横長から正方形（1600x1200 → 1200x1200）",
+        b.ev("JSON.stringify(camCropRect(1600,1200,1))"), '{"sx":200,"sy":0,"sw":1200,"sh":1200}')
+r.check("縦長から正方形（1200x1600 → 1200x1200）",
+        b.ev("JSON.stringify(camCropRect(1200,1600,1))"), '{"sx":0,"sy":200,"sw":1200,"sh":1200}')
+r.check("すでに正方形なら切らない",
+        b.ev("JSON.stringify(camCropRect(1000,1000,1))"), '{"sx":0,"sy":0,"sw":1000,"sh":1000}')
+r.check("縦長に切り出す（1600x1200 → 900x1200）",
+        b.ev("JSON.stringify(camCropRect(1600,1200,0.75))"), '{"sx":350,"sy":0,"sw":900,"sh":1200}')
+r.check("カメラのままなら丸ごと",
+        b.ev("JSON.stringify(camCropRect(1600,1200,null))"), '{"sx":0,"sy":0,"sw":1600,"sh":1200}')
+
+print("■ 画面の枠も、選んだ形に合わせる")
+b.ev("localStorage.setItem('medaka_camera_ratio','1:1'); Cam.applyRatio()"); time.sleep(0.2)
+r.check("正方形の枠", b.ev("document.getElementById('camView').style.aspectRatio"), "1 / 1")
+r.check("選択も合っている", b.ev("document.getElementById('camRatio').value"), "1:1")
+b.ev("localStorage.setItem('medaka_camera_ratio','16:9'); Cam.applyRatio()"); time.sleep(0.2)
+r.check("横に広い枠", b.ev("document.getElementById('camView').style.aspectRatio"), "16 / 9")
+r.expect("見えている範囲がそのまま写る（はみ出しは切る）",
+         b.ev("!document.getElementById('camView').classList.contains('full')"), "object-fit: cover")
+b.ev("localStorage.setItem('medaka_camera_ratio','full'); Cam.applyRatio()"); time.sleep(0.2)
+r.expect("カメラのままなら全体を映す",
+         b.ev("document.getElementById('camView').classList.contains('full')"), "object-fit: contain")
+b.ev("localStorage.setItem('medaka_camera_ratio','1:1')")
+
+
+print("■ 詳しい設定")
+b.ev("['medaka_camera_size','medaka_camera_quality','medaka_camera_grid'].forEach(k=>localStorage.removeItem(k))")
+r.check("大きさの既定", b.ev("camSize()"), 1920)
+r.check("画質の既定", b.ev("camQuality()"), 0.92)
+r.check("目安の線の既定", b.ev("camGrid()"), "none")
+b.ev("localStorage.setItem('medaka_camera_size','2560')")
+r.check("大きさを変えられる", b.ev("camSize()"), 2560)
+b.ev("localStorage.setItem('medaka_camera_quality','0.96')")
+r.check("画質を変えられる", b.ev("camQuality()"), 0.96)
+b.ev("localStorage.setItem('medaka_camera_quality','9')")
+r.check("ありえない画質は既定に戻す", b.ev("camQuality()"), 0.92)
+b.ev("localStorage.setItem('medaka_camera_grid','へんな値')")
+r.check("知らない線の指定はなしに戻す", b.ev("camGrid()"), "none")
+
+print("■ 目安の線")
+b.ev("localStorage.setItem('medaka_camera_grid','thirds'); Cam.applyGrid()"); time.sleep(0.2)
+r.check("三分割は4本", b.ev("document.querySelectorAll('#camGridOverlay line').length"), 4)
+b.ev("localStorage.setItem('medaka_camera_grid','center'); Cam.applyGrid()"); time.sleep(0.2)
+r.check("十字は2本", b.ev("document.querySelectorAll('#camGridOverlay line').length"), 2)
+b.ev("localStorage.setItem('medaka_camera_grid','none'); Cam.applyGrid()"); time.sleep(0.2)
+r.check("なしは0本", b.ev("document.querySelectorAll('#camGridOverlay line').length"), 0)
+
+print("■ つまみは、カメラが本当に持っている機能だけ出す")
+b.ev("""Cam.stream = { getVideoTracks: () => [{
+  getCapabilities: () => ({ zoom:{min:1,max:4,step:0.1}, exposureCompensation:{min:-2,max:2,step:0.1},
+                            focusMode:['continuous'], contrast:{min:0,max:0} }),
+  getSettings: () => ({ zoom:1, exposureCompensation:0 }),
+  applyConstraints: async () => {}
+}] }; Cam.renderCaps(); 'ok'"""); time.sleep(0.3)
+r.check("使えるものだけ並ぶ", b.ev("document.querySelectorAll('#camCaps input[data-cap]').length"), 2)
+r.check("ズームがある", b.ev("!!document.querySelector('#camCaps input[data-cap=zoom]')"), True)
+r.expect("幅のない項目は出さない（contrast は min=max=0）",
+         not b.ev("!!document.querySelector('#camCaps input[data-cap=contrast]')"), "効かないつまみは出さない")
+r.expect("一覧だけの項目も出さない（focusMode）",
+         not b.ev("!!document.querySelector('#camCaps input[data-cap=focusMode]')"), "範囲でないものは対象外")
+
+b.ev("""Cam.stream = { getVideoTracks: () => [{
+  getCapabilities: () => ({}), getSettings: () => ({}), applyConstraints: async () => {} }] };
+Cam.renderCaps(); 'ok'"""); time.sleep(0.3)
+r.check("何も使えなければ空", b.ev("document.querySelectorAll('#camCaps input[data-cap]').length"), 0)
+r.expect("そのときは、その旨を伝える",
+         "できません" in (b.ev("document.getElementById('camCapsNote').textContent") or ""),
+         b.ev("document.getElementById('camCapsNote').textContent"))
+b.ev("Cam.stream = null")
+
 print("■ どのカメラを使うかの選び分け")
 def choose(devs, saved="null"):
     import json
