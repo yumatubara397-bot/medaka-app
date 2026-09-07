@@ -5,7 +5,7 @@
  * v5: 編集タブ(Phase 2) 実装。AI加工 + ライトボックス + IndexedDB キャッシュ
  */
 
-const CACHE_VERSION = 'medaka-cache-v80';  // バージョン更新で古いキャッシュ自動削除
+const CACHE_VERSION = 'medaka-cache-v81';  // バージョン更新で古いキャッシュ自動削除
 const APP_SHELL = [
   './',
   './index.html',
@@ -45,6 +45,13 @@ self.addEventListener('fetch', (event) => {
   if (url.hostname.includes('script.google.com')) return;
   if (url.hostname.includes('googleapis.com')) return;
 
+  // テプラの通信モジュール（パソコンの中）への問い合わせには一切触らない。
+  // ここを横取りすると、つながらなかったときに下の catch が
+  // アプリ自身の index.html を返してしまい、
+  // 「通信モジュールの返事が想定と違います」の正体になっていた。
+  if (url.hostname === 'localhost' || url.hostname === '127.0.0.1'
+      || url.hostname === '::1' || url.hostname === '[::1]') return;
+
   // HTML はブラウザのHTTPキャッシュを通さず、必ず取り直す。
   // これをしないと、公開し直しても古い画面が出続ける。
   const isDoc = req.mode === 'navigate'
@@ -59,7 +66,14 @@ self.addEventListener('fetch', (event) => {
         caches.open(CACHE_VERSION).then((cache) => cache.put(req, copy));
         return res;
       })
-      .catch(() => caches.match(req).then((c) => c || caches.match('./index.html')))
+      // 取りに行けなかったときは、覚えているものを返す。
+      // ただし index.html を代わりに返すのは、画面を開くときだけにする。
+      // それ以外で返すと、中身が HTML なのに JSON のつもりで読んでしまう。
+      .catch(() => caches.match(req).then((c) => {
+        if (c) return c;
+        if (isDoc) return caches.match('./index.html');
+        return new Response('', { status: 504, statusText: 'offline' });
+      }))
   );
 });
 

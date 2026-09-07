@@ -37,12 +37,21 @@ b.ev("(async()=>await TepraWin.available())()")
 r.expect("空の返事だと分かる", "空" in (b.ev("TepraWin.lastError") or ""), b.ev("TepraWin.lastError"))
 r.expect("直し方も出る", "起動し直" in (b.ev("TepraWin.lastError") or ""), "対処を書く")
 
-reply("{__raw:'<html>Not Found</html>'}")
+reply("{__raw:'Not Found (unexpected text)'}")
 b.ev("(async()=>await TepraWin.available())()")
 r.expect("何が返ってきたかを見せる",
          "Not Found" in (b.ev("TepraWin.lastError") or ""), b.ev("TepraWin.lastError"))
 r.expect("「読めませんでした」で終わらせない",
          "応答を読めませんでした" not in (b.ev("TepraWin.lastError") or ""), "中身を出す")
+
+
+print("■ アプリ自身のHTMLが返ってきたときは、そうと言う")
+reply("{__raw:'<!DOCTYPE html> <html lang=\\'ja\\'> <title>メダカ出品アシスタント</title>'}")
+b.ev("(async()=>await TepraWin.available())()")
+msg = b.ev("TepraWin.lastError") or ""
+r.expect("横取りされていると伝える", "横取り" in msg, msg[:70])
+r.expect("直し方も出す", "🔄" in msg or "fix.html" in msg, "直し方を書く")
+r.expect("HTMLの中身をそのまま並べない", "<!DOCTYPE" not in msg, "読みにくい生データは出さない")
 
 print("■ 入口は「/」の有無の両方をためす")
 b.ev("""window.__paths = [];

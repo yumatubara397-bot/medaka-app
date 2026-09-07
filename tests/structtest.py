@@ -131,6 +131,19 @@ r.expect("押して最新にできる", "updateApp" in SRC, "版の表示を押�
 
 
 
+
+print("■ サービスワーカーがテプラへの問い合わせを横取りしないか")
+r.expect("localhost には触らない",
+         "url.hostname === 'localhost'" in SW and "127.0.0.1" in SW, "素通りさせる")
+# 「触らない」判定が、取りに行く処理より前に置かれていること
+i_skip = SW.find("url.hostname === 'localhost'")
+i_fetch = SW.find("event.respondWith")
+r.expect("素通りの判断が先に来る", 0 < i_skip < i_fetch, f"{i_skip} < {i_fetch}")
+r.expect("画面を開くとき以外は index.html を代わりに返さない",
+         "if (isDoc) return caches.match('./index.html')" in SW, "取り違えを防ぐ")
+r.expect("アプリ側もHTMLが返ってきたら気づく",
+         "<!DOCTYPE html|<html" in SRC and "横取り" in SRC, "そうと分かる文言を出す")
+
 print("■ 読み込み中の目印")
 r.expect("立ち上がったら目印は消えている", not b.ev("!!document.getElementById('bootMark')"),
          "起動できたら消える")
