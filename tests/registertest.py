@@ -141,4 +141,24 @@ r.check("管理番号が引き継がれる", b.ev("products[0].controlNo"), b.ev
 t = b.ev("buildTitle(products[0], {})")
 r.expect("出品タイトルが作れる", "幹之" in (t or "") and (b.ev("regItems()[0].controlNo") in (t or "")), t)
 
+print("■ 匹数（1〜100）で登録できる")
+b.ev("regSel.mode='fish'; regSel.qtyMode='count'; regSel.qtyN=7; 'ok'")
+r.check("7匹と書かれる", b.ev("regQuantityText()"), "7匹")
+b.ev("regSel.qtyN=1"); r.check("1匹から", b.ev("regQuantityText()"), "1匹")
+b.ev("regSel.qtyN=100"); r.check("100匹まで", b.ev("regQuantityText()"), "100匹")
+b.ev("regSel.qtyMode='pair'; regSel.qtyN=3")
+r.check("ペアはこれまでどおり", b.ev("regQuantityText()"), "3ペア")
+b.ev("regSel.qtyMode='sex'; regSel.qtyMale=5; regSel.qtyFemale=8")
+r.check("雄雌べつべつもこれまでどおり", b.ev("regQuantityText()"), "雄5 雌8")
+b.ev("regSel.qtyMode='へんな値'; regSel.qtyN=2")
+r.check("知らない指定はペアに戻す", b.ev("regQuantityText()"), "2ペア")
+
+b.ev("regSel.mode='fish'; regSel.breed=regMasters().breeds[0]; regSel.rank='特上'; regSel.step=3; renderRegStepBody()")
+time.sleep(0.4)
+modes = b.ev("[...document.querySelectorAll('#regStepBody .qty-modes button')].map(x=>x.textContent).join('|')")
+r.check("選び方は3つ", modes, "ペア|匹数|雄・雌べつべつ")
+b.ev("regSel.qtyMode='count'; renderRegStepBody()"); time.sleep(0.3)
+r.expect("匹数のホイールが出る",
+         "匹数" in (b.ev("document.getElementById('regStepBody').textContent") or ""), "匹数")
+
 b.close(); r.finish()

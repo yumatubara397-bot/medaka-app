@@ -37,11 +37,24 @@ r.check("最後は100", b.ev("document.querySelectorAll('#wheelQty .wheel-item')
 b.ev("[...document.querySelectorAll('#wheelQty .wheel-item')].find(e=>e.textContent==='3').click()"); time.sleep(0.5)
 r.check("3ペアになる", b.ev("regQuantityText()"), "3ペア")
 
+
+print("■ 数量：匹数")
+b.ev("[...document.querySelectorAll('.qty-modes button')].find(x=>x.textContent==='匹数').click()")
+time.sleep(0.6)
+r.check("種類が匹数に", b.ev("regSel.qtyMode"), "count")
+r.check("ホイールは1本", b.ev("document.querySelectorAll('#wheelQty').length"), 1)
+r.check("1〜100", b.ev("document.querySelectorAll('#wheelQty .wheel-item').length"), 100)
+r.expect("見出しは匹数", "匹数" in (b.ev("document.querySelector('.wheels').textContent") or ""),
+         b.ev("document.querySelector('.wheels').textContent")[:20])
+
 print("■ 数量：雄・雌べつべつ")
 b.ev("[...document.querySelectorAll('.qty-modes button')].find(x=>x.textContent.includes('雄')).click()"); time.sleep(0.6)
 r.check("種類が雄雌に", b.ev("regSel.qtyMode"), "sex")
 r.check("ホイールが2本", b.ev("document.querySelectorAll('#wheelMale,#wheelFemale').length"), 2)
-r.check("種類はペアと雄雌の2つだけ", b.ev("document.querySelectorAll('.qty-modes button').length"), 2)
+r.check("種類はペア・匹数・雄雌の3つ", b.ev("document.querySelectorAll('.qty-modes button').length"), 3)
+r.check("並びも決まっている",
+        b.ev("[...document.querySelectorAll('.qty-modes button')].map(x=>x.textContent).join('|')"),
+        "ペア|匹数|雄・雌べつべつ")
 r.expect("セットは無い", "セット" not in (b.ev("document.querySelector('.qty-modes').textContent") or ""),
          b.ev("document.querySelector('.qty-modes').textContent"))
 r.check("雄も1〜100", b.ev("document.querySelectorAll('#wheelMale .wheel-item').length"), 100)

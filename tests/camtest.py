@@ -225,6 +225,59 @@ r.check("等倍より引けない", b.ev("camZoomPct()"), 100)
 r.check("ゲージにも出る", b.ev("document.getElementById('camZoomVal').textContent"), "100%")
 b.ev("Cam.stream = null")
 
+
+print("■ ピント")
+b.ev("localStorage.removeItem('medaka_camera_focus')")
+r.check("既定は追いかける（動くメダカ向き）", b.ev("camFocusMode()"), "continuous")
+b.ev("localStorage.setItem('medaka_camera_focus','manual')")
+r.check("手で合わせるも選べる", b.ev("camFocusMode()"), "manual")
+b.ev("localStorage.setItem('medaka_camera_focus','へんな値')")
+r.check("知らない値なら追いかけるに戻す", b.ev("camFocusMode()"), "continuous")
+
+b.ev("""window.__c = [];
+Cam.stream = { getVideoTracks: () => [{
+  getCapabilities: () => ({ focusMode:['continuous','single-shot','manual'],
+                            pointsOfInterest:true,
+                            exposureMode:['continuous','manual'], exposureTime:{min:10,max:1000,step:10},
+                            frameRate:{min:1,max:60} }),
+  getSettings: () => ({}),
+  applyConstraints: async (c) => { window.__c.push(JSON.stringify(c)); }
+}] }; 'ok'""")
+r.check("追いかけるを伝える", b.ev("(async()=>await Cam.applyFocus())()"), True)
+r.expect("continuous を頼む", "continuous" in (b.ev("window.__c.slice(-1)[0]") or ""), b.ev("window.__c.slice(-1)[0]"))
+
+b.ev("localStorage.setItem('medaka_camera_focus','single'); window.__c = []")
+b.ev("(async()=>await Cam.applyFocus())()"); time.sleep(0.2)
+r.expect("1回だけは single-shot を頼む", "single-shot" in (b.ev("window.__c.slice(-1)[0]") or ""),
+         b.ev("window.__c.slice(-1)[0]"))
+
+print("■ 動きを止める")
+b.ev("localStorage.removeItem('medaka_camera_motion')")
+r.check("既定は止める", b.ev("camStopMotion()"), True)
+b.ev("window.__c = []")
+r.check("設定できる", b.ev("(async()=>await Cam.applyMotion())()"), True)
+allc = b.ev("window.__c.join(' ')") or ""
+r.expect("露出を短くする", "exposureTime" in allc, "ブレを減らす")
+r.expect("フレームレートも上げる", "frameRate" in allc, "少しでもブレを減らす")
+b.ev("localStorage.setItem('medaka_camera_motion','off'); window.__c = []")
+r.check("いいえなら自動に戻す", b.ev("(async()=>await Cam.applyMotion())()"), False)
+r.expect("カメラ任せに戻す", "continuous" in (b.ev("window.__c.join(' ')") or ""), "exposureMode: continuous")
+b.ev("localStorage.setItem('medaka_camera_motion','on')")
+
+print("■ 押したところにピントを合わせる")
+b.ev("window.__c = []")
+r.check("場所を伝えられる", b.ev("(async()=>await Cam.focusAt(25, 75))()"), True)
+c = b.ev("window.__c.join(' ')") or ""
+r.expect("押した位置を割合で渡す", '"x":0.25' in c and '"y":0.75' in c, c[:80])
+r.expect("印が出る", not b.ev("document.getElementById('camFocusMark').classList.contains('hidden')"), "光る円")
+
+print("■ ピントを選べないカメラでは、そう言う")
+b.ev("""Cam.stream = { getVideoTracks: () => [{
+  getCapabilities: () => ({}), getSettings: () => ({}), applyConstraints: async () => {} }] }; 'ok'""")
+r.check("できないと分かる", b.ev("(async()=>await Cam.applyFocus())()"), False)
+r.check("動きの設定もできない", b.ev("(async()=>await Cam.applyMotion())()"), False)
+b.ev("Cam.stream = null")
+
 print("■ 詳しい設定")
 b.ev("['medaka_camera_size','medaka_camera_quality','medaka_camera_grid'].forEach(k=>localStorage.removeItem(k))")
 r.check("大きさの既定", b.ev("camSize()"), 1920)

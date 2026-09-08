@@ -286,7 +286,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .spec-tile-badge{position:absolute;top:6px;left:6px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;font-family:'JetBrains Mono','SFMono-Regular','Consolas',monospace;backdrop-filter:blur(4px);z-index:1}
 .spec-tile-badge.edited{background:var(--ok);color:#000}
 .spec-tile-foot{display:flex;gap:6px;padding:6px;align-items:center;justify-content:space-between;flex-wrap:wrap}
-.spec-tile-tools{display:flex;gap:4px;align-items:center}
+.spec-tile-tools{display:flex;gap:4px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
 /* 明るさ(Canvas・無料・即プレビュー) */
 .bright-ctrl{display:inline-flex;align-items:center;gap:8px;background:var(--bg-2);border:1px solid var(--line);border-radius:99px;padding:4px 12px 4px 10px;flex-wrap:wrap}
 .bright-ctrl .brightness-group{background:transparent;border:none;padding:0}
@@ -294,7 +294,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .bright-range::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;background:var(--accent);border:2px solid var(--bg);cursor:grab;box-shadow:0 0 0 1px var(--accent)}
 .bright-range::-webkit-slider-thumb:active{cursor:grabbing;transform:scale(1.15)}
 .bright-val{font-family:'JetBrains Mono','SFMono-Regular','Consolas',monospace;font-size:11px;font-weight:700;color:var(--accent);min-width:24px;text-align:right}
-.spec-tile-flip{background:var(--line);color:var(--ink);border:none;padding:4px 9px;border-radius:5px;font-size:12px;cursor:pointer;font-weight:700;line-height:1.2}
+.spec-tile-flip{background:var(--line);color:var(--ink);border:none;padding:7px 10px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:700;line-height:1.3;white-space:nowrap;min-height:32px}
 .spec-tile-flip:hover{background:var(--ink-dim);color:#000}
 .spec-tile-flip.on{background:var(--accent);color:#000}
 .spec-tile-flip:disabled{opacity:.4;cursor:not-allowed}
@@ -707,6 +707,12 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
 .cam-caps .row b{text-align:right;font-weight:600;font-size:12px}
 .cam-grid{position:absolute;inset:0;pointer-events:none}
 .cam-grid line{stroke:rgba(255,255,255,.45);stroke-width:1}
+.cam-focus-mark{position:absolute;width:74px;height:74px;margin:-37px 0 0 -37px;border-radius:50%;
+  border:2px solid #ffe14d;box-shadow:0 0 0 2px rgba(0,0,0,.35);pointer-events:none;
+  animation:camFocusPop .5s ease-out}
+.cam-focus-mark.hidden{display:none}
+@keyframes camFocusPop{from{transform:scale(1.5);opacity:0}to{transform:scale(1);opacity:1}}
+.cam-view{cursor:crosshair}
 .cam-msg{position:absolute;inset:0;display:grid;place-items:center;text-align:center;
   padding:20px;color:var(--ink-dim);font-size:14px;line-height:1.7}
 .cam-msg.hidden{display:none}
@@ -771,7 +777,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
   <div>
     <div style="font-size:34px;margin-bottom:10px">🐟</div>
     <div>メダカ出品アシスタント</div>
-    <div style="font-size:12px;opacity:.7">読み込んでいます… <b>v88</b></div>
+    <div style="font-size:12px;opacity:.7">読み込んでいます… <b>v89</b></div>
     <div style="font-size:11px;opacity:.5;margin-top:14px">
       この表示のまま進まないときは、この画面をそのまま伝えてください
     </div>
@@ -850,7 +856,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
       <button class="tab" data-tab="history" role="tab">履歴</button>
       <button class="tab" data-tab="settings" role="tab">⚙ 設定</button>
       <button id="btnUpdateApp" class="upd" type="button"
-              title="押すと必ず最新版になります">🔄 <span id="appVersion">v88</span></button>
+              title="押すと必ず最新版になります">🔄 <span id="appVersion">v89</span></button>
     </nav>
   </header>
 
@@ -1155,6 +1161,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
         <div class="cam-view" id="camView">
           <video id="camVideo" playsinline muted autoplay></video>
           <svg id="camGridOverlay" class="cam-grid" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+          <div id="camFocusMark" class="cam-focus-mark hidden"></div>
           <div id="camMsg" class="cam-msg hidden"></div>
         </div>
         <div class="cam-zoom">
@@ -1172,6 +1179,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
           <button id="camShoot" class="btn btn-primary cam-shoot">📷 撮る</button>
           <button id="camPick" class="btn btn-ghost">🖼 ファイルから追加</button>
           <button id="camSwitch" class="btn btn-ghost hidden">🔄 カメラ切替</button>
+          <button id="camFocusNow" class="btn btn-ghost">🎯 ピントを合わせ直す</button>
           <label class="cam-ratio" title="撮る形。ふだんは正方形で撮ります">
             <span>形</span>
             <select id="camRatio">
@@ -1203,6 +1211,17 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
                 <option value="none">なし</option>
                 <option value="thirds">三分割</option>
                 <option value="center">中心の十字</option>
+              </select></label>
+            <label class="cam-ratio"><span>ピント</span>
+              <select id="camFocus">
+                <option value="continuous">追いかける（動くメダカ向き）</option>
+                <option value="single">1回だけ合わせる</option>
+                <option value="manual">手で合わせる</option>
+              </select></label>
+            <label class="cam-ratio"><span>動きを止める</span>
+              <select id="camMotion">
+                <option value="on">はい（ブレを減らす・やや暗くなる）</option>
+                <option value="off">いいえ（明るさ優先）</option>
               </select></label>
             <div id="camCaps" class="cam-caps"></div>
             <div class="hint" id="camCapsNote"></div>
@@ -2617,9 +2636,9 @@ function specTileHtml(i){
         </div>
       </details>
       <div class="ai-fb">
-        <span class="ai-fb-q">🤖 ChatGPTの仕上がりは？</span>
-        <button class="spec-tile-flip" data-action="ai-ok" data-photo-idx="${i}" title="良ければこのまま使います">👍 OK</button>
-        <button class="spec-tile-flip" data-action="ai-ng" data-photo-idx="${i}" title="ダメな理由を伝えてその場で作り直します">👎 ここを直す</button>
+        <span class="ai-fb-q">🤖 AIの仕上がりはどうですか？</span>
+        <button class="spec-tile-flip" data-action="ai-ok" data-photo-idx="${i}" title="良ければこのまま使います">👍 これでOK</button>
+        <button class="spec-tile-flip" data-action="ai-ng" data-photo-idx="${i}" title="どこがダメかを伝えて、その場で作り直します">👎 直したい所を伝える</button>
       </div>
       <div class="ai-fb-panel" data-fb-panel="${i}">
         <div class="ai-fb-chips">
@@ -2629,18 +2648,19 @@ function specTileHtml(i){
         <input type="text" class="ai-fb-input" data-fb-input="${i}" placeholder="どこがダメか書いてください（例: 背景の黒が灰色になった）">
         <label class="chip-toggle ai-fb-remember"><input type="checkbox" data-fb-remember="${i}" checked><span>次回から毎回守らせる</span></label>
         <div class="adj-btns">
-          <button class="spec-tile-flip" data-action="ai-redo" data-photo-idx="${i}">🔁 この指摘で作り直す</button>
+          <button class="spec-tile-flip" data-action="ai-redo" data-photo-idx="${i}"
+                  title="いま書いた内容をAIに伝えて、もう一度作り直します">🔁 この内容でもう一度AI編集</button>
           <button class="spec-tile-flip" data-action="ai-cancel" data-photo-idx="${i}">閉じる</button>
         </div>
       </div>
       <div class="spec-tile-foot">
         <span class="spec-tile-name" title="${escapeHtml(ph.name)}">${escapeHtml(ph.name)}</span>
         <div class="spec-tile-tools">
-          <button class="spec-tile-flip" data-action="ai-good" data-photo-idx="${i}" title="この1枚をChatGPTで「いい感じに」する">🤖</button>
-          <button class="spec-tile-flip ai-only" data-action="ai-mask" data-photo-idx="${i}" title="直したい場所を塗って部分修正する">🖌</button>
-          <button class="spec-tile-flip ai-only" data-action="ai-discard" data-photo-idx="${i}" title="AI結果を消して元画像に戻す">🗑</button>
-          <button class="spec-tile-flip" data-action="ai-clean" data-photo-idx="${i}" title="この1枚だけGeminiでゴミ取り（約6円）">🧹</button>
-          <button class="spec-tile-flip${adj.rot ? ' on' : ''}" data-action="rotate" data-photo-idx="${i}" title="90°回転（現在 ${adj.rot}°）">↻</button>
+          <button class="spec-tile-flip" data-action="ai-good" data-photo-idx="${i}" title="この1枚をChatGPTで「いい感じに」仕上げます">🤖 AIで仕上げ</button>
+          <button class="spec-tile-flip ai-only" data-action="ai-mask" data-photo-idx="${i}" title="直したい場所を塗って、その部分だけ直します">🖌 部分だけ直す</button>
+          <button class="spec-tile-flip ai-only" data-action="ai-discard" data-photo-idx="${i}" title="AIの結果を消して、元の写真に戻します">🗑 元に戻す</button>
+          <button class="spec-tile-flip" data-action="ai-clean" data-photo-idx="${i}" title="浮遊物やゴミだけを消します（約6円）">🧹 ゴミ取り</button>
+          <button class="spec-tile-flip${adj.rot ? ' on' : ''}" data-action="rotate" data-photo-idx="${i}" title="90°ずつ回します（現在 ${adj.rot}°）">↻ 回す</button>
           ${flipButtonsHtml(i)}
           <button class="spec-tile-save" data-action="save" data-photo-idx="${i}"${hasEdited ? '' : ' disabled'} title="${hasEdited ? '加工後をダウンロード' : '加工後がありません'}">💾 保存</button>
         </div>
@@ -2854,8 +2874,8 @@ function getFlip(i){ return flipState[i] || { h:false, v:false }; }
 function hasFlip(i){ const f = getFlip(i); return f.h || f.v; }
 function flipButtonsHtml(i){
   const f = getFlip(i);
-  return `<button class="spec-tile-flip${f.h ? ' on' : ''}" data-action="flip" data-axis="h" data-photo-idx="${i}" title="左右反転">⇄</button>` +
-         `<button class="spec-tile-flip${f.v ? ' on' : ''}" data-action="flip" data-axis="v" data-photo-idx="${i}" title="上下反転">⇅</button>`;
+  return `<button class="spec-tile-flip${f.h ? ' on' : ''}" data-action="flip" data-axis="h" data-photo-idx="${i}" title="左右を入れ替えます">⇄ 左右</button>` +
+         `<button class="spec-tile-flip${f.v ? ' on' : ''}" data-action="flip" data-axis="v" data-photo-idx="${i}" title="上下を入れ替えます">⇅ 上下</button>`;
 }
 // Canvas で反転した Blob を返す(元の形式を維持: PNGはPNG、それ以外はJPEG)
 function flipBlob(blob, h, v){
@@ -6634,7 +6654,7 @@ async function tepraPrintPending(){
 // 各項目は「最初に設定した内容（マスター）」を全部並べて、押すだけで選べる。
 let regSel = {
   breed: null, rank: null, qty: null,
-  qtyMode: 'pair',           // pair=ペア / sex=雄雌べつべつ
+  qtyMode: 'pair',           // pair=ペア / count=匹数 / sex=雄雌べつべつ
   qtyN: 1, qtyMale: 1, qtyFemale: 1,
   group: '全部', search: '', step: 1, lastNo: '',
   tidy: false, tidyPicked: new Set(),
@@ -6644,8 +6664,9 @@ let regSel = {
 /** 選んだ数量を、ラベルや出品タイトルに載せる文字にする */
 function regQuantityText(){
   if(regIsGoods()) return regSel.qtyN + '個';
-  if(regSel.qtyMode !== 'pair' && regSel.qtyMode !== 'sex') regSel.qtyMode = 'pair';
-  if(regSel.qtyMode === 'pair') return regSel.qtyN + 'ペア';
+  if(!['pair', 'count', 'sex'].includes(regSel.qtyMode)) regSel.qtyMode = 'pair';
+  if(regSel.qtyMode === 'pair')  return regSel.qtyN + 'ペア';
+  if(regSel.qtyMode === 'count') return regSel.qtyN + '匹';
   const parts = [];
   if(regSel.qtyMale   > 0) parts.push('雄' + regSel.qtyMale);
   if(regSel.qtyFemale > 0) parts.push('雌' + regSel.qtyFemale);
@@ -7065,10 +7086,10 @@ function regQtyHtml(){
   const qtyWheels = (mode === 'sex')
     ? wheelHtml('wheelMale', '雄', regRange(100), regSel.qtyMale)
       + wheelHtml('wheelFemale', '雌', regRange(100), regSel.qtyFemale)
-    : wheelHtml('wheelQty', 'ペア数', regRange(100), regSel.qtyN);
+    : wheelHtml('wheelQty', mode === 'count' ? '匹数' : 'ペア数', regRange(100), regSel.qtyN);
 
   return `<h3 class="card-title">数量を選ぶ</h3>
-    <div class="qty-modes">${modeBtn('pair', 'ペア')}${modeBtn('sex', '雄・雌べつべつ')}</div>
+    <div class="qty-modes">${modeBtn('pair', 'ペア')}${modeBtn('count', '匹数')}${modeBtn('sex', '雄・雌べつべつ')}</div>
     <div class="wheels">${qtyWheels}</div>
     <div class="reg-summary">
       <div class="reg-sum-line"><span>いま選んでいる内容</span>
@@ -7605,6 +7626,16 @@ const CAM_SIZE_KEY  = 'medaka_camera_size';   // 撮る大きさ
 const CAM_QUAL_KEY  = 'medaka_camera_quality';// 画質
 const CAM_GRID_KEY  = 'medaka_camera_grid';   // 目安の線
 const CAM_ZOOM_KEY  = 'medaka_camera_zoom';   // ズーム（%）
+const CAM_FOCUS_KEY = 'medaka_camera_focus';  // ピントの合わせ方
+const CAM_MOTION_KEY= 'medaka_camera_motion'; // 動きを止めるか
+
+/** ピントの合わせ方。動くメダカには「追いかける」が向く */
+function camFocusMode(){
+  const v = localStorage.getItem(CAM_FOCUS_KEY);
+  return ['continuous', 'single', 'manual'].includes(v) ? v : 'continuous';
+}
+/** 動きを止める（速いシャッターを狙う）か */
+function camStopMotion(){ return localStorage.getItem(CAM_MOTION_KEY) !== 'off'; }
 
 /** ズームの倍率（100〜400%）。100 が等倍 */
 function camZoomPct(){
@@ -7781,6 +7812,94 @@ const Cam = {
     this.softZoom = 1;
     $('#camDialog').classList.remove('hidden');
     await this.start();
+  },
+
+  /**
+   * ピントの合わせ方を、カメラに伝える。
+   * 対応していない機種では何も起きない（そのときは案内を出す）。
+   */
+  async applyFocus(){
+    const track = this.stream && this.stream.getVideoTracks()[0];
+    const note = $('#camFocusNote');
+    if(!track || typeof track.getCapabilities !== 'function') return false;
+    let caps = {};
+    try { caps = track.getCapabilities() || {}; } catch(e){ caps = {}; }
+    const modes = caps.focusMode || [];
+    const want = camFocusMode();
+    // continuous → single-shot → manual の順で、その機種にあるものを選ぶ
+    const map = { continuous: ['continuous'], single: ['single-shot', 'manual'], manual: ['manual', 'single-shot'] };
+    const pick = (map[want] || []).find(m => modes.includes(m));
+    if(!pick) return false;
+    try { await track.applyConstraints({ advanced: [{ focusMode: pick }] }); return true; }
+    catch(e){ return false; }
+  },
+
+  /**
+   * 動くメダカを止めて写すための設定。
+   * 露出時間を短くできる機種では短めにし、できなければフレームレートを上げて
+   * 少しでもブレを減らす。どちらも無理なら何もしない。
+   */
+  async applyMotion(){
+    const track = this.stream && this.stream.getVideoTracks()[0];
+    if(!track || typeof track.getCapabilities !== 'function') return false;
+    let caps = {};
+    try { caps = track.getCapabilities() || {}; } catch(e){ caps = {}; }
+    if(!camStopMotion()){
+      // 明るさ優先。カメラの自動任せに戻す
+      try { await track.applyConstraints({ advanced: [{ exposureMode: 'continuous' }] }); } catch(e){}
+      return false;
+    }
+    let done = false;
+    const et = caps.exposureTime;
+    if(et && et.max > et.min && (caps.exposureMode || []).includes('manual')){
+      // 1/250秒あたりを狙う。単位は 100マイクロ秒きざみの機種が多い
+      const target = Math.max(et.min, Math.min(et.max, 40));
+      try {
+        await track.applyConstraints({ advanced: [{ exposureMode: 'manual', exposureTime: target }] });
+        done = true;
+      } catch(e){}
+    }
+    const fr = caps.frameRate;
+    if(fr && fr.max >= 30){
+      try { await track.applyConstraints({ advanced: [{ frameRate: Math.min(60, fr.max) }] }); done = true; }
+      catch(e){}
+    }
+    return done;
+  },
+
+  /** 画面を押したところにピントを合わせる（対応機種のみ） */
+  async focusAt(xPct, yPct){
+    const mark = $('#camFocusMark');
+    if(mark){
+      mark.style.left = xPct + '%';
+      mark.style.top = yPct + '%';
+      mark.classList.remove('hidden');
+      clearTimeout(this._markTimer);
+      this._markTimer = setTimeout(() => mark.classList.add('hidden'), 1200);
+    }
+    const track = this.stream && this.stream.getVideoTracks()[0];
+    if(!track || typeof track.getCapabilities !== 'function') return false;
+    let caps = {};
+    try { caps = track.getCapabilities() || {}; } catch(e){ caps = {}; }
+    if(caps.pointsOfInterest){
+      try {
+        await track.applyConstraints({ advanced: [{ pointsOfInterest: [{ x: xPct / 100, y: yPct / 100 }] }] });
+        return true;
+      } catch(e){}
+    }
+    // 場所を指定できない機種は、合わせ直しだけでも効くことがある
+    return this.refocus();
+  },
+
+  /** ピントを合わせ直す */
+  async refocus(){
+    const track = this.stream && this.stream.getVideoTracks()[0];
+    if(!track) return false;
+    try {
+      await track.applyConstraints({ advanced: [{ focusMode: 'single-shot' }] });
+      await this.applyFocus();
+      return true;
+    } catch(e){ return false; }
   },
 
   /**
@@ -7968,6 +8087,8 @@ const Cam = {
       await $('#camVideo').play().catch(()=>{});
       this.say('');
       this.renderCaps();       // このカメラで使えるつまみを出す
+      await this.applyFocus();
+      await this.applyMotion();
       await this.applyZoom();  // 覚えているズームを効かせる
     } catch(e){
       $('#camSwitch').classList.add('hidden');
@@ -8150,6 +8271,26 @@ $('#camZoom').oninput = () => camSetZoom(+$('#camZoom').value);
 $('#camZoomIn').onclick = () => camSetZoom(camZoomPct() + 25);
 $('#camZoomOut').onclick = () => camSetZoom(camZoomPct() - 25);
 $('#camZoomReset').onclick = () => camSetZoom(100);
+$('#camFocus').value = camFocusMode();
+$('#camFocus').onchange = async () => {
+  localStorage.setItem(CAM_FOCUS_KEY, $('#camFocus').value);
+  const ok = await Cam.applyFocus();
+  toast(ok ? 'ピントの合わせ方を変えました' : 'このカメラではピントを選べません', ok ? 'ok' : 'err');
+};
+$('#camMotion').value = camStopMotion() ? 'on' : 'off';
+$('#camMotion').onchange = async () => {
+  localStorage.setItem(CAM_MOTION_KEY, $('#camMotion').value);
+  const ok = await Cam.applyMotion();
+  toast(ok ? '動きを止める設定にしました' : 'このカメラでは変えられません', ok ? 'ok' : 'err');
+};
+$('#camFocusNow').onclick = async () => {
+  const ok = await Cam.refocus();
+  toast(ok ? 'ピントを合わせ直しました' : 'このカメラでは合わせ直せません', ok ? 'ok' : 'err');
+};
+$('#camView').onclick = (e) => {
+  const r = e.currentTarget.getBoundingClientRect();
+  Cam.focusAt(((e.clientX - r.left) / r.width) * 100, ((e.clientY - r.top) / r.height) * 100);
+};
 $('#camGrid').value = camGrid();
 $('#camGrid').onchange = () => {
   localStorage.setItem(CAM_GRID_KEY, $('#camGrid').value);
@@ -8506,7 +8647,7 @@ function renderPhotoGrid(){ /* 写真の一覧は編集タブで見る */ }
 //   魚/        … これから編集するもの（登録すると管理番号のフォルダができる）
 //   魚編集後/  … 編集を終えたもの（原本と編集後の両方）
 // を作る。無ければ自動で作る。
-const APP_VERSION = 'v88';
+const APP_VERSION = 'v89';
 window.APP_VERSION = APP_VERSION;
 const FS_WORK_NAME = '編集前';
 // 前に使っていた名前。残っていたら気づけるようにする
