@@ -43,7 +43,12 @@ class Browser:
         raise RuntimeError(f"Chrome({port}) が開きませんでした: {last}")
 
     def _wait_until_ready(self, limit=30.0):
-        """アプリの読み込みが終わるまで待つ（終わった瞬間に進む）"""
+        """アプリの読み込みが終わるまで待つ（終わった瞬間に進む）
+
+        書体の用意も待つ。まだのうちに Canvas で文字を描くと
+        幅が 0 になり、ラベルが真っ白になることがある。
+        同時に何本も走らせると起きやすい。
+        """
         end = time.time() + limit
         while time.time() < end:
             r = self.ev("(typeof renderRegisterPanel === 'function'"
@@ -51,9 +56,18 @@ class Browser:
                         " && document.readyState === 'complete'"
                         " && !!document.getElementById('regStepBody'))")
             if r is True:
+                break
+            time.sleep(0.05)
+        else:
+            raise RuntimeError(f"アプリ({self.port}) の準備が終わりませんでした")
+
+        # 書体がそろうまで待つ（そろわなくても先へ進む）
+        self.ev("document.fonts && document.fonts.ready")
+        end2 = time.time() + 10.0
+        while time.time() < end2:
+            if self.ev("!document.fonts || document.fonts.status === 'loaded'") is True:
                 return
             time.sleep(0.05)
-        raise RuntimeError(f"アプリ({self.port}) の準備が終わりませんでした")
 
     def send(self, method, params=None):
         self.n += 1

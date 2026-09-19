@@ -798,7 +798,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
   <div>
     <div style="font-size:34px;margin-bottom:10px">🐟</div>
     <div>メダカ出品アシスタント</div>
-    <div style="font-size:12px;opacity:.7">読み込んでいます… <b>v90</b></div>
+    <div style="font-size:12px;opacity:.7">読み込んでいます… <b>v91</b></div>
     <div style="font-size:11px;opacity:.5;margin-top:14px">
       この表示のまま進まないときは、この画面をそのまま伝えてください
     </div>
@@ -877,7 +877,7 @@ body{background:radial-gradient(circle at 0% 0%,rgba(255,225,77,.06),transparent
       <button class="tab" data-tab="history" role="tab">履歴</button>
       <button class="tab" data-tab="settings" role="tab">⚙ 設定</button>
       <button id="btnUpdateApp" class="upd" type="button"
-              title="押すと必ず最新版になります">🔄 <span id="appVersion">v90</span></button>
+              title="押すと必ず最新版になります">🔄 <span id="appVersion">v91</span></button>
     </nav>
   </header>
 
@@ -7654,9 +7654,11 @@ const WATCH_NAME_KEY = 'medaka_watch_name';   // 見張るフォルダの名前�
 const CAM_IMG_RE = /\.(jpe?g|png)$/i;
 // カメラのRAW。ブラウザでは開けないので、見つけたら知らせる
 const CAM_RAW_RE = /\.(nef|nrw|cr2|cr3|arw|raf|orf|rw2|dng)$/i;
+// iPhone の既定の形式。これもブラウザでは開けない
+const CAM_HEIC_RE = /\.(heic|heif)$/i;
 
 const Watch = {
-  dir: null, timer: null, seen: new Set(), item: null, found: 0, sawRaw: false,
+  dir: null, timer: null, seen: new Set(), item: null, found: 0, sawRaw: false, sawHeic: false,
 
   name(){ return localStorage.getItem(WATCH_NAME_KEY) || ''; },
 
@@ -7689,26 +7691,53 @@ const Watch = {
     } catch(e){ return null; }
   },
 
-  /** いま入っている写真を並べる（新しい順） */
+  /**
+   * いま入っている写真を並べる（新しい順）。
+   * iCloud は「2026 / 09」のように年月のフォルダに分けて入れるので、
+   * 下のフォルダも2段までのぞく。
+   */
+  MAX_DEPTH: 2,
+  MAX_FILES: 400,        // 多すぎると重いので、ここで打ち切る
+
   async list(dir){
     const d = dir || this.dir;
     if(!d) return [];
-    const out = [];
     this.sawRaw = false;
-    for await (const [name, h] of d.entries()){
-      if(h.kind !== 'file') continue;
-      if(CAM_RAW_RE.test(name)){ this.sawRaw = true; continue; }
-      if(!CAM_IMG_RE.test(name)) continue;
-      let f = null;
-      try { f = await h.getFile(); } catch(e){ continue; }
-      out.push({ name, handle: h, at: f.lastModified || 0, size: f.size || 0, file: f });
-    }
+    this.sawHeic = false;
+    const out = [];
+
+    const walk = async (node, depth, prefix) => {
+      if(out.length >= this.MAX_FILES) return;
+      const subs = [];
+      try {
+        for await (const [name, h] of node.entries()){
+          if(out.length >= this.MAX_FILES) return;
+          if(h.kind === 'directory'){
+            if(depth < this.MAX_DEPTH) subs.push([name, h]);
+            continue;
+          }
+          if(CAM_RAW_RE.test(name)){ this.sawRaw = true; continue; }
+          if(CAM_HEIC_RE.test(name)){ this.sawHeic = true; continue; }
+          if(!CAM_IMG_RE.test(name)) continue;
+          let f = null;
+          try { f = await h.getFile(); } catch(e){ continue; }
+          if(!f.size) continue;          // まだ降りてきていない（中身が無い）ものは飛ばす
+          out.push({ name, path: prefix + name, handle: h,
+                     at: f.lastModified || 0, size: f.size, file: f });
+        }
+      } catch(e){ /* 読めないフォルダは飛ばす */ }
+      // 新しい年月から見たいので、名前の大きい順にたどる
+      subs.sort((a, b) => b[0].localeCompare(a[0], undefined, { numeric: true }));
+      for(const [name, h] of subs) await walk(h, depth + 1, prefix + name + '/');
+    };
+
+    await walk(d, 0, '');
     out.sort((a, b) => b.at - a.at || b.name.localeCompare(a.name));
     return out;
   },
 
   /** その写真を見分ける印（名前と時刻と大きさ） */
-  keyOf(x){ return `${x.name}|${x.at}|${x.size}`; },
+  keyOf(x){ return `${x.path || x.name}|${x.at}|${x.size}`; },
 
   /** いまあるものは「もう見た」ことにする（これから来るものだけ拾う） */
   async markAllSeen(){
@@ -8391,8 +8420,12 @@ async function showImportDialog(){
   if(!shots.length){
     dlg.innerHTML = `<div class="pi-box"><h3>カメラ・SDから取り込む</h3>
       <div class="reg-empty">「${escapeHtml(dir.name)}」に写真が見つかりません。${
-        Watch.sawRaw ? '<br>RAW（NEFなど）はブラウザで開けません。カメラをJPEG記録にしてください。'
-                     : '<br>DCIM フォルダの中を選んでみてください。'}</div>
+        Watch.sawHeic
+          ? '<br>HEIC はブラウザで開けません。iPhone の 設定 → カメラ → フォーマット を'
+            + '「互換性優先」にすると JPEG で撮れます。'
+          : Watch.sawRaw
+          ? '<br>RAW（NEFなど）はブラウザで開けません。カメラをJPEG記録にしてください。'
+          : '<br>DCIM フォルダの中を選んでみてください。'}</div>
       <div class="pi-acts"><button id="impClose" class="btn btn-ghost">閉じる</button></div></div>`;
     $('#impClose').onclick = () => dlg.classList.add('hidden');
     return;
@@ -8414,7 +8447,9 @@ async function showImportDialog(){
     <div class="pi-box">
       <h3>カメラ・SDから取り込む</h3>
       <div class="hint">「${escapeHtml(dir.name)}」に ${shots.length}枚 あります（新しい順）${
-        Watch.sawRaw ? '<br>※ RAW（NEFなど）は開けないので飛ばしています' : ''}</div>
+        Watch.sawRaw ? '<br>※ RAW（NEFなど）は開けないので飛ばしています' : ''}${
+        Watch.sawHeic ? '<br>※ HEIC は開けないので飛ばしています。iPhone の 設定 → カメラ → '
+                      + 'フォーマット を「互換性優先」にしてください' : ''}</div>
       <div class="imp-row">
         <label>入れる商品
           <select id="impTarget">
@@ -8497,9 +8532,12 @@ async function renderWatchBar(){
   bar.classList.remove('hidden');
   const raw = Watch.sawRaw
     ? '<br><small>※ RAW（NEFなど）は開けません。カメラをJPEG記録にしてください</small>' : '';
+  const heic = Watch.sawHeic
+    ? '<br><small>※ HEIC は開けません。iPhone の 設定 → カメラ → フォーマット を'
+      + '「互換性優先」にしてください</small>' : '';
   bar.innerHTML = `<span class="live"></span>
     <span class="txt">「${escapeHtml(Watch.name() || 'フォルダ')}」を見張っています。
-      カメラで撮ると自動で入ります（${Watch.found}枚）${raw}</span>
+      カメラで撮ると自動で入ります（${Watch.found}枚）${raw}${heic}</span>
     <button id="camWatchStop" class="btn btn-ghost btn-sm">やめる</button>
     <button id="camWatchDir" class="btn btn-ghost btn-sm">フォルダを変える</button>`;
   $('#camWatchStop').onclick = () => { Watch.stop(); renderWatchBar(); };
@@ -8937,7 +8975,7 @@ function renderPhotoGrid(){ /* 写真の一覧は編集タブで見る */ }
 //   魚/        … これから編集するもの（登録すると管理番号のフォルダができる）
 //   魚編集後/  … 編集を終えたもの（原本と編集後の両方）
 // を作る。無ければ自動で作る。
-const APP_VERSION = 'v90';
+const APP_VERSION = 'v91';
 window.APP_VERSION = APP_VERSION;
 const FS_WORK_NAME = '編集前';
 // 前に使っていた名前。残っていたら気づけるようにする

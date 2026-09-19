@@ -17,6 +17,7 @@ function shot(name, at){
 window.__cardFiles = { 'DSC_0001.JPG': shot('DSC_0001.JPG', 1000),
                        'DSC_0002.JPG': shot('DSC_0002.JPG', 2000),
                        'DSC_0003.NEF': shot('DSC_0003.NEF', 3000),
+                       'IMG_0001.HEIC': shot('IMG_0001.HEIC', 3500),
                        'メモ.txt':      shot('メモ.txt', 4000) };
 window.__card = { kind:'directory', name:'DCIM',
   entries(){ const l=Object.entries(window.__cardFiles); let i=0;
@@ -28,6 +29,9 @@ print("■ 写真だけを拾い、新しい順に並べる")
 lst = b.ev("(async()=>{ const a = await Watch.list(window.__card); return a.map(x=>x.name).join(','); })()")
 r.check("JPEGだけ拾う（NEFとtxtは除く）", lst, "DSC_0002.JPG,DSC_0001.JPG")
 r.check("RAWがあったことは覚えておく", b.ev("Watch.sawRaw"), True)
+r.check("HEIC（iPhone）も飛ばす", b.ev("CAM_IMG_RE.test('IMG_0001.HEIC')"), False)
+r.check("HEICがあったことも覚えておく", b.ev("Watch.sawHeic"), True)
+r.check("HEIFも同じ扱い", b.ev("CAM_HEIC_RE.test('IMG.heif')"), True)
 
 print("■ 新しく入ってきた写真だけを拾う")
 b.ev("Watch.dir = window.__card; Watch.seen = new Set(); 'ok'")
@@ -89,5 +93,48 @@ print("■ 画面の入口")
 r.expect("登録タブから開ける", b.ev("!!document.getElementById('regImport')"), "📥 カメラ・SDから取り込む")
 r.expect("編集タブからも開ける", b.ev("!!document.getElementById('btnEditImport')"), "同じ入口")
 r.expect("撮影画面からも見張れる", b.ev("!!document.getElementById('camWatch')"), "📷 カメラから自動で取り込む")
+
+print("■ iCloud の年月フォルダの中も見る")
+b.ev(r"""
+function dir(name, kids){
+  return { kind:'directory', name, _kids:kids,
+    entries(){ const l=Object.entries(kids); let i=0;
+      return { [Symbol.asyncIterator](){return this;},
+        async next(){ return i<l.length?{value:l[i++],done:false}:{done:true}; } }; } };
+}
+// iCloud for Windows が作る形：iCloud Photos / 2026 / 09 / IMG_xxxx.JPG
+window.__icloud = dir('iCloud Photos', {
+  '2025': dir('2025', { '12': dir('12', { 'IMG_9000.JPG': shot('IMG_9000.JPG', 1000) }) }),
+  '2026': dir('2026', {
+    '08': dir('08', { 'IMG_0100.JPG': shot('IMG_0100.JPG', 8000) }),
+    '09': dir('09', { 'IMG_0200.JPG': shot('IMG_0200.JPG', 9000),
+                      'IMG_0201.HEIC': shot('IMG_0201.HEIC', 9500) })
+  }),
+  '直下.JPG': shot('直下.JPG', 500)
+});
+'ok'""")
+got = b.ev("(async()=>{ const a = await Watch.list(window.__icloud); return a.map(x=>x.path).join(','); })()")
+r.check("年月フォルダの中まで拾い、新しい順に並べる", got,
+        "2026/09/IMG_0200.JPG,2026/08/IMG_0100.JPG,2025/12/IMG_9000.JPG,直下.JPG")
+r.check("下の階層のHEICにも気づく", b.ev("Watch.sawHeic"), True)
+
+print("■ 別のフォルダに同じ名前があっても取り違えない")
+b.ev("""window.__dup = dir('root', {
+  'A': dir('A', { 'IMG_1.JPG': shot('IMG_1.JPG', 1000) }),
+  'B': dir('B', { 'IMG_1.JPG': shot('IMG_1.JPG', 1000) }) }); 'ok'""")
+keys = b.ev("""(async()=>{
+  const a = await Watch.list(window.__dup);
+  return new Set(a.map(x => Watch.keyOf(x))).size;
+})()""")
+r.check("2枚とも別物として数える", keys, 2)
+
+print("■ まだ降りてきていない写真は飛ばす")
+b.ev("""window.__partial = dir('root', {
+  'ok.JPG': shot('ok.JPG', 1000),
+  'まだ.JPG': { kind:'file', name:'まだ.JPG',
+    getFile: async () => new File([], 'まだ.JPG', {type:'image/jpeg', lastModified:2000}) } }); 'ok'""")
+r.check("中身が空のものは拾わない",
+        b.ev("(async()=>{ const a = await Watch.list(window.__partial); return a.map(x=>x.name).join(','); })()"),
+        "ok.JPG")
 
 b.close(); r.finish()
